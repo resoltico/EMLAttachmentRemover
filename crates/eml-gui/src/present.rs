@@ -148,7 +148,7 @@ impl DesktopController {
                             self.ui.get_start_label()
                         )
                     },
-                    |error| error.to_string(),
+                    |error| wording::queue_error(&error),
                 )
                 .into(),
         );
@@ -160,7 +160,7 @@ impl DesktopController {
                 format!(
                     "Run {} · {}",
                     entry.id,
-                    status(entry, s.active.as_ref()).label()
+                    wording::phase(status(entry, s.active.as_ref()))
                 )
             })
             .unwrap_or_else(|| {
@@ -199,18 +199,17 @@ impl DesktopController {
                 let mut view = run_view(entry.id, &entry.request, status(entry, s.active.as_ref()));
                 view.unseen = entry.presentation.unseen;
                 view.closable = self.can_close_run(&s, entry);
-                let tally = entry.presentation.tally;
-                view.status = if completion_state(entry).is_some() {
-                    format!(
-                        "{} created · {} need attention",
-                        tally.created, tally.attention
-                    )
-                    .into()
-                } else if entry.presentation.total.is_some() {
-                    format!("{} of {}", tally.processed, tally.all).into()
-                } else {
-                    view.status
-                };
+                view.status = wording::sidebar(
+                    status(entry, s.active.as_ref()),
+                    entry.request.request().mode,
+                    entry.presentation.tally,
+                    entry.presentation.total,
+                )
+                .into();
+                if entry.storage_error.is_some() {
+                    view.status = format!("Kept in memory · {}", view.status).into();
+                    view.tone = Tone::Attention;
+                }
                 view
             })
             .collect();
@@ -274,7 +273,7 @@ impl DesktopController {
         );
         self.ui.set_run_label(format!("Run {}", entry.id).into());
         let run_status = status(entry, s.active.as_ref());
-        self.ui.set_run_status(run_status.label().into());
+        self.ui.set_run_status(wording::phase(run_status).into());
         self.ui.set_run_title(
             wording::run_title(
                 entry.id,
@@ -436,7 +435,8 @@ impl DesktopController {
                 } else if report.failure().is_some() || report.unreported_item_count().is_some_and(|count|count>0) {
                     notice="This report is incomplete. Check the destination before continuing; some results may be unknown.".into();
                 }else if let Some(error)=report.summary().and_then(|summary|summary.run_error.value()) {
-                    notice=eml_core::vocabulary::recovery_hint(&error.code).unwrap_or("The run could not finish. See Details, then run again.").to_owned();
+                    notice=if let Some(code)=eml_core::ErrorCode::from_wire_name(&error.code){let value=wording::failure(code);format!("{}. {}",value.headline,if code==eml_core::ErrorCode::NoInputs{"Add email files or choose another folder."}else{value.guidance})}else{"The run could not finish. See Details and save a report if you need help.".into()};
+                    if report.start().is_some_and(|start|!start.collection_complete){notice=format!("The folder search did not finish. Counts cover only messages found so far. {notice}");}
                 }
             });
         }
@@ -552,6 +552,9 @@ impl DesktopController {
             self.ui
                 .set_item_destination_path(view_model::path(view.destination.as_str()));
             self.ui.set_item_destination(view.destination);
+            let words = view_model::item_words(item);
+            self.ui.set_item_headline(words.headline.into());
+            self.ui.set_item_guidance(words.guidance.into());
             self.ui.set_item_status(view.status);
             self.ui.set_item_attention(view.attention);
             let (details, parts, fields) = view_model::details(item);
@@ -589,6 +592,8 @@ impl DesktopController {
         self.ui.set_item_source("".into());
         self.ui.set_item_destination("".into());
         self.ui.set_item_status("".into());
+        self.ui.set_item_headline("".into());
+        self.ui.set_item_guidance("".into());
         self.ui
             .set_details(update_model(self.ui.get_details(), Vec::new()));
         self.ui

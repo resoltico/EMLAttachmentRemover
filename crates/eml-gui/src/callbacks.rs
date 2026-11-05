@@ -42,7 +42,7 @@ impl DesktopController {
             if let Some(c) = weak.upgrade()
                 && let Err(error) = c.start_selection()
             {
-                c.message(&error.to_string());
+                c.message(&wording::queue_error(&error));
                 c.refresh();
             }
         });
@@ -197,16 +197,22 @@ impl DesktopController {
                     if s.is_closing() {
                         return;
                     }
-                    let Some(active) = &s.active else { return; };
-                    if !active.stop.can_force(now_ms()) {return;}
-                    format!(
-                        "Run {}\n\nStops only this task immediately. Waiting requests are not cancelled. Any completed copies remain. The report may be incomplete, and the state of unreported work is unknown.\n\n{}",
-                        active.id,
-                        vocabulary::FORCE_STOP_NOTICE
-                    )
+                    let Some(active) = &s.active else {
+                        return;
+                    };
+                    if !active.stop.can_force(now_ms()) {
+                        return;
+                    }
+                    wording::force_notice(active.id)
                 };
                 c.ui.set_force_notice(notice.into());
-                let id = c.session.borrow().active.as_ref().expect("active force-stop target").id;
+                let id = c
+                    .session
+                    .borrow()
+                    .active
+                    .as_ref()
+                    .expect("active force-stop target")
+                    .id;
                 c.set_confirmation(Some(state::PendingConfirmation::ForceStop(id)));
             }
         });

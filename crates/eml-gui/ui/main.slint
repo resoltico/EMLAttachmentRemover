@@ -61,6 +61,8 @@ export component MainWindow inherits Window {
     in property <string> item-source;
     in property <string> item-destination;
     in property <string> item-status;
+    in property <string> item-headline;
+    in property <string> item-guidance;
     in property <bool> has-item;
     in property <bool> item-attention;
     in property <bool> run-attention;
@@ -247,6 +249,8 @@ if root.waiting-view: VerticalBox { padding: 0px; spacing: 16px;
         item-source-path : root.item-source-path;
         item-destination-path : root.item-destination-path;
         item-status : root.item-status;
+        item-headline: root.item-headline;
+        item-guidance: root.item-guidance;
         item-attention : root.item-attention;
         has-item : root.has-item;
         can-reveal : root.can-reveal;

@@ -351,7 +351,7 @@ impl DesktopController {
                         && c.inputs_enabled()
                         && let Err(error) = c.stage(paths)
                     {
-                        c.message(&error.to_string());
+                        c.message(&wording::queue_error(&error));
                     }
                 }
             });
@@ -607,7 +607,7 @@ impl DesktopController {
                 self.set_confirmation(Some(state::PendingConfirmation::ReplaceDraft(snapshot)))
             }
             Ok(snapshot) => self.apply_snapshot(snapshot),
-            Err(error) => self.message(&error.to_string()),
+            Err(error) => self.message(&wording::queue_error(&error)),
         }
     }
     fn apply_snapshot(&self, snapshot: RequestSnapshot) {
@@ -1028,9 +1028,10 @@ fn run_view(id: RunId, request: &RequestSnapshot, status: RunStatus) -> RunView 
             | RunStatus::StopRequested
             | RunStatus::ForceStopRequested => Tone::Running,
             RunStatus::Completed => Tone::Ok,
-            RunStatus::Stopped | RunStatus::StoppedBeforeStart => Tone::Stopped,
+            RunStatus::Stopped | RunStatus::StoppedBeforeStart | RunStatus::ForceStopped => {
+                Tone::Stopped
+            }
             RunStatus::CompletedWithFailures
-            | RunStatus::ForceStopped
             | RunStatus::RequestRefused
             | RunStatus::Incomplete
             | RunStatus::IdentityFailure
@@ -1038,8 +1039,13 @@ fn run_view(id: RunId, request: &RequestSnapshot, status: RunStatus) -> RunView 
         },
         unseen: false,
         label: format!("Run {id}").into(),
-        status: status.label().into(),
-        mode: vocabulary::mode_label(request.request().mode).into(),
+        status: wording::phase(status).into(),
+        mode: if request.request().mode == RunMode::Create {
+            "Create copies"
+        } else {
+            "Check"
+        }
+        .into(),
         destination: request_destination(request).into(),
         selection: view_model::path(
             &request

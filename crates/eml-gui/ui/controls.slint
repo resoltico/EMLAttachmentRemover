@@ -156,8 +156,10 @@ export component PopupButton inherits TextButton {
 }
 export component ToneDot inherits Rectangle {
     in property <color> tone;
+    in property <bool> ring;
     width: 8px; height: 8px; border-radius: 4px;
-    background: root.tone;
+    background: root.ring ? transparent : root.tone;
+    border-width: root.ring ? 1px : 0px; border-color: root.tone;
     accessible-role: none;
 }
 export component Segmented inherits Rectangle {

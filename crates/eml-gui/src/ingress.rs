@@ -103,7 +103,7 @@ pub fn install_native(
                         .collect(),
                 )
             {
-                controller.message(&error.to_string());
+                controller.message(&crate::wording::queue_error(&error));
             }
         });
     });
@@ -132,7 +132,7 @@ pub fn install_native(
                 && controller.inputs_enabled()
                 && let Err(error) = controller.stage(vec![folder.path().to_owned()])
             {
-                controller.message(&error.to_string());
+                controller.message(&crate::wording::queue_error(&error));
             }
         });
     });

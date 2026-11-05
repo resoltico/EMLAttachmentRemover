@@ -1,7 +1,7 @@
 //! Desktop contracts through the real Slint testing backend and stub CLI processes.
 use eml_core::{
     RemovalReason, RunMode,
-    vocabulary::{self, RunStatus},
+    vocabulary::{self},
 };
 use eml_gui::{
     Confirmation, DesktopController, MainWindow, ingress::launch_paths, preferences::Preferences,
@@ -160,7 +160,7 @@ fn s4_interrupted_message_is_not_an_attention_failure() {
     c.submit(vec![root.path().join("source.eml")]).unwrap();
     pump(&c, || !c.is_busy());
     let ui = c.window();
-    assert_eq!(ui.get_run_status(), RunStatus::Stopped.label());
+    assert_eq!(ui.get_run_status(), "Stopped");
     assert!(
         !ui.get_items().row_data(0).unwrap().attention,
         "User Stop is not an attention failure"
@@ -256,7 +256,7 @@ fn automatic_session_reports_drain_queue_and_reload_exact_old_results() {
     assert_eq!(c.window().get_queue_notice(), "");
     c.window().invoke_select_run(0);
     pump(&c, || !c.window().get_report_loading());
-    assert_eq!(c.window().get_run_status(), RunStatus::Completed.label());
+    assert_eq!(c.window().get_run_status(), "Done");
     let folder = root.path().join("long-folder-context-".repeat(8));
     fs::create_dir(&folder).unwrap();
     let output = folder.join("Saved-报告-Rīga.jsonl");
@@ -305,10 +305,7 @@ fn refused_check_run_again_restores_its_captured_inputs_mode_and_destination() {
     ];
     c.submit(paths.clone()).unwrap();
     pump(&c, || !c.is_busy());
-    assert_eq!(
-        c.window().get_run_status(),
-        RunStatus::RequestRefused.label()
-    );
+    assert_eq!(c.window().get_run_status(), "Couldn’t start");
     assert!(c.window().get_can_review());
     assert!(
         !c.window().get_can_export(),
@@ -507,7 +504,7 @@ fn deferred_drop_batches_are_distinct_and_cancelled_hover_does_not_queue() {
     assert_eq!(controller.window().get_runs().row_count(), 2);
 }
 #[test]
-fn real_accessible_elements_use_core_vocabulary_and_wrong_identity_is_not_success() {
+fn gui_verdicts_preserve_removal_facts_and_wrong_identity_is_not_success() {
     init_no_event_loop();
     let root = tempfile::tempdir().unwrap();
     {
@@ -517,11 +514,8 @@ fn real_accessible_elements_use_core_vocabulary_and_wrong_identity_is_not_succes
             .unwrap();
         pump(&controller, || !controller.is_busy());
         let ui = controller.window();
-        assert_eq!(ui.get_run_status().as_str(), RunStatus::Completed.label());
-        assert_eq!(
-            ui.get_item_status().as_str(),
-            vocabulary::MeaningKind::Created.label()
-        );
+        assert_eq!(ui.get_run_status().as_str(), "Done");
+        assert_eq!(ui.get_item_status().as_str(), "Created · 1 removed");
         assert!(has_label(&ui, "Created 1"));
         click(&ui, "Technical details");
         let scroller = ElementHandle::find_by_accessible_label(&ui, "Message details")
@@ -560,7 +554,7 @@ fn real_accessible_elements_use_core_vocabulary_and_wrong_identity_is_not_succes
     pump(&controller, || !controller.is_busy());
     assert_eq!(
         controller.window().get_run_status().as_str(),
-        RunStatus::IdentityFailure.label()
+        "Couldn’t start"
     );
     assert_eq!(controller.window().get_items().row_count(), 0);
     assert_eq!(
@@ -596,11 +590,7 @@ fn stop_and_confirmed_force_stop_show_settled_states_and_cancel_keeps_work_runni
         pump(&controller, || !controller.is_busy());
         assert_eq!(
             ui.get_run_status().as_str(),
-            if force {
-                RunStatus::ForceStopped.label()
-            } else {
-                RunStatus::Stopped.label()
-            }
+            if force { "Force stopped" } else { "Stopped" }
         );
         if force {
             assert!(!has_label(&ui, "Not processed 1"));
@@ -646,10 +636,7 @@ fn idle_quit_is_immediate_while_busy_quit_requires_a_real_decision() {
     click(&controller.window(), "Stop and wait");
     pump(&controller, || controller.should_exit());
     assert!(!controller.is_busy());
-    assert_eq!(
-        controller.window().get_run_status().as_str(),
-        RunStatus::Stopped.label()
-    );
+    assert_eq!(controller.window().get_run_status().as_str(), "Stopped");
 }
 #[test]
 fn s9_s10_check_conversion_confirms_replacement_and_sends_a_fresh_create_request() {
@@ -1140,7 +1127,7 @@ fn long_result_paths_keep_distinguishing_suffixes_and_full_accessible_paths() {
         ui.invoke_select_item(0);
         mock_elapsed_time(Duration::from_millis(5));
         let status_cell =
-            ElementHandle::find_by_accessible_label(&ui, vocabulary::MeaningKind::Created.label())
+            ElementHandle::find_by_accessible_label(&ui, "Created · no parts removed")
                 .nth(1)
                 .unwrap();
         let viewport = ElementHandle::find_by_accessible_label(&ui, "Message results")
@@ -1165,7 +1152,7 @@ fn long_result_paths_keep_distinguishing_suffixes_and_full_accessible_paths() {
             "The whole result row, including its status, must select the message; status {:?} {:?}; all statuses {:?}",
             status_cell.absolute_position(),
             status_cell.size(),
-            ElementHandle::find_by_accessible_label(&ui, vocabulary::MeaningKind::Created.label())
+            ElementHandle::find_by_accessible_label(&ui, "Created · no parts removed")
                 .map(|e| (e.absolute_position(), e.size()))
                 .collect::<Vec<_>>()
         );
@@ -1627,7 +1614,7 @@ fn a_closed_force_stop_prompt_cannot_kill_the_next_queued_worker() {
     ui.invoke_select_run(1);
     let closed = ui.get_confirmation() == Confirmation::None;
     ui.invoke_confirm_force_stop();
-    let next_unchanged = ui.get_run_status() == RunStatus::Creating.label();
+    let next_unchanged = ui.get_run_status() == "Creating copies";
     c.force_stop();
     pump(&c, || !c.is_busy());
     assert!(closed);
@@ -1691,7 +1678,7 @@ fn failure_inspector_stays_visible_and_filtered_keyboard_navigation_keeps_origin
     assert_eq!(ui.get_items().row_count(), 1);
     assert_eq!(ui.get_selected_item(), 7);
     assert_eq!(ui.get_item_source().as_str(), "/mail/message-7.eml");
-    assert_eq!(ui.get_item_status().as_str(), "Destination conflict");
+    assert_eq!(ui.get_item_status().as_str(), "Name conflict");
     assert!(c.selected_copy().is_none());
     toggle_attention(&ui);
     assert_eq!(ui.get_items().row_count(), 8);
@@ -1712,7 +1699,7 @@ fn failure_inspector_stays_visible_and_filtered_keyboard_navigation_keeps_origin
         let result_header = ElementHandle::find_by_accessible_label(&ui, "Outcome")
             .next()
             .unwrap();
-        let result_cell = ElementHandle::find_by_accessible_label(&ui, "Destination conflict")
+        let result_cell = ElementHandle::find_by_accessible_label(&ui, "Name conflict")
             .next()
             .unwrap();
         assert!(
@@ -2177,7 +2164,7 @@ fn report_selection_respects_filter_on_healthy_completion() {
     let selection = ui.get_selected_item();
     fs::write(gate, b"release").unwrap();
     pump(&c, || !c.is_busy());
-    assert_eq!(ui.get_run_status(), RunStatus::Completed.label());
+    assert_eq!(ui.get_run_status(), "Done");
     assert!(
         ui.get_filter() == 4,
         "Completion does not reset the explicit filter"
@@ -2219,10 +2206,7 @@ fn attention_filter_preserves_publication_qualification_and_valid_sync_success()
         toggle_attention(&ui);
         assert_eq!(ui.get_items().row_count(), expected_rows, "{name}");
         if expected_rows == 1 {
-            assert_eq!(
-                ui.get_item_status(),
-                "Complete copy published; qualification incomplete"
-            );
+            assert_eq!(ui.get_item_status(), "Created — check folder");
             ui.set_details_expanded(true);
             mock_elapsed_time(Duration::from_millis(1));
             assert!(has_label(
@@ -2416,15 +2400,15 @@ fn macos_raw_launch_is_rejected_before_ui_and_bundle_layout_is_admitted() {
 fn known_prepublication_causes_are_specific_and_published_failures_keep_qualification() {
     init_no_event_loop();
     for (code, phase, label) in [
-        ("MALFORMED", "prepare", "Malformed message"),
-        ("NO_BODY", "prepare", "No supported body"),
-        ("PROTECTED", "prepare", "Protected content"),
-        ("UNSUPPORTED_MIME", "prepare", "Unsupported content"),
-        ("INTERRUPTED", "prepare", "Interrupted"),
-        ("STAGE_FAILED", "stage", "Cannot create copy"),
-        ("WRITE_FAILED", "write", "Copy write failed"),
-        ("SOURCE_CHANGED", "read", "Source changed"),
-        ("FUTURE_ERROR", "prepare", "No new copy published"),
+        ("MALFORMED", "prepare", "Damaged message"),
+        ("NO_BODY", "prepare", "No message text"),
+        ("PROTECTED", "prepare", "Signed or encrypted"),
+        ("UNSUPPORTED_MIME", "prepare", "Unsupported format"),
+        ("INTERRUPTED", "prepare", "Stopped"),
+        ("STAGE_FAILED", "stage", "Couldn't write"),
+        ("WRITE_FAILED", "write", "Couldn't write"),
+        ("SOURCE_CHANGED", "read", "Changed during run"),
+        ("FUTURE_ERROR", "prepare", "Not copied"),
     ] {
         let root = tempfile::tempdir().unwrap();
         let mut records: Vec<serde_json::Value> = fixture("prepublication-failure")
@@ -2472,10 +2456,7 @@ fn known_prepublication_causes_are_specific_and_published_failures_keep_qualific
     c.submit(vec![existing_root.path().join("existing.eml")])
         .unwrap();
     pump(&c, || !c.is_busy());
-    assert_eq!(
-        c.window().get_item_status().as_str(),
-        "Existing bytes matched"
-    );
+    assert_eq!(c.window().get_item_status().as_str(), "Stopped");
     assert!(!c.window().get_can_reveal());
     let root = tempfile::tempdir().unwrap();
     let c = controller(root.path(), completed(root.path(), "published-with-error"));
@@ -2483,7 +2464,7 @@ fn known_prepublication_causes_are_specific_and_published_failures_keep_qualific
     pump(&c, || !c.is_busy());
     assert_eq!(
         c.window().get_item_status().as_str(),
-        "Complete copy published; qualification incomplete"
+        "Created — check folder"
     );
 }
 

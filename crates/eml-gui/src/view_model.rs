@@ -136,38 +136,14 @@ fn facts(item: &wire::ItemRecord) -> Option<OutcomeFacts> {
 fn meaning(item: &wire::ItemRecord) -> Option<vocabulary::OutcomeMeaning> {
     facts(item).map(|facts| vocabulary::classify(&facts))
 }
-// The core enum owns wire spellings; this match owns only concise desktop wording.
-fn failure_label(code: &str) -> Option<&'static str> {
-    use eml_core::ErrorCode::*;
-    Some(match eml_core::ErrorCode::from_wire_name(code)? {
-        ReadFailed => "Cannot read source",
-        SourceNotRegular => "Not a regular file",
-        SourceChanged => "Source changed",
-        Malformed => "Malformed message",
-        LimitExceeded => "Message limit",
-        Protected => "Protected content",
-        UnsupportedMime => "Unsupported content",
-        NoBody => "No supported body",
-        Internal => "Verification error",
-        InputAdmissionFailed => "Input unavailable",
-        InputLimitExceeded => "Input limit reached",
-        NoInputs => "No messages found",
-        OutputOverlap => "Output overlap",
-        DestinationCollision | DestinationExists => "Destination conflict",
-        SourceDestinationAlias => "Path alias",
-        DestinationUnsupported => "Unsupported target",
-        BindFailed => "Path unavailable",
-        StageFailed => "Cannot create copy",
-        WriteFailed => "Copy write failed",
-        FileSyncFailed => "Copy sync failed",
-        NamespaceSyncFailed => "Folder sync failed",
-        AddressChanged => "Path changed",
-        AddressUnverified => "Path unverified",
-        CleanupFailed => "Cleanup incomplete",
-        ExistingSyncFailed => "Existing sync failed",
-        Interrupted => "Interrupted",
-        OutputFailed => "Delivery failed",
-    })
+pub(super) fn item_words(item: &wire::ItemRecord) -> crate::wording::ItemWords {
+    crate::wording::outcome(
+        meaning(item).map_or(MeaningKind::Unestablished, |meaning| meaning.kind),
+        item.error
+            .value()
+            .and_then(|error| eml_core::ErrorCode::from_wire_name(&error.code)),
+        item.removed.len(),
+    )
 }
 /// Concise desktop labels preserve the core qualification and typed failure facts.
 pub(crate) fn item(item: &wire::ItemRecord) -> ItemView {
@@ -188,26 +164,7 @@ pub(crate) fn item(item: &wire::ItemRecord) -> ItemView {
             .map(|p| p.display.clone())
             .unwrap_or_default()
             .into(),
-        status: if item.status == wire::ItemStatus::Failed
-            && item.publication.state == wire::Publication::NotPublished
-            && meaning(item).is_some_and(|value| matches!(value.kind, MeaningKind::NotPublished))
-        {
-            item.error
-                .value()
-                .and_then(|error| failure_label(&error.code))
-                .unwrap_or_else(|| {
-                    meaning(item).map_or(MeaningKind::Unestablished.label(), |value| value.label())
-                })
-        } else {
-            meaning(item).map_or(MeaningKind::Unestablished.label(), |value| {
-                match value.kind {
-                    MeaningKind::Prepared => "Copy planned",
-                    MeaningKind::Comparison => "Verification planned",
-                    _ => value.label(),
-                }
-            })
-        }
-        .into(),
+        status: item_words(item).verdict.into(),
         attention: category(item) == crate::state::Category::Attention,
         removed: meaning(item)
             .map_or_else(
@@ -294,6 +251,12 @@ pub(crate) fn byte_counts(item: &wire::ItemRecord) -> Vec<CountView> {
 pub(crate) fn details(item: &wire::ItemRecord) -> (Vec<DetailView>, String, String) {
     let mut rows = Vec::new();
     if let Some(error) = item.error.value() {
+        rows.push(DetailView {
+            text: format!("Code: {}", error.code).into(),
+        });
+        rows.push(DetailView {
+            text: format!("Phase: {:?}", error.phase).into(),
+        });
         for line in error.detail.lines() {
             rows.push(DetailView { text: line.into() });
         }
@@ -302,6 +265,20 @@ pub(crate) fn details(item: &wire::ItemRecord) -> (Vec<DetailView>, String, Stri
         }
     }
     if let Some(value) = meaning(item) {
+        rows.push(DetailView {
+            text: format!("Engine outcome: {}", value.label()).into(),
+        });
+        if let Some(residue) =
+            cleanup(&item.publication.cleanup).and_then(|cleanup| cleanup.residual_name)
+        {
+            rows.push(DetailView {
+                text: format!(
+                    "Temporary file: {}",
+                    eml_protocol::TerminalPath::new(std::path::Path::new(&residue))
+                )
+                .into(),
+            });
+        }
         rows.extend(value.consequences.iter().map(|consequence| DetailView {
             text: consequence.text().into(),
         }));
@@ -312,7 +289,12 @@ pub(crate) fn details(item: &wire::ItemRecord) -> (Vec<DetailView>, String, Stri
         }
         (
             rows,
-            value.removal_mode.parts().into(),
+            match value.removal_mode {
+                vocabulary::RemovalMode::Removed => "Removed from copy",
+                vocabulary::RemovalMode::Absent => "Already absent from copy",
+                vocabulary::RemovalMode::Selected => "Would remove",
+            }
+            .into(),
             value.removal_mode.fields().into(),
         )
     } else {
@@ -379,7 +361,7 @@ pub(crate) fn completion_diagnostics(completion: &eml_app::WorkerCompletion) -> 
     }
     if completion.state == eml_app::WorkerState::RequestRefused {
         rows.push(DetailView {
-            text: "The request could not start. Check that the selected inputs still exist and choose an existing, writable destination. Use Review inputs again to correct the request.".into(),
+            text: "The request could not start. Check that the selected inputs still exist and choose an existing, writable destination. Use Run Again… to correct the files, folders or destination.".into(),
         });
     }
     if completion.failure == Some(eml_app::WorkerFailure::Identity) {
