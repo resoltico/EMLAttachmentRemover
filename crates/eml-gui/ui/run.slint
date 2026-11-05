@@ -26,12 +26,15 @@ component ResultsTable inherits VerticalBox {
     in property <string> empty-message;
     in property <length> header-height;
     in-out property <length> scroll-y;
+    // Virtualized rows can compensate an old offset after a model shrinks.
+    // Content cannot start below the viewport's origin.
+    changed scroll-y => { if root.scroll-y > 0px { root.scroll-y = 0px; } }
     callback select-item(int); callback sort-results(int); callback navigate(int,int);
     callback type-select(string); callback copy-path();
     padding: 0px; spacing: 0px;
     private property <length> row-height: UiMetrics.message-row-height;
     private property <length> folder-width: min(150px,max(80px,root.width * 0.23));
-    private property <length> outcome-width: min(190px,max(128px,root.width * 0.3));
+    private property <length> outcome-width: max(160px,root.ui-size * 12);
     private property <string> search;
     changed context => { root.search = ""; }
     search-reset := Timer { interval: 1s; running: root.search != ""; triggered => { root.search = ""; } }
@@ -123,7 +126,7 @@ component Inspector inherits Rectangle {
     ScrollView { x: 12px; y: 12px; width: parent.width - 24px; height: parent.height - 24px;
         content-width: self.visible-width; content-height: content.height; content-y <=> root.scroll-y;
         accessible-role: list; accessible-label: "Message details";
-        content := VerticalBox { width: parent.visible-width; height: max(self.min-height,self.preferred-height); padding: 0px; spacing: 10px;
+        content := VerticalBox { x: UiMetrics.overlay-scrollbar-width; width: max(0px,parent.visible-width - UiMetrics.overlay-scrollbar-width * 2); height: max(self.min-height,self.preferred-height); padding: 0px; spacing: 10px;
             if !root.has-item: Label { text: "Select a message to see its details."; color: Theme.muted; wrap: word-wrap; }
             if root.has-item: FileName { path: root.source; text-size: root.ui-size; }
             if root.has-item: Label { text: root.source.directory; color: Theme.muted; font-size: max(12px,root.ui-size * 0.9); overflow: elide; }
@@ -187,6 +190,7 @@ export component RunPane inherits ScrollView {
     in property <Tone> operation-tone;
     callback reveal-report(); callback show-output();
     in property <bool> can-reveal-output;
+    in property <bool> has-verified-output;
     in property <string> reveal-output-label;
     in property <string> review-label;
     in property <int> work-total;
@@ -235,19 +239,40 @@ export component RunPane inherits ScrollView {
     accessible-role: groupbox; accessible-label: "Run workspace"; accessible-description: root.run-status;
     private property <bool> banner-details;
     changed run-label => { actions.close(); root.banner-details = false; }
-    content := VerticalBox { width: parent.visible-width; height: max(parent.visible-height,max(self.min-height,self.preferred-height)); padding: 0px; spacing: 12px;
+    content := VerticalBox { x: UiMetrics.overlay-scrollbar-width; width: max(0px,root.visible-width - UiMetrics.overlay-scrollbar-width * 2); height: max(parent.visible-height,max(self.min-height,self.preferred-height)); padding: 0px; spacing: 12px;
         header := VerticalBox { padding: 0px; spacing: 8px; vertical-stretch: 0;
-            HorizontalBox { padding: 0px; spacing: 8px;
-                VerticalBox { padding: 0px; spacing: 4px; horizontal-stretch: 1;
+            Rectangle {
+                private property <bool> stacked: self.width < run-actions.preferred-width + max(240px, root.ui-size * 18);
+                height: self.stacked ? title-block.preferred-height + 8px + run-actions.preferred-height : max(title-block.preferred-height,run-actions.preferred-height);
+                title-block := VerticalBox {
+                    x: 0px; y: parent.stacked ? 0px : (parent.height - self.height) / 2;
+                    width: parent.stacked ? parent.width : max(0px,parent.width - run-actions.preferred-width - 8px);
+                    height: self.preferred-height; padding: 0px; spacing: 4px;
                     Label { text: root.run-title; font-size: 22px; font-weight: 700; wrap: word-wrap; accessible-live-region: polite; }
                     Label { text: root.run-context; color: Theme.muted; overflow: elide; }
                 }
+                run-actions := HorizontalBox {
+                    x: parent.width - self.width;
+                    y: parent.stacked ? title-block.height + 8px : (parent.height - self.height) / 2;
+                    width: self.preferred-width; height: self.preferred-height;
+                    padding: 0px; spacing: 8px;
                 if root.report-running: ActionButton { text: root.stop-requested ? "Stopping…" : "Stop"; enabled: root.can-stop; clicked => { root.stop(); } }
                 if root.report-running && root.can-force: TextButton { text: "Force Stop…"; danger: true; clicked => { root.force-stop(); } }
-                if !root.report-running: TextButton { text: root.review-label; enabled: root.can-review; clicked => { root.review-request(); } }
+                if !root.report-running && (root.is-check-result || root.has-verified-output): TextButton { text: root.review-label; enabled: root.can-review; clicked => { root.review-request(); } }
                 if !root.report-running && root.is-check-result: PrimaryButton { text: "Create Copies…"; enabled: root.can-create; clicked => { root.create-from-check(); } }
-                if !root.report-running && !root.is-check-result: PrimaryButton { text: root.reveal-output-label; enabled: root.can-reveal-output; clicked => { root.show-output(); } }
-                IconButton { text: "More actions"; icon: IconKind.ellipsis; clicked => { actions.show(); } }
+                if !root.report-running && !root.is-check-result && root.has-verified-output: PrimaryButton { text: root.reveal-output-label; enabled: root.can-reveal-output; clicked => { root.show-output(); } }
+                if !root.report-running && !root.is-check-result && !root.has-verified-output: PrimaryButton { text: root.review-label; enabled: root.can-review; clicked => { root.review-request(); } }
+                more := IconButton { text: "More actions"; icon: IconKind.ellipsis; clicked => { actions.show(); }
+    actions := PopupWindow { x: more.width - self.width; y: more.height + 4px; width: 190px; height: 100px;
+        Rectangle { background: Theme.surface; border-width: 1px; border-color: Theme.border; border-radius: 8px;
+            VerticalBox { padding: 8px; spacing: 8px;
+                TextButton { text: "Save Report…"; enabled: root.can-export && !root.closing; clicked => { actions.close(); root.export-report(); } }
+                TextButton { text: "Close Result"; enabled: root.can-dismiss && !root.closing; clicked => { actions.close(); root.dismiss(); } }
+            }
+        }
+    }
+                }
+                }
             }
             if root.report-running: VerticalBox { padding: 0px; spacing: 6px;
                 HorizontalBox { padding: 0px;
@@ -266,7 +291,7 @@ export component RunPane inherits ScrollView {
                     if root.report-diagnostics.length > 0 || root.report-details != "" || root.operation-details != "": TextButton { text: root.banner-details ? "Hide Details" : "Details"; expanded: root.banner-details; expandable: true; clicked => { root.banner-details = !root.banner-details; } }
                 }
                 if root.banner-details: ScrollView { preferred-height: 80px; max-height: 80px; min-height: 0px; content-width: self.visible-width; content-height: diagnostic-content.height;
-                    diagnostic-content := VerticalBox { width: parent.visible-width; height: max(self.min-height,self.preferred-height); padding: 0px; spacing: 4px;
+                    diagnostic-content := VerticalBox { x: UiMetrics.overlay-scrollbar-width; width: max(0px,parent.visible-width - UiMetrics.overlay-scrollbar-width * 2); height: max(self.min-height,self.preferred-height); padding: 0px; spacing: 4px;
                         for line in root.report-diagnostics: Label { text: line.text; wrap: word-wrap; }
                         if root.report-details != "": Label { text: root.report-details; wrap: word-wrap; }
                         if root.operation-details != "": Label { text: root.operation-details; wrap: word-wrap; }
@@ -282,7 +307,8 @@ export component RunPane inherits ScrollView {
             }
         }
         results := Rectangle {
-            private property <bool> stacked: self.width < 760px;
+            private property <length> minimum-table-width: max(420px, root.ui-size * 30);
+            private property <bool> stacked: self.width < max(760px,self.minimum-table-width + self.inspector-width + 16px);
             private property <length> inspector-width: root.window-width < 900px ? 260px : 320px;
             private property <length> table-header-height: max(32px,root.ui-size * 1.4 + 10px);
             min-height: self.stacked ? self.table-header-height + UiMetrics.message-row-height * 2 + UiMetrics.scroll-inset * 2 + 160px + 12px : 140px;
@@ -320,13 +346,6 @@ export component RunPane inherits ScrollView {
             }
         }
     }
-    actions := PopupWindow { x: max(0px,root.width - self.width); y: 52px; width: 190px; height: 100px;
-        Rectangle { background: Theme.surface; border-width: 1px; border-color: Theme.border; border-radius: 8px;
-            VerticalBox { padding: 8px; spacing: 8px;
-                TextButton { text: "Save Report…"; enabled: root.can-export && !root.closing; clicked => { actions.close(); root.export-report(); } }
-                TextButton { text: "Close Result"; enabled: root.can-dismiss && !root.closing; clicked => { actions.close(); root.dismiss(); } }
-            }
-        }
-    }
+
 
 }

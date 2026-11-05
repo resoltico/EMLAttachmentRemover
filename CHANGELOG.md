@@ -6,6 +6,10 @@ Use concise bullets without category labels or subheadings, grouping related cha
 
 ## [Unreleased]
 
+- Keep enlarged text clear of overlay scrollbars and move result actions onto a separate row when the header is narrow.
+- Prevent blank input-row clicks from removing selections; align field controls, segmented captions and result headings, and bound icon action targets.
+- Anchor destination and session menus to their controls; retain destination names and full-path tooltips, and clarify failure recovery and zero-removal outcomes.
+
 - Explain body-only copies and inline-resource loss before Start and in the ordinary inspector; add an inline policy disclosure, including retained HTML limitations.
 - Close About and Licenses with Command-W; use singular wording when confirming replacement of a one-item draft.
 - Reclaim the Folder column for complete single-folder results when native paths and sort keys establish that it is redundant; keep uncertain and multi-folder runs conservative.
@@ -13,7 +17,7 @@ Use concise bullets without category labels or subheadings, grouping related cha
 - Start with defaults when desktop preferences use an old or unreadable format; preserve the file and show Settings unavailable. Remember three destination folders and the last report folder.
 - Add a persistent session sidebar, focused request draft, progress estimates, outcome filters, natural sorting and a responsive message inspector.
 - Retain reports automatically in private unnamed files, capped at 20 session runs, eight waiting requests and 2.5 GiB of stored bytes. Storage failures preserve reports in bounded memory.
-- Run Again restores captured inputs, mode and destination; finished Checks can prepare Create requests. Replacing a non-empty draft requires confirmation and every request requires Start.
+- Review Request restores captured inputs, mode and destination; finished Checks can prepare Create requests. Replacing a non-empty draft requires confirmation and every request requires Start.
 - Group explicitly interrupted items as Not processed in the GUI and human CLI summary; preserve raw JSON counts, unknown outcomes, publication qualifications and cleanup warnings.
 - Save exact captured reports through native save panels, honoring approved replacement atomically. Failed writes preserve prior targets; the success banner offers Show.
 - Share menu and button action predicates, support text-context Copy/Select All and pane navigation, and offer Force Stop only after five seconds of cooperative stopping.

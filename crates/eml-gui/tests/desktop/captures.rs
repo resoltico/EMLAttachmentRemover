@@ -146,7 +146,14 @@ fn capture_policy_layout_at_supported_sizes_and_scales() {
                             .unwrap();
                         policy.scroll(0.0, -height * 4.0);
                         mock_elapsed_time(Duration::from_millis(180));
-                        let right = draft.absolute_position().x + draft.size().width;
+                        // Pinned widget styles overlay their scrollbar; content/actions
+                        // must stay clear even when its thumb expands on hover.
+                        let overlay = if cfg!(target_os = "macos") {
+                            20.0
+                        } else {
+                            14.0
+                        };
+                        let right = draft.absolute_position().x + draft.size().width - overlay;
                         let bottom = draft.absolute_position().y + draft.size().height;
                         assert_reachable_bottom(&policy, right, bottom);
                         capture_window(&ui, &directory, &format!("{label}-empty-bottom"));
@@ -201,7 +208,11 @@ fn capture_policy_layout_at_supported_sizes_and_scales() {
                         capture_window(&ui, &directory, &format!("{label}-draft-action"));
                         action.mock_single_click(slint::platform::PointerEventButton::Left);
                         pump(&c, || {
-                            !c.is_busy() && ui.get_has_reports() && !ui.get_reviewing()
+                            !c.is_busy()
+                                && ui.get_has_reports()
+                                && !ui.get_reviewing()
+                                && !ui.get_report_loading()
+                                && ui.get_has_item()
                         });
                         let notice = if check {
                             vocabulary::PREPARED_RELATED_RESOURCE_NOTICE
@@ -209,6 +220,9 @@ fn capture_policy_layout_at_supported_sizes_and_scales() {
                             vocabulary::RELATED_RESOURCE_NOTICE
                         };
                         assert_eq!(ui.get_item_policy_notice().as_str(), notice);
+                        // Materialize the new conditional result view before
+                        // querying its accessibility geometry.
+                        capture_window(&ui, &directory, &format!("{label}-initial-result"));
                         assert_inspector_text_reachable(&ui, notice);
                         assert_inspector_text_reachable(
                             &ui,

@@ -2,13 +2,15 @@
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let macos = std::env::var("CARGO_CFG_TARGET_OS")? == "macos";
     let out = std::path::PathBuf::from(std::env::var_os("OUT_DIR").ok_or("OUT_DIR missing")?);
-    // Slint 1.18.1 Cupertino ScrollView has a 2px frame; Fluent has none.
+    // Slint 1.18.1: Cupertino has a 2px frame and a 20px hover scrollbar;
+    // Fluent has no frame and a 14px overlay scrollbar.
     // Keep layout constraints independent of the size they are calculating.
     std::fs::write(
         out.join("widget-metrics.slint"),
         format!(
-            "export global WidgetMetrics {{ out property <length> scroll-inset: {}px; out property <bool> macos: {macos}; }}",
-            if macos { 2 } else { 0 }
+            "export global WidgetMetrics {{ out property <length> scroll-inset: {}px; out property <length> overlay-scrollbar-width: {}px; out property <bool> macos: {macos}; }}",
+            if macos { 2 } else { 0 },
+            if macos { 20 } else { 14 }
         ),
     )?;
     slint_build::compile_with_config(

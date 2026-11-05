@@ -45,14 +45,7 @@ impl DesktopController {
             s.preferences
                 .recent_destinations()
                 .iter()
-                .map(|path| {
-                    path.strip_prefix(&self.home)
-                        .map_or_else(
-                            |_| eml_protocol::TerminalPath::new(path).to_string(),
-                            |relative| format!("~/{}", eml_protocol::TerminalPath::new(relative)),
-                        )
-                        .into()
-                })
+                .map(|path| view_model::path(&folder_label(path, &self.home)))
                 .collect(),
         ));
         if s.is_closing() {
@@ -168,13 +161,12 @@ impl DesktopController {
         });
         self.ui
             .set_destination_beside(s.preferences.destination().is_none());
-        self.ui.set_destination_label(
-            s.preferences
+        self.ui.set_destination(view_model::path(
+            &s.preferences
                 .destination()
                 .map(|path| folder_label(path, &self.home))
-                .unwrap_or_else(|| "Next to originals".into())
-                .into(),
-        );
+                .unwrap_or_else(|| "Next to originals".into()),
+        ));
         let mut run_views: Vec<_> = s
             .entries
             .iter()
@@ -281,7 +273,7 @@ impl DesktopController {
             ) {
                 "Continue…"
             } else {
-                "Run Again…"
+                "Review Request…"
             }
             .into(),
         );
@@ -586,7 +578,7 @@ impl DesktopController {
         *self.last_view.borrow_mut() = None;
     }
     fn clear_report(&self) {
-        self.ui.set_review_label("Run Again…".into());
+        self.ui.set_review_label("Review Request…".into());
         self.ui.set_report_loading(false);
         self.ui.set_report_details("".into());
         self.ui.set_run_notice("".into());
@@ -605,6 +597,9 @@ impl DesktopController {
         self.ui.set_can_create(false);
         self.ui.set_can_review(false);
         self.ui.set_can_reveal_output(false);
+        self.ui
+            .set_output_roots(update_model(self.ui.get_output_roots(), Vec::new()));
+        self.ui.set_extra_output_roots(0);
     }
 }
 

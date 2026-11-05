@@ -3,8 +3,7 @@
 These eight PNGs show the production controller and Slint views at 1080 × 700,
 using the pinned Cupertino widgets and software testing backend. The palette is
 explicitly light or dark. They are toolkit captures, not screenshots of native
-macOS panels. Captured on 5 November 2026 from the production controller after the reviewed
-body-only guidance and ordinary inline-resource notice changes. The A/B/C/D
+macOS panels. Captured on 5 November 2026 from the production controller after the control alignment, destination-name and recovery-action updates. The A/B/C/D
 states come from `capture_redesign_states_in_light_and_dark`; the capture uses
 controlled related-resource metadata in C so the ordinary notice is visible.
 

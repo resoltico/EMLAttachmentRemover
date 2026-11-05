@@ -11,6 +11,7 @@ export global UiMetrics {
     out property <bool> macos: WidgetMetrics.macos;
     out property <length> message-row-height: 34px;
     out property <length> scroll-inset: WidgetMetrics.scroll-inset;
+    out property <length> overlay-scrollbar-width: WidgetMetrics.overlay-scrollbar-width;
     out property <length> gutter: 24px;
     out property <length> inset: 16px;
     out property <length> gap: 8px;
@@ -30,7 +31,9 @@ export component PrimaryButton inherits ActionButton { primary: true; }
 // separate from committing buttons, with the same keyboard and AX activation.
 export component TextButton inherits Rectangle {
     in property <string> text;
-    in property <bool> icon-only;
+    in property <bool> show-caption: true;
+    in property <TextHorizontalAlignment> text-alignment: left;
+    in property <length> leading-inset;
     in property <length> trailing-inset;
     in property <length> horizontal-inset: 8px;
     in property <bool> enabled: true;
@@ -39,8 +42,8 @@ export component TextButton inherits Rectangle {
     in property <bool> danger;
     out property <bool> has-focus: keys.has-focus;
     callback clicked();
-    min-width: caption.preferred-width + root.horizontal-inset * 2 + root.trailing-inset;
-    min-height: max(32px, caption.preferred-height + 10px);
+    min-width: (root.show-caption ? caption.preferred-width : 0px) + root.horizontal-inset * 2 + root.leading-inset + root.trailing-inset;
+    min-height: max(32px, root.show-caption ? caption.preferred-height + 10px : 32px);
     preferred-width: self.min-width;
     preferred-height: self.min-height;
     max-height: self.min-height;
@@ -66,10 +69,12 @@ export component TextButton inherits Rectangle {
         }
     }
     caption := Text {
-        visible: !root.icon-only;
+        visible: root.show-caption;
         text: root.text; overflow: elide; color: root.danger ? UiMetrics.attention : Theme.text;
         opacity: root.enabled ? 1 : 0.5;
-        x: 8px; width: max(0px, parent.width - 16px); height: parent.height;
+        x: root.horizontal-inset + root.leading-inset;
+        width: max(0px, parent.width - root.horizontal-inset * 2 - root.leading-inset - root.trailing-inset); height: parent.height;
+        horizontal-alignment: root.text-alignment;
         vertical-alignment: center;
         accessible-role: none;
     }
@@ -112,7 +117,7 @@ export component FileName inherits Rectangle {
 export component PathLabel inherits VerticalBox {
     in property <PathView> path;
     in property <length> text-size: 14px;
-    padding: 0px; spacing: 0px;
+    padding: 0px; spacing: 0px; horizontal-stretch: 1; min-width: 0px;
     FileName { path: root.path; text-size: root.text-size; }
     Label { text: root.path.directory; font-size: max(12px, root.text-size * 0.9); opacity: 0.72; overflow: elide; min-width: 0px; Tooltip { text: @markdown("\{root.path.full}"); } }
 }
@@ -133,8 +138,8 @@ export component Icon inherits Path {
 }
 export component IconButton inherits TextButton {
     in property <IconKind> icon;
-    icon-only: true;
-    min-width: 32px; preferred-width: 32px;
+    show-caption: false;
+    min-width: 32px; preferred-width: 32px; max-width: 32px;
     // Label remains available to accessibility; the vector supplies the visual.
     Icon { kind: root.icon; x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; }
 }
@@ -146,12 +151,17 @@ export component Chip inherits TextButton {
     border-width: root.has-focus ? 2px : 1px;
     border-color: root.selected || root.has-focus ? Theme.accent : Theme.border;
 }
-export component PopupButton inherits TextButton {
+export component DestinationButton inherits TextButton {
+    in property <PathView> path;
+    in property <length> text-size: 13px;
+    show-caption: false;
+    text: root.path.full;
     min-width: 120px; preferred-width: 220px; horizontal-stretch: 1;
     trailing-inset: 22px;
     background: Theme.raised; border-width: 1px; border-radius: 6px;
     border-color: root.has-focus ? Theme.accent : Theme.border;
     Icon { kind: IconKind.chevron; x: parent.width - 22px; y: (parent.height - self.height) / 2; }
+    FileName { path: root.path; x: root.horizontal-inset; width: max(0px,parent.width - root.horizontal-inset * 2 - root.trailing-inset); height: parent.height; text-size: root.text-size; }
     accessible-expandable: true;
 }
 export component ToneDot inherits Rectangle {
@@ -170,12 +180,12 @@ export component Segmented inherits Rectangle {
     border-radius: 8px; background: Theme.raised; border-width: 1px; border-color: Theme.border;
     accessible-role: tab-list; accessible-label: "Action";
     segments := HorizontalBox { width: parent.width; height: parent.height; padding: 2px; spacing: 2px;
-        TextButton { text: "Create copies"; enabled: root.enabled; min-width: 0px; horizontal-stretch: 1;
+        TextButton { text-alignment: center; text: "Create copies"; enabled: root.enabled; min-width: 0px; horizontal-stretch: 1;
             background: !root.check-only ? Theme.surface : transparent; border-radius: 6px;
             accessible-role: tab; accessible-item-selected: !root.check-only; accessible-checkable: true; accessible-checked: !root.check-only;
             clicked => { root.changed(false); }
         }
-        TextButton { text: "Check only"; enabled: root.enabled; min-width: 0px; horizontal-stretch: 1;
+        TextButton { text-alignment: center; text: "Check only"; enabled: root.enabled; min-width: 0px; horizontal-stretch: 1;
             background: root.check-only ? Theme.surface : transparent; border-radius: 6px;
             accessible-role: tab; accessible-item-selected: root.check-only; accessible-checkable: true; accessible-checked: root.check-only;
             clicked => { root.changed(true); }

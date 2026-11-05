@@ -379,6 +379,8 @@ fn mixed_create_stream(sources: &[PathBuf]) -> String {
 mod acceptance;
 #[path = "desktop/captures.rs"]
 mod captures;
+#[path = "desktop/geometry.rs"]
+mod geometry;
 #[path = "desktop/navigation.rs"]
 mod navigation;
 #[path = "desktop/safety.rs"]
