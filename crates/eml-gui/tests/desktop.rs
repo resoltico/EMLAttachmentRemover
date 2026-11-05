@@ -284,7 +284,7 @@ fn automatic_session_reports_drain_queue_and_reload_exact_old_results() {
     assert!(!c.window().get_can_reveal_report());
     c.window().invoke_select_run(0);
     pump(&c, || !c.window().get_report_loading());
-    assert!(c.window().get_can_reveal_report());
+    assert!(!c.window().get_can_reveal_report());
     c.window().invoke_dismiss();
     assert_eq!(c.window().get_runs().row_count(), 8);
 }
@@ -699,7 +699,7 @@ fn s9_s10_check_conversion_confirms_replacement_and_sends_a_fresh_create_request
 }
 
 #[test]
-fn export_preserves_existing_bytes_and_busy_export_keeps_quit_confirmation() {
+fn s16_approved_report_replacement_and_busy_export_keeps_quit_confirmation() {
     init_no_event_loop();
     let root = tempfile::tempdir().unwrap();
     let controller = controller(root.path(), completed(root.path(), "created"));
@@ -709,21 +709,19 @@ fn export_preserves_existing_bytes_and_busy_export_keeps_quit_confirmation() {
     pump(&controller, || !controller.is_busy());
     let existing = root.path().join("existing.jsonl");
     fs::write(&existing, b"winner").unwrap();
-    let modified = fs::metadata(&existing).unwrap().modified().unwrap();
     controller.start_export(existing.clone());
     assert!(controller.is_busy());
     assert!(!controller.request_quit());
     click(&controller.window(), "Cancel quit");
     pump(&controller, || !controller.is_busy());
-    assert_eq!(fs::read(&existing).unwrap(), b"winner");
-    assert_eq!(
-        fs::metadata(&existing).unwrap().modified().unwrap(),
-        modified
+    assert_eq!(fs::read(&existing).unwrap(), fixture("created").as_bytes());
+    assert!(
+        controller
+            .window()
+            .get_operation_feedback()
+            .contains("Report saved")
     );
-    assert!(has_label(
-        &controller.window(),
-        &format!("Export for Run 1: {}", vocabulary::NO_REPLACEMENT)
-    ));
+    assert!(controller.window().get_can_reveal_report());
     let saved = root.path().join("saved.jsonl");
     controller.start_export(saved.clone());
     pump(&controller, || !controller.is_busy());
@@ -883,10 +881,7 @@ fn report_warnings_survive_switching_and_export_feedback() {
     );
     c.start_export(root.path().join("first.jsonl"));
     pump(&c, || !c.is_busy());
-    assert_eq!(
-        ui.get_operation_feedback().as_str(),
-        vocabulary::NO_REPLACEMENT
-    );
+    assert!(ui.get_operation_feedback().contains("Report saved"));
     script(
         root.path(),
         &("cat >/dev/null\n".to_owned() + &print(&fixture("collection-limit")) + "exit 1\n"),
@@ -1407,23 +1402,6 @@ fn about_contents_and_actions_fit_font_and_display_scales() {
             assert_eq!(action_geometry.len(), 2);
             assert!((action_geometry[0].0 - action_geometry[1].0).abs() < 0.1);
             assert!((action_geometry[0].1 - action_geometry[1].1).abs() < 0.1);
-            // One ordinary-button policy across forms and About; reject the old
-            // About-only2.5rem height formula without reproducing widget internals.
-            let export = c.export_window();
-            export.set_ui_size(font);
-            export
-                .window()
-                .set_size(slint::LogicalSize::new(width.max(560.0), height));
-            export.show().unwrap();
-            mock_elapsed_time(Duration::from_millis(5));
-            let export_action = ElementHandle::find_by_accessible_label(&export, "Save report")
-                .find(|e| e.accessible_role() == Some(AccessibleRole::Button))
-                .unwrap();
-            assert!(
-                (export_action.size().height - action_geometry[0].1).abs() < 0.1,
-                "About and export buttons diverge at font{font}/scale{scale}"
-            );
-            export.hide().unwrap();
             about.invoke_licenses();
             assert_eq!(c.license_window().get_ui_size(), font);
             c.license_window().invoke_dismiss();
@@ -1530,10 +1508,7 @@ fn save_dialog_captures_the_report_and_navigation_is_not_stolen_by_waiting_work(
     c.start_captured_export(saved, output.clone());
     pump(&c, || !c.is_busy());
     assert_eq!(fs::read(output).unwrap(), fixture("created").as_bytes());
-    assert_eq!(
-        c.window().get_operation_label().as_str(),
-        "Export for Run 1"
-    );
+    assert!(c.window().get_operation_feedback().contains("Run 1"));
     // Queue a request behind two retained reports, then explicitly dismiss Run 1.
     // The remaining Run 2 must keep the view when waiting work starts.
     c.submit(vec![root.path().join("third.eml")]).unwrap();
@@ -1575,10 +1550,7 @@ fn committed_quit_rejects_late_dialog_exports_and_new_selections() {
     c.start_captured_export(captured, output.clone());
     assert!(!c.is_busy());
     assert!(!output.exists());
-    assert_eq!(
-        c.window().get_operation_feedback().as_str(),
-        eml_app::QueueError::ShuttingDown.to_string()
-    );
+    assert_eq!(c.window().get_operation_feedback(), "");
 }
 
 #[test]
@@ -2327,48 +2299,41 @@ fn queue_drawer_keeps_removal_and_settings_recovery_visible() {
 }
 
 #[test]
-fn export_naming_retries_exclusively_keeps_capture_and_rejects_stale_folder_choices() {
+fn native_save_capture_replacement_cancellation_and_late_callbacks() {
     init_no_event_loop();
     let root = tempfile::tempdir().unwrap();
     let c = controller(root.path(), completed(root.path(), "created"));
     c.submit(vec![root.path().join("one.eml")]).unwrap();
     pump(&c, || !c.is_busy());
-    c.begin_export();
-    let window = c.export_window();
-    window.set_file_name("../escape.jsonl".into());
-    window.invoke_create_report();
-    assert!(!c.is_busy());
-    assert!(window.get_notice().contains("one file name"));
-    let stale = c.capture_export_folder().unwrap();
-    c.cancel_export();
-    c.begin_export();
-    let original_folder = window.get_directory();
-    c.set_export_directory(&stale, root.path().join("wrong"));
-    assert_eq!(window.get_directory(), original_folder);
+    let stale = c.capture_export().unwrap();
+    assert!(!c.window().get_can_dismiss());
+    assert!(!c.window().get_can_export());
+    assert!(stale.suggested_name().starts_with("EML Run 1 "));
+    assert!(stale.suggested_name().ends_with(".jsonl"));
+    c.cancel_export(&stale);
+    let source = c.capture_export().unwrap();
+    c.cancel_export(&stale);
+    assert!(
+        !c.window().get_can_export(),
+        "stale cancellation must not clear a new panel"
+    );
     let existing = root.path().join("existing.jsonl");
-    fs::write(&existing, b"preserved report").unwrap();
-    window.set_file_name("existing.jsonl".into());
-    window.invoke_create_report();
-    pump(&c, || !c.is_busy());
-    assert!(!window.get_busy());
-    assert!(window.get_notice().contains("never replaced"));
-    assert_eq!(fs::read(&existing).unwrap(), b"preserved report");
+    fs::write(&existing, b"approved replacement").unwrap();
     completed(root.path(), "created-attachment");
     c.submit(vec![root.path().join("two.eml")]).unwrap();
     pump(&c, || !c.is_busy());
-    window.set_file_name("captured.jsonl".into());
-    window.invoke_create_report();
+    c.start_captured_export(source, existing.clone());
     pump(&c, || !c.is_busy());
-    assert_eq!(
-        fs::read_to_string(root.path().join("captured.jsonl")).unwrap(),
-        fixture("created")
-    );
-    c.begin_export();
-    let late = c.capture_export_folder().unwrap();
+    assert_eq!(fs::read(&existing).unwrap(), fixture("created").as_bytes());
+    assert_eq!(c.saved_report_path(), Some(existing));
+    assert!(c.window().get_operation_feedback().contains("Run 1"));
+    assert_eq!(c.window().get_operation_tone(), eml_gui::Tone::Ok);
+    mock_elapsed_time(Duration::from_secs(5));
+    c.tick();
+    assert!(c.saved_report_path().is_none());
+    let source = c.capture_export().unwrap();
     assert!(c.request_quit());
-    c.set_export_directory(&late, root.path().join("late"));
-    window.set_file_name("late.jsonl".into());
-    window.invoke_create_report();
+    c.start_captured_export(source, root.path().join("late.jsonl"));
     assert!(!root.path().join("late.jsonl").exists());
     assert!(!c.is_busy());
 }
@@ -3100,4 +3065,106 @@ fn mixed_create_stream(sources: &[PathBuf]) -> String {
     summary["counts"]["failed"] = 3.into();
     summary["exit_code"] = 1.into();
     stream + &format!("{summary}\n")
+}
+
+#[test]
+fn menus_share_action_predicates_in_four_representative_states() {
+    // The backend presents non-native menus. Verify their actual Slint bindings,
+    // then exercise independent state expectations on the production controller.
+    // A drifted menu binding fails even if its callback has a boundary guard.
+    let source = include_str!("../ui/main.slint");
+    let menus = source
+        .split_once("    MenuBar {")
+        .unwrap()
+        .1
+        .split_once("    HorizontalBox { padding:")
+        .unwrap()
+        .0;
+    let bindings = [
+        ("New Request", "can-edit"),
+        ("Add Files…", "can-edit"),
+        ("Add Folder…", "can-edit"),
+        ("Copy", "can-copy-menu"),
+        ("Select All", "can-select-all"),
+        ("root.start-menu-label", "can-start"),
+        ("Stop", "can-stop"),
+        ("Force Stop…", "can-force"),
+        ("root.review-label", "can-review"),
+        ("root.reveal-output-label", "can-reveal-output"),
+        ("Save Report…", "can-export"),
+        ("Close Result", "can-dismiss"),
+        ("All Messages", "can-filter"),
+        ("Need Attention", "can-filter"),
+        ("root.technical-details-label", "has-item && root.can-edit"),
+    ];
+    for (title, predicate) in bindings {
+        let entry = menus
+            .lines()
+            .find(|line| {
+                line.contains("MenuItem {")
+                    && (line.contains(&format!("title: \"{title}\""))
+                        || line.contains(&format!("title: {title};")))
+            })
+            .unwrap_or_else(|| panic!("missing menu {title}"));
+        assert!(
+            entry.contains(&format!("enabled: root.{predicate};")),
+            "menu {title} diverges from its action predicate"
+        );
+    }
+    for line in menus
+        .lines()
+        .filter(|line| line.contains("MenuItem {") && !line.contains("enabled:"))
+    {
+        assert!(
+            [
+                "Close Window",
+                "Minimize",
+                "Project Website",
+                "Licenses",
+                "About"
+            ]
+            .iter()
+            .any(|title| line.contains(title)),
+            "unqualified menu item: {line}"
+        );
+    }
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let c = controller(root.path(), controlled(root.path(), false));
+    let ui = c.window();
+    let assert_state = |start, stop, review, save, filter| {
+        assert_eq!(
+            (
+                ui.get_can_start(),
+                ui.get_can_stop(),
+                ui.get_can_review(),
+                ui.get_can_export(),
+                ui.get_can_filter()
+            ),
+            (start, stop, review, save, filter)
+        );
+        if ui.get_reviewing() && ui.get_selection().row_count() > 0 {
+            let button =
+                ElementHandle::find_by_accessible_label(&ui, ui.get_start_label().as_str())
+                    .find(|e| e.accessible_role() == Some(AccessibleRole::Button))
+                    .unwrap();
+            assert_eq!(button.accessible_enabled(), Some(start));
+        }
+    };
+    assert_state(false, false, false, false, false);
+    c.stage(vec![root.path().join("message.eml")]).unwrap();
+    assert_state(true, false, false, false, false);
+    c.start_selection().unwrap();
+    wait_started(&c);
+    assert_state(false, true, false, false, true);
+    c.stop();
+    pump(&c, || !c.is_busy());
+    assert_state(false, false, true, true, true);
+    assert_eq!(
+        ElementHandle::find_by_accessible_label(&ui, "Continue…")
+            .find(|e| e.accessible_role() == Some(AccessibleRole::Button))
+            .unwrap()
+            .accessible_enabled(),
+        Some(true)
+    );
 }

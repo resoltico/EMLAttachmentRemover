@@ -56,8 +56,7 @@ impl DesktopController {
                 .collect(),
         ));
         if s.is_closing() {
-            self.export_draft.borrow_mut().take();
-            let _ = self.export_ui.hide();
+            self.pending_save.borrow_mut().take();
         }
         self.ui.set_check_only(s.state.mode == RunMode::DryRun);
         self.ui.set_selection(update_model(
@@ -108,20 +107,26 @@ impl DesktopController {
                 .filter(|entry| entry.presentation.unseen)
                 .count() as i32,
         );
-        self.ui.set_can_stop(
-            !s.is_closing()
-                && s.state.confirmation.is_none()
-                && s.active
-                    .as_ref()
-                    .is_some_and(|active| active.stop == state::Stop::Running),
+        self.ui.set_can_stop(self.can_stop());
+        self.ui.set_can_force(self.can_force());
+        self.ui.set_can_filter(self.can_filter());
+        self.ui.set_can_sort(self.can_sort());
+        self.ui.set_can_show_copy(self.can_show_copy());
+        self.ui.set_can_reveal_original(self.can_show_original());
+        self.ui.set_can_copy_source(self.can_copy_path(false));
+        self.ui.set_can_copy_destination(self.can_copy_path(true));
+        self.ui.set_start_menu_label(
+            if s.active.is_some() {
+                "Add to Queue"
+            } else if s.state.mode == RunMode::DryRun {
+                "Start Check"
+            } else {
+                "Create Copies"
+            }
+            .into(),
         );
-        self.ui.set_can_force(
-            !s.is_closing()
-                && s.state.confirmation.is_none()
-                && s.active
-                    .as_ref()
-                    .is_some_and(|active| active.stop.can_force(now_ms())),
-        );
+        self.update_text_actions();
+        self.present_feedback();
         self.ui.set_has_reports(!s.entries.is_empty());
         self.ui.set_worker_running(s.active.is_some());
         self.ui.set_start_label(if s.memory_full() {
@@ -137,8 +142,7 @@ impl DesktopController {
         } else {
             "Create Copies".into()
         });
-        self.ui
-            .set_can_start(!s.state.selection.is_empty() && s.admission_error().is_none());
+        self.ui.set_can_start(self.can_start());
         self.ui.set_start_reason(
             s.admission_error()
                 .map_or_else(
@@ -263,14 +267,6 @@ impl DesktopController {
             } else {
                 "Loading report…".into()
             });
-        self.ui.set_can_reveal_report(entry.saved_report.is_some());
-        self.ui.set_saved_report_path(
-            entry
-                .saved_report
-                .as_ref()
-                .map(|path| view_model::path(&eml_protocol::TerminalPath::new(path).to_string()))
-                .unwrap_or_default(),
-        );
         self.ui.set_run_label(format!("Run {}", entry.id).into());
         let run_status = status(entry, s.active.as_ref());
         self.ui.set_run_status(wording::phase(run_status).into());
@@ -316,18 +312,11 @@ impl DesktopController {
                 | RunStatus::RequestRefused
                 | RunStatus::Incomplete
         ));
-        self.ui.set_can_export(
-            entry
-                .completion
-                .as_ref()
-                .is_some_and(|completion| !completion.jsonl.is_empty())
-                && s.export.is_none()
-                && self.export_draft.borrow().is_none(),
-        );
+        self.ui.set_can_export(self.can_save_report());
         self.ui.set_can_dismiss(self.can_close_run(&s, entry));
-        self.ui.set_can_create(can_create(entry));
-        self.ui
-            .set_can_review(completion_state(entry).is_some() || entry.launch_error.is_some());
+        self.ui.set_is_check_result(can_create(entry));
+        self.ui.set_can_create(self.can_convert_check());
+        self.ui.set_can_review(self.can_review());
         self.ui.set_review_label(
             if matches!(
                 run_status,
@@ -340,8 +329,7 @@ impl DesktopController {
             .into(),
         );
         let roots = super::navigation::verified_roots(entry);
-        self.ui
-            .set_can_reveal_output(!roots.is_empty() && !main_open_pending && !s.is_closing());
+        self.ui.set_can_reveal_output(self.can_show_output());
         self.ui.set_output_roots(update_model(
             self.ui.get_output_roots(),
             roots
@@ -486,11 +474,6 @@ impl DesktopController {
                     .and_then(|index| report.reveal_path(index))
                     .is_some(),
             );
-            self.ui.set_can_reveal_original(
-                selected
-                    .and_then(|index| report.source_path(index))
-                    .is_some(),
-            );
             let revision = PresentationRevision {
                 run: entry.id,
                 item: selected,
@@ -531,18 +514,6 @@ impl DesktopController {
             };
             let view = view_model::item(item);
             self.ui.set_has_item(true);
-            self.ui.set_can_copy_source(
-                report
-                    .source_path(index)
-                    .and_then(|path| path.into_os_string().into_string().ok())
-                    .is_some(),
-            );
-            self.ui.set_can_copy_destination(
-                report
-                    .destination_path(index)
-                    .and_then(|path| path.into_os_string().into_string().ok())
-                    .is_some(),
-            );
             self.ui.set_item_source(view.source);
             let mut source_view = view.path;
             if let Some(parent) = report.source_path(index).as_deref().and_then(Path::parent) {
@@ -581,6 +552,50 @@ impl DesktopController {
             ));
         });
     }
+    pub(super) fn present_feedback(&self) {
+        let feedback = self.feedback.borrow();
+        let (label, text, details, tone) = match &*feedback {
+            state::Feedback::None => (
+                String::new(),
+                String::new(),
+                String::new(),
+                state::FeedbackTone::Info,
+            ),
+            state::Feedback::Message {
+                label,
+                text,
+                details,
+                tone,
+            } => (label.clone(), text.clone(), details.clone(), *tone),
+            state::Feedback::SavedReport { run, path, .. } => (
+                String::new(),
+                format!(
+                    "Report saved for Run {run}: {}",
+                    eml_protocol::TerminalPath::new(
+                        path.file_name().map(Path::new).unwrap_or(path)
+                    )
+                ),
+                String::new(),
+                state::FeedbackTone::Success,
+            ),
+        };
+        self.ui.set_operation_label(label.into());
+        self.ui
+            .set_operation_feedback(eml_protocol::DisplayText::new(&text).to_string().into());
+        self.ui
+            .set_operation_details(eml_protocol::DisplayText::new(&details).to_string().into());
+        self.ui.set_operation_tone(match tone {
+            state::FeedbackTone::Info => Tone::Neutral,
+            state::FeedbackTone::Success => Tone::Ok,
+            state::FeedbackTone::Attention => Tone::Attention,
+        });
+        self.ui.set_can_reveal_report(self.can_show_report());
+        self.ui.set_saved_report_path(
+            self.saved_report_path()
+                .map(|path| view_model::path(&eml_protocol::TerminalPath::new(&path).to_string()))
+                .unwrap_or_default(),
+        );
+    }
     fn clear_selection(&self) {
         self.ui.set_has_item(false);
         self.ui.set_can_copy_source(false);
@@ -613,8 +628,6 @@ impl DesktopController {
         *self.last_view.borrow_mut() = None;
     }
     fn clear_report(&self) {
-        self.ui.set_can_reveal_report(false);
-        self.ui.set_saved_report_path(PathView::default());
         self.ui.set_report_loading(false);
         self.ui.set_report_details("".into());
         self.ui.set_run_notice("".into());

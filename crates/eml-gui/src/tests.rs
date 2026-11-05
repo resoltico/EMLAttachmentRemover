@@ -283,7 +283,6 @@ fn storage_failure_preserves_bytes_and_three_memory_reports_block_admission_unti
             storage_error: Some(storage_error),
             load_error: None,
             stored: None,
-            saved_report: None,
         });
     }
     c.stage(vec![root.path().join("next.eml")]).unwrap();
@@ -326,7 +325,6 @@ fn storage_failure_preserves_bytes_and_three_memory_reports_block_admission_unti
             storage_error: None,
             load_error: None,
             stored: seed,
-            saved_report: None,
         });
         id.to_string()
     };

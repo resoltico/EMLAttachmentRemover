@@ -33,7 +33,6 @@ impl DesktopController {
             storage_error: None,
             load_error: None,
             stored: None,
-            saved_report: None,
         };
         match WorkerRun::start(&self.cli, &entry.request, &self.home) {
             Ok(worker) => {
@@ -55,8 +54,9 @@ impl DesktopController {
         if s.state.view == state::View::Waiting(id) {
             s.state.view = state::View::Run(id);
         }
-        self.clear_operation();
         platform::set_busy(s.needs_quit_confirmation());
+        drop(s);
+        self.clear_operation();
     }
     pub(super) fn maintain_reports(&self) {
         let mut s = self.session.borrow_mut();

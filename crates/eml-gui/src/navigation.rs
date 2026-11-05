@@ -36,6 +36,9 @@ impl DesktopController {
         self.refresh();
     }
     pub(super) fn select_item(&self, index: usize) {
+        if !self.can_filter() {
+            return;
+        }
         let mut s = self.session.borrow_mut();
         let Some(entry) = s.selected_entry_mut() else {
             return;
@@ -55,6 +58,9 @@ impl DesktopController {
         self.refresh();
     }
     pub(super) fn filter_results(&self, index: i32) {
+        if !self.can_filter() {
+            return;
+        }
         let Some(filter) = state::Filter::from_index(index) else {
             return;
         };
@@ -83,6 +89,9 @@ impl DesktopController {
         self.refresh();
     }
     pub(super) fn sort_results(&self, column: i32) {
+        if !self.can_sort() {
+            return;
+        }
         let column = match column {
             0 => state::Column::Message,
             1 => state::Column::Folder,
@@ -99,6 +108,9 @@ impl DesktopController {
         self.refresh();
     }
     pub(super) fn navigate_message(&self, direction: i32, page: usize) {
+        if !self.can_filter() {
+            return;
+        }
         let rows = self.ui.get_items();
         if rows.row_count() == 0 {
             return;
@@ -126,6 +138,9 @@ impl DesktopController {
         }
     }
     pub(super) fn type_select(&self, prefix: &str) {
+        if !self.can_filter() {
+            return;
+        }
         let prefix = prefix.to_lowercase();
         if let Some(row) = self.ui.get_items().iter().find(|row| {
             format!("{}{}", row.path.prefix, row.path.suffix)
@@ -202,10 +217,10 @@ impl DesktopController {
             && (completion_state(entry).is_some() || entry.launch_error.is_some())
             && !s.export.as_ref().is_some_and(|job| job.run == entry.id)
             && !self
-                .export_draft
+                .pending_save
                 .borrow()
                 .as_ref()
-                .is_some_and(|draft| draft.source.run == entry.id)
+                .is_some_and(|draft| draft.run == entry.id)
     }
     pub(super) fn select_session(&self, token: &str) {
         let target = {

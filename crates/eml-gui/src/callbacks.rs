@@ -16,28 +16,6 @@ impl DesktopController {
             }
         });
         let weak = Rc::downgrade(self);
-        self.export_ui.on_create_report(move || {
-            if let Some(c) = weak.upgrade() {
-                c.create_export();
-            }
-        });
-        let weak = Rc::downgrade(self);
-        self.export_ui.on_cancel(move || {
-            if let Some(c) = weak.upgrade() {
-                c.cancel_export();
-            }
-        });
-        let weak = Rc::downgrade(self);
-        self.export_ui.window().on_close_requested(move || {
-            if let Some(c) = weak.upgrade() {
-                if c.export_ui.get_busy() {
-                    return slint::CloseRequestResponse::KeepWindowShown;
-                }
-                c.cancel_export();
-            }
-            slint::CloseRequestResponse::HideWindow
-        });
-        let weak = Rc::downgrade(self);
         self.ui.on_start_selection(move || {
             if let Some(c) = weak.upgrade()
                 && let Err(error) = c.start_selection()
@@ -182,7 +160,9 @@ impl DesktopController {
         });
         let weak = Rc::downgrade(self);
         self.ui.on_stop(move || {
-            if let Some(c) = weak.upgrade() {
+            if let Some(c) = weak.upgrade()
+                && c.can_stop()
+            {
                 c.stop();
             }
         });
@@ -283,6 +263,36 @@ impl DesktopController {
             }
         });
         let weak = Rc::downgrade(self);
+        self.ui.on_close_window(move || {
+            if let Some(c) = weak.upgrade() {
+                c.request_quit();
+            }
+        });
+        let weak = Rc::downgrade(self);
+        self.ui.on_copy_context(move || {
+            if let Some(c) = weak.upgrade() {
+                c.copy_context();
+            }
+        });
+        let weak = Rc::downgrade(self);
+        self.ui.on_select_all_text(move || {
+            if let Some(c) = weak.upgrade() {
+                c.select_all_text();
+            }
+        });
+        let weak = Rc::downgrade(self);
+        self.ui.on_minimize(move || {
+            if let Some(c) = weak.upgrade() {
+                c.ui.window().set_minimized(true);
+            }
+        });
+        let weak = Rc::downgrade(self);
+        self.ui.on_licenses(move || {
+            if let Some(c) = weak.upgrade() {
+                c.about.invoke_licenses();
+            }
+        });
+        let weak = Rc::downgrade(self);
         self.ui.on_about(move || {
             if let Some(c) = weak.upgrade() {
                 c.about.set_ui_size(c.ui.get_ui_size());
@@ -317,11 +327,7 @@ impl DesktopController {
         let weak = Rc::downgrade(self);
         self.ui.on_cancel_confirmation(move || {
             if let Some(c) = weak.upgrade() {
-                let restore_export = c.confirmation() == Confirmation::Quit;
                 c.set_confirmation(None);
-                if restore_export && c.export_draft.borrow().is_some() {
-                    let _ = c.export_ui.show();
-                }
             }
         });
         let weak = Rc::downgrade(self);

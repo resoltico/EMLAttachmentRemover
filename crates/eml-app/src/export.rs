@@ -1,14 +1,13 @@
-//! Export the received protocol stream without replacing any existing file.
+//! Atomically save the exact received stream to a user-approved report path.
 use std::{
     io::{self, Write},
     path::Path,
 };
 /// Save the exact received JSONL, including an incomplete stream when a run failed.
-/// Existing files are never replaced, even after a Save dialog offers Replace.
+/// The caller owns approval of the target, including replacement.
 /// The final name exposes only complete, file-synchronized bytes. This does not
 /// promise that the directory entry survives power loss. A crash can leave an
-/// owned private staging file beside the requested destination. On platforms
-/// requiring hard-link publication, failed unlink can also leave a staging link.
+/// owned private staging file beside the requested destination.
 pub fn export_report(path: &Path, jsonl: &[u8]) -> io::Result<()> {
     let directory = path
         .parent()
@@ -26,7 +25,7 @@ pub fn export_report(path: &Path, jsonl: &[u8]) -> io::Result<()> {
         return Err(discard(stage, error));
     }
     stage
-        .persist_noclobber(path)
+        .persist(path)
         .map(|_| ())
         .map_err(|failure| discard(failure.file, failure.error))
 }

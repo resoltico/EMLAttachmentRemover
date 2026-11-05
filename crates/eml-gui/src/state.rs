@@ -361,3 +361,27 @@ impl RunPresentation {
         }
     }
 }
+
+/// Transient feedback, separate from immutable processing observations.
+#[derive(Default)]
+pub(super) enum Feedback {
+    #[default]
+    None,
+    Message {
+        label: String,
+        text: String,
+        details: String,
+        tone: FeedbackTone,
+    },
+    SavedReport {
+        run: eml_app::RunId,
+        path: std::path::PathBuf,
+        at: u64,
+    },
+}
+#[derive(Clone, Copy)]
+pub(super) enum FeedbackTone {
+    Info,
+    Success,
+    Attention,
+}

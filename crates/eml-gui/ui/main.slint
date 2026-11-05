@@ -12,7 +12,6 @@ export { Confirmation, CountView, PathView, SelectionView, RunView, ItemView, De
 export { Palette } from "std-widgets.slint";
 export { Theme } from "theme.slint";
 export { AboutWindow, LicenseWindow } from "about.slint";
-export { ExportWindow } from "export.slint";
 export component MainWindow inherits Window {
     in property <string> product-name;
     title: root.product-name;
@@ -149,13 +148,48 @@ export component MainWindow inherits Window {
     callback select-session(string); callback close-session(string);
     in property <int> unseen-count;
     in property <string> waiting-token;
+    in property <bool> can-filter;
+    in property <bool> can-sort;
+    in property <bool> can-show-copy;
+    in property <bool> can-select-all;
+    in property <bool> can-copy-menu;
+    in property <bool> is-check-result;
+    in property <string> start-menu-label;
+    in property <Tone> operation-tone;
+    callback close-window(); callback minimize(); callback copy-context(); callback select-all-text();
+    callback website(); callback licenses(); callback show-output();
+    show-output => { if root.can-reveal-output { if root.output-roots.length == 1 && root.extra-output-roots == 0 { root.reveal-output(0); } else { outputs.show(); } } }
     MenuBar {
         Menu { title: "File";
             MenuItem { title: "New Request"; shortcut: @keys(Control + N); enabled: root.can-edit; activated => { root.new-request(); } }
             MenuItem { title: "Add Files…"; shortcut: @keys(Control + O); enabled: root.can-edit; activated => { root.choose-files(); } }
             MenuItem { title: "Add Folder…"; shortcut: @keys(Control + Shift + O); enabled: root.can-edit; activated => { root.choose-folder(); } }
+            MenuItem { title: "Close Window"; shortcut: @keys(Control + W); activated => { root.close-window(); } }
         }
-        if !root.native-about: Menu { title: "Help"; MenuItem { title: "About"; activated => { root.about(); } } }
+            Menu { title: "Edit";
+                MenuItem { title: "Copy"; shortcut: @keys(Control + C); enabled: root.can-copy-menu; activated => { root.copy-context(); } }
+                MenuItem { title: "Select All"; shortcut: @keys(Control + A); enabled: root.can-select-all; activated => { root.select-all-text(); } }
+            }
+            Menu { title: "Run";
+                MenuItem { title: root.start-menu-label; shortcut: @keys(Control + Return); enabled: root.can-start; activated => { root.start-selection(); } }
+                MenuItem { title: "Stop"; shortcut: @keys(Control + "."); enabled: root.can-stop; activated => { root.stop(); } }
+                if root.can-force: MenuItem { title: "Force Stop…"; enabled: root.can-force; activated => { root.force-stop(); } }
+                MenuItem { title: root.review-label; shortcut: @keys(Control + R); enabled: root.can-review; activated => { root.review-request(); } }
+                MenuItem { title: root.reveal-output-label; shortcut: @keys(Control + Shift + R); enabled: root.can-reveal-output; activated => { root.show-output(); } }
+                MenuItem { title: "Save Report…"; shortcut: @keys(Control + S); enabled: root.can-export; activated => { root.export-report(); } }
+                MenuItem { title: "Close Result"; shortcut: @keys(Control + Backspace); enabled: root.can-dismiss; activated => { root.dismiss(); } }
+            }
+            Menu { title: "View";
+                MenuItem { title: "All Messages"; shortcut: @keys(Control + "1"); enabled: root.can-filter; activated => { root.filter-results(0); } }
+                MenuItem { title: "Need Attention"; shortcut: @keys(Control + "2"); enabled: root.can-filter; activated => { root.filter-results(4); } }
+                MenuItem { title: root.technical-details-label; shortcut: @keys(Control + Alt + I); enabled: root.has-item && root.can-edit; activated => { root.details-expanded = !root.details-expanded; } }
+            }
+            Menu { title: "Window"; MenuItem { title: "Minimize"; shortcut: @keys(Control + M); activated => { root.minimize(); } } }
+            Menu { title: "Help";
+                MenuItem { title: "Project Website"; activated => { root.website(); } }
+                MenuItem { title: "Licenses"; activated => { root.licenses(); } }
+                if !root.native-about: MenuItem { title: "About"; activated => { root.about(); } }
+            }
     }
     HorizontalBox { padding: 0px; spacing: 0px;
         sidebar := Sidebar {
@@ -184,7 +218,8 @@ export component MainWindow inherits Window {
             }
             if (root.reviewing || root.waiting-view) && root.operation-feedback != "": VerticalBox {
                 padding: 0px; spacing: 4px; vertical-stretch: 0;
-                Label { text: (root.operation-label != "" && root.operation-label != "Operation status" ? root.operation-label + ": " : "") + root.operation-feedback; wrap: word-wrap; color: Theme.warn; accessible-live-region: polite; }
+                Label { text: (root.operation-label != "" && root.operation-label != "Operation status" ? root.operation-label + ": " : "") + root.operation-feedback; wrap: word-wrap; color: root.operation-tone == Tone.attention ? Theme.warn : root.operation-tone == Tone.ok ? Theme.ok : Theme.text; accessible-live-region: polite; }
+                if root.can-reveal-report: TextButton { text: "Show"; clicked => { root.reveal-report(); } }
                 if root.operation-details != "": TextButton { text: root.operation-details-expanded ? "Hide details" : "Details…"; clicked => { root.operation-details-expanded = !root.operation-details-expanded; } }
                 if root.operation-details-expanded && root.operation-details != "": TextEdit { text: root.operation-details; read-only: true; preferred-height: 72px; max-height: 72px; accessible-label: "Operation technical details"; }
             }
@@ -230,6 +265,12 @@ if root.waiting-view: VerticalBox { padding: 0px; spacing: 16px;
         can-dismiss : root.can-dismiss;
         can-review : root.can-review;
         can-create : root.can-create;
+        is-check-result: root.is-check-result;
+        can-filter: root.can-filter;
+        can-sort: root.can-sort;
+        can-show-copy: root.can-show-copy;
+        can-reveal-report: root.can-reveal-report;
+        operation-tone: root.operation-tone;
         can-reveal-output : root.can-reveal-output;
         reveal-output-label : root.reveal-output-label;
         output-roots : root.output-roots;
@@ -275,7 +316,8 @@ if root.waiting-view: VerticalBox { padding: 0px; spacing: 16px;
         create-from-check() => { root.create-from-check(); }
         export-report() => { root.export-report(); }
         dismiss() => { root.dismiss(); }
-        reveal-output(arg0) => { root.reveal-output(arg0); }
+        show-output() => { root.show-output(); }
+        reveal-report() => { root.reveal-report(); }
         filter-results(arg0) => { root.filter-results(arg0); }
         sort-results(arg0) => { root.sort-results(arg0); }
         select-item(arg0) => { root.select-item(arg0); }
@@ -290,6 +332,14 @@ if root.waiting-view: VerticalBox { padding: 0px; spacing: 16px;
             Rectangle { width: parent.width; height: parent.height; background: transparent; border-width: main-scope.has-focus ? 1px : 0px; border-color: Theme.accent; }
         }
 
+    }
+    outputs := PopupWindow { x: max(0px,root.width - self.width - 20px); y: 84px; width: min(420px,root.width); height: min(400px,40px + root.output-roots.length * 40px + (root.extra-output-roots > 0 ? 40px : 0px));
+        Rectangle { background: Theme.surface; border-width: 1px; border-color: Theme.border; border-radius: 8px;
+            VerticalBox { padding: 8px; spacing: 8px;
+                for folder[index] in root.output-roots: TextButton { text: folder; min-width: 0px; horizontal-stretch: 1; clicked => { outputs.close(); root.reveal-output(index); } }
+                if root.extra-output-roots > 0: TextButton { text: "…and " + root.extra-output-roots + " more — Save Report…"; clicked => { outputs.close(); root.export-report(); } }
+            }
+        }
     }
     settings-popup := PopupWindow {
         width: min(720px, root.width - UiMetrics.gutter * 2); height: min(360px, root.height - 80px);

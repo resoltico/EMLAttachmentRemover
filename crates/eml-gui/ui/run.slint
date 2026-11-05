@@ -13,6 +13,7 @@ component ColumnButton inherits TextButton {
     }
 }
 component ResultsTable inherits VerticalBox {
+    in property <bool> enabled;
     in property <[ItemView]> items;
     in property <int> selected-item;
     in property <int> selected-visible-row;
@@ -48,9 +49,9 @@ component ResultsTable inherits VerticalBox {
     HorizontalBox { padding: 0px; padding-left: 8px + UiMetrics.scroll-inset; padding-right: 8px + UiMetrics.scroll-inset; spacing: 8px;
         height: root.header-height;
         Rectangle { width: 8px; }
-        ColumnButton { text: "Message"; sorted: root.sort-column == 0; descending: root.sort-descending; clicked => { root.sort-results(0); } }
-        if root.show-folder: ColumnButton { text: "Folder"; width: root.folder-width; horizontal-stretch: 0; sorted: root.sort-column == 1; descending: root.sort-descending; clicked => { root.sort-results(1); } }
-        ColumnButton { text: "Outcome"; width: root.outcome-width; horizontal-stretch: 0; sorted: root.sort-column == 2; descending: root.sort-descending; clicked => { root.sort-results(2); } }
+        ColumnButton { enabled: root.enabled; text: "Message"; sorted: root.sort-column == 0; descending: root.sort-descending; clicked => { root.sort-results(0); } }
+        if root.show-folder: ColumnButton { enabled: root.enabled; text: "Folder"; width: root.folder-width; horizontal-stretch: 0; sorted: root.sort-column == 1; descending: root.sort-descending; clicked => { root.sort-results(1); } }
+        ColumnButton { enabled: root.enabled; text: "Outcome"; width: root.outcome-width; horizontal-stretch: 0; sorted: root.sort-column == 2; descending: root.sort-descending; clicked => { root.sort-results(2); } }
     }
     keys := FocusScope {
         min-height: UiMetrics.message-row-height * 2 + UiMetrics.scroll-inset * 2; vertical-stretch: 1;
@@ -100,6 +101,7 @@ component Inspector inherits Rectangle {
     in property <string> guidance;
     in property <bool> attention;
     in property <bool> can-reveal;
+    in property <bool> can-show-copy;
     in property <bool> can-reveal-original;
     in property <bool> can-copy-source;
     in property <bool> can-copy-destination;
@@ -130,15 +132,15 @@ component Inspector inherits Rectangle {
                 for part in root.removals: Label { text: (part.filename != "" ? part.filename : part.media) + " · " + part.media + " · " + part.bytes + " bytes"; wrap: word-wrap; }
             }
             if root.has-item: HorizontalBox { padding: 0px; spacing: 8px;
-                if root.can-reveal: ActionButton { text: "Show Copy"; enabled: !root.busy; clicked => { root.reveal(); } }
-                if !root.can-reveal: ActionButton { text: "Show Original"; enabled: root.can-reveal-original && !root.busy; clicked => { root.reveal-original(); } }
-                TextButton { text: "Copy Path"; enabled: root.can-copy-source && !root.busy; accessible-description: "Copy the original message’s native path."; clicked => { root.copy-source(); } }
+                if root.can-reveal: ActionButton { text: "Show Copy"; enabled: root.can-show-copy; clicked => { root.reveal(); } }
+                if !root.can-reveal: ActionButton { text: "Show Original"; enabled: root.can-reveal-original; clicked => { root.reveal-original(); } }
+                TextButton { text: "Copy Path"; enabled: root.can-copy-source; accessible-description: "Copy the original message’s native path."; clicked => { root.copy-source(); } }
             }
             if root.has-item: TextButton { text: root.expanded ? "Hide Technical Details" : "Technical Details"; accessible-label: "Technical details"; expandable: true; expanded: root.expanded; clicked => { root.expanded = !root.expanded; } }
             if root.has-item && root.expanded: VerticalBox { width: parent.width; height: self.preferred-height; padding: 0px; spacing: 8px; vertical-stretch: 0;
                 Label { text: "Source"; font-weight: 600; }
                 Label { text: root.source.full; wrap: word-wrap; }
-                TextButton { text: "Copy Source Path"; enabled: root.can-copy-source && !root.busy; clicked => { root.copy-source(); } }
+                TextButton { text: "Copy Source Path"; enabled: root.can-copy-source; clicked => { root.copy-source(); } }
                 if root.destination.full != "": Label { text: "Destination"; font-weight: 600; }
                 if root.destination.full != "": Label { text: root.destination.full; wrap: word-wrap; }
                 if root.destination.full != "": TextButton { text: "Copy Destination Path"; enabled: root.can-copy-destination && !root.busy; clicked => { root.copy-destination(); } }
@@ -173,6 +175,13 @@ export component RunPane inherits ScrollView {
     in property <bool> can-dismiss;
     in property <bool> can-review;
     in property <bool> can-create;
+    in property <bool> is-check-result;
+    in property <bool> can-filter;
+    in property <bool> can-sort;
+    in property <bool> can-show-copy;
+    in property <bool> can-reveal-report;
+    in property <Tone> operation-tone;
+    callback reveal-report(); callback show-output();
     in property <bool> can-reveal-output;
     in property <string> reveal-output-label;
     in property <[string]> output-roots;
@@ -221,7 +230,7 @@ export component RunPane inherits ScrollView {
     content-width: self.visible-width; content-height: content.height;
     accessible-role: groupbox; accessible-label: "Run workspace"; accessible-description: root.run-status;
     private property <bool> banner-details;
-    changed run-label => { actions.close(); outputs.close(); root.banner-details = false; }
+    changed run-label => { actions.close(); root.banner-details = false; }
     content := VerticalBox { width: parent.visible-width; height: max(parent.visible-height,max(self.min-height,self.preferred-height)); padding: 0px; spacing: 12px;
         header := VerticalBox { padding: 0px; spacing: 8px; vertical-stretch: 0;
             HorizontalBox { padding: 0px; spacing: 8px;
@@ -231,9 +240,9 @@ export component RunPane inherits ScrollView {
                 }
                 if root.report-running: ActionButton { text: root.stop-requested ? "Stopping…" : "Stop"; enabled: root.can-stop; clicked => { root.stop(); } }
                 if root.report-running && root.can-force: TextButton { text: "Force Stop…"; danger: true; clicked => { root.force-stop(); } }
-                if !root.report-running && root.can-review: TextButton { text: root.review-label; enabled: !root.closing; clicked => { root.review-request(); } }
-                if !root.report-running && root.can-create: PrimaryButton { text: "Create Copies…"; enabled: !root.closing; clicked => { root.create-from-check(); } }
-                if !root.report-running && !root.can-create: PrimaryButton { text: root.reveal-output-label; enabled: root.can-reveal-output; clicked => { if root.output-roots.length == 1 && root.extra-output-roots == 0 { root.reveal-output(0); } else { outputs.show(); } } }
+                if !root.report-running: TextButton { text: root.review-label; enabled: root.can-review; clicked => { root.review-request(); } }
+                if !root.report-running && root.is-check-result: PrimaryButton { text: "Create Copies…"; enabled: root.can-create; clicked => { root.create-from-check(); } }
+                if !root.report-running && !root.is-check-result: PrimaryButton { text: root.reveal-output-label; enabled: root.can-reveal-output; clicked => { root.show-output(); } }
                 IconButton { text: "More actions"; icon: IconKind.ellipsis; clicked => { actions.show(); } }
             }
             if root.report-running: VerticalBox { padding: 0px; spacing: 6px;
@@ -247,9 +256,10 @@ export component RunPane inherits ScrollView {
             }
             if root.run-notice != "" || root.operation-feedback != "": VerticalBox { padding: 8px; spacing: 6px;
                 HorizontalBox { padding: 0px; spacing: 8px;
-                    Icon { kind: IconKind.warning; stroke: Theme.warn; }
-                    Label { text: (root.operation-feedback != "" ? (root.operation-label != "" && root.operation-label != "Operation status" ? root.operation-label + ": " : "") + root.operation-feedback : "") + (root.operation-feedback != "" && root.run-notice != "" ? "\n" : "") + root.run-notice; wrap: word-wrap; color: Theme.warn; accessible-live-region: polite; }
-                    TextButton { text: root.banner-details ? "Hide Details" : "Details"; expanded: root.banner-details; expandable: true; clicked => { root.banner-details = !root.banner-details; } }
+                    if root.run-notice != "" || root.operation-tone == Tone.attention: Icon { kind: IconKind.warning; stroke: Theme.warn; }
+                    Label { text: (root.operation-feedback != "" ? (root.operation-label != "" && root.operation-label != "Operation status" ? root.operation-label + ": " : "") + root.operation-feedback : "") + (root.operation-feedback != "" && root.run-notice != "" ? "\n" : "") + root.run-notice; wrap: word-wrap; color: root.run-notice != "" || root.operation-tone == Tone.attention ? Theme.warn : root.operation-tone == Tone.ok ? Theme.ok : Theme.text; accessible-live-region: polite; }
+                    if root.can-reveal-report: TextButton { text: "Show"; clicked => { root.reveal-report(); } }
+                    if root.report-diagnostics.length > 0 || root.report-details != "" || root.operation-details != "": TextButton { text: root.banner-details ? "Hide Details" : "Details"; expanded: root.banner-details; expandable: true; clicked => { root.banner-details = !root.banner-details; } }
                 }
                 if root.banner-details: ScrollView { preferred-height: 80px; max-height: 80px; min-height: 0px; content-width: self.visible-width; content-height: diagnostic-content.height;
                     diagnostic-content := VerticalBox { width: parent.visible-width; height: max(self.min-height,self.preferred-height); padding: 0px; spacing: 4px;
@@ -264,7 +274,7 @@ export component RunPane inherits ScrollView {
             content-width: filter-row.preferred-width; content-height: self.visible-height;
             accessible-role: list; accessible-label: "Outcome filters";
             filter-row := HorizontalBox { width: self.preferred-width; height: parent.visible-height; padding: 0px; spacing: 8px;
-                for chip in root.chips: Chip { text: chip.label + " " + chip.value; selected: chip.active; clicked => { root.filter-results(chip.active ? 0 : chip.filter); } }
+                for chip in root.chips: Chip { enabled: root.can-filter; text: chip.label + " " + chip.value; selected: chip.active; clicked => { root.filter-results(chip.active ? 0 : chip.filter); } }
             }
         }
         results := Rectangle {
@@ -279,7 +289,7 @@ export component RunPane inherits ScrollView {
                 width: parent.stacked ? parent.width : parent.width - parent.inspector-width - 16px;
                 height: parent.stacked ? min(parent.height - 172px,max(parent.table-header-height + UiMetrics.message-row-height * 2 + UiMetrics.scroll-inset * 2,parent.height * 0.56)) : parent.height;
                 header-height: parent.table-header-height; items: root.items; selected-item: root.selected-item; selected-visible-row: root.selected-visible-row;
-                sort-column: root.sort-column; sort-descending: root.sort-descending; show-folder: root.window-width >= 900px;
+                enabled: root.can-sort; sort-column: root.sort-column; sort-descending: root.sort-descending; show-folder: root.window-width >= 900px;
                 ui-size: root.ui-size; context: root.run-label; can-copy: root.can-copy-source;
                 empty-message: root.report-loading ? root.report-load-notice : "No per-message results are available in this view.";
                 scroll-y <=> root.messages-scroll-y;
@@ -296,7 +306,7 @@ export component RunPane inherits ScrollView {
                 height: parent.stacked ? parent.height - table.height - 12px : parent.height;
                 has-item: root.has-item; source: root.item-source-path; destination: root.item-destination-path;
                 verdict: root.item-headline; guidance: root.item-guidance; attention: root.item-attention;
-                can-reveal: root.can-reveal; can-reveal-original: root.can-reveal-original;
+                can-reveal: root.can-reveal; can-show-copy: root.can-show-copy; can-reveal-original: root.can-reveal-original;
                 can-copy-source: root.can-copy-source; can-copy-destination: root.can-copy-destination;
                 busy: root.native-open-pending || root.closing; details: root.details; byte-counts: root.byte-counts;
                 removals: root.removals; stripped: root.stripped; removal-heading: root.removal-heading; field-heading: root.field-heading;
@@ -314,12 +324,5 @@ export component RunPane inherits ScrollView {
             }
         }
     }
-    outputs := PopupWindow { x: max(0px,root.width - self.width); y: 52px; width: min(420px,root.width); height: min(400px,40px + root.output-roots.length * 40px + (root.extra-output-roots > 0 ? 40px : 0px));
-        Rectangle { background: Theme.surface; border-width: 1px; border-color: Theme.border; border-radius: 8px;
-            VerticalBox { padding: 8px; spacing: 8px;
-                for folder[index] in root.output-roots: TextButton { text: folder; min-width: 0px; horizontal-stretch: 1; clicked => { outputs.close(); root.reveal-output(index); } }
-                if root.extra-output-roots > 0: TextButton { text: "…and " + root.extra-output-roots + " more — Save Report…"; clicked => { outputs.close(); root.export-report(); } }
-            }
-        }
-    }
+
 }

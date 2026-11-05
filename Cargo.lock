@@ -1221,6 +1221,7 @@ version = "7.0.0"
 dependencies = [
  "arboard",
  "base64",
+ "chrono",
  "dirs",
  "eml-app",
  "eml-core",
