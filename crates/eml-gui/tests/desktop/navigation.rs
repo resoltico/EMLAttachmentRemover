@@ -45,6 +45,11 @@ fn long_result_paths_keep_distinguishing_suffixes_and_full_accessible_paths() {
     c.submit(vec![root.path().join("selection")]).unwrap();
     pump(&c, || !c.is_busy());
     let ui = c.window();
+    assert!(!ui.get_folder_column_needed());
+    ui.invoke_filter_results(4);
+    assert_eq!(ui.get_items().row_count(), 0);
+    assert!(!ui.get_folder_column_needed());
+    ui.invoke_filter_results(0);
     for width in [780.0, 1240.0] {
         ui.window().set_size(slint::LogicalSize::new(width, 760.0));
         mock_elapsed_time(Duration::from_millis(5));

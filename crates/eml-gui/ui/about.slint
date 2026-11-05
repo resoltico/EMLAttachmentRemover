@@ -22,7 +22,11 @@ export component AboutWindow inherits Window {
     callback website(); callback licenses(); callback dismiss();
     callback focus-website();
     focus-website => { website.focus(); }
-    MenuBar { Menu { title: "Edit";
+    MenuBar {
+        Menu { title: "File";
+            MenuItem { title: "Close Window"; shortcut: @keys(Control + W); activated => { root.dismiss(); } }
+        }
+        Menu { title: "Edit";
         MenuItem { title: "Copy"; shortcut: @keys(Control + C);
             enabled: name-text.has-focus || version-text.has-focus || purpose-text.has-focus || copyright-text.has-focus;
             activated => { if name-text.has-focus { name-text.copy(); } if version-text.has-focus { version-text.copy(); } if purpose-text.has-focus { purpose-text.copy(); } if copyright-text.has-focus { copyright-text.copy(); } }
@@ -73,7 +77,11 @@ export component LicenseWindow inherits Window {
         license-text.set-selection-offsets(0, 0);
         license-text.content-y = 0px;
     }
-    MenuBar { Menu { title: "Edit";
+    MenuBar {
+        Menu { title: "File";
+            MenuItem { title: "Close Window"; shortcut: @keys(Control + W); activated => { root.dismiss(); } }
+        }
+        Menu { title: "Edit";
         MenuItem { title: "Copy"; shortcut: @keys(Control + C); enabled: license-text.has-focus; activated => { license-text.copy(); } }
         MenuItem { title: "Select All"; shortcut: @keys(Control + A); enabled: license-text.has-focus; activated => { license-text.select-all(); } }
     } }

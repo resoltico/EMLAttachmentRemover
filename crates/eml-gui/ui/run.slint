@@ -99,6 +99,7 @@ component Inspector inherits Rectangle {
     in property <PathView> destination;
     in property <string> verdict;
     in property <string> guidance;
+    in property <string> policy-notice;
     in property <bool> attention;
     in property <bool> can-reveal;
     in property <bool> can-show-copy;
@@ -128,6 +129,7 @@ component Inspector inherits Rectangle {
             if root.has-item: Label { text: root.source.directory; color: Theme.muted; font-size: max(12px,root.ui-size * 0.9); overflow: elide; }
             if root.has-item: Label { width: parent.width; height: self.preferred-height; text: root.verdict; font-weight: 600; color: root.attention ? Theme.bad : Theme.text; wrap: word-wrap; }
             if root.has-item && root.guidance != "": Label { width: parent.width; height: self.preferred-height; text: root.guidance; wrap: word-wrap; }
+            if root.has-item && root.policy-notice != "": TextInput { width: parent.width; height: self.preferred-height; vertical-stretch: 0; text: root.policy-notice; read-only: true; single-line: false; wrap: word-wrap; color: Theme.text; accessible-label: self.text; }
             if root.has-item && root.removals.length > 0: VerticalBox { padding: 0px; spacing: 8px;
                 Label { text: root.removal-heading; font-weight: 600; wrap: word-wrap; }
                 for part in root.removals: Label { text: (part.filename != "" ? part.filename : part.media) + " · " + part.media + " · " + part.bytes + " bytes"; wrap: word-wrap; }
@@ -203,6 +205,8 @@ export component RunPane inherits ScrollView {
     in property <string> item-status;
     in property <string> item-headline;
     in property <string> item-guidance;
+    in property <string> item-policy-notice;
+    in property <bool> folder-column-needed: true;
     in property <bool> item-attention;
     in property <bool> has-item;
     in property <bool> can-reveal;
@@ -289,7 +293,7 @@ export component RunPane inherits ScrollView {
                 width: parent.stacked ? parent.width : parent.width - parent.inspector-width - 16px;
                 height: parent.stacked ? min(parent.height - 172px,max(parent.table-header-height + UiMetrics.message-row-height * 2 + UiMetrics.scroll-inset * 2,parent.height * 0.56)) : parent.height;
                 header-height: parent.table-header-height; items: root.items; selected-item: root.selected-item; selected-visible-row: root.selected-visible-row;
-                enabled: root.can-sort; sort-column: root.sort-column; sort-descending: root.sort-descending; show-folder: root.window-width >= 900px;
+                enabled: root.can-sort; sort-column: root.sort-column; sort-descending: root.sort-descending; show-folder: root.folder-column-needed && root.window-width >= 900px;
                 ui-size: root.ui-size; context: root.run-label; can-copy: root.can-copy-source;
                 empty-message: root.report-loading ? root.report-load-notice : "No per-message results are available in this view.";
                 scroll-y <=> root.messages-scroll-y;
@@ -305,7 +309,7 @@ export component RunPane inherits ScrollView {
                 width: parent.stacked ? parent.width : parent.inspector-width;
                 height: parent.stacked ? parent.height - table.height - 12px : parent.height;
                 has-item: root.has-item; source: root.item-source-path; destination: root.item-destination-path;
-                verdict: root.item-headline; guidance: root.item-guidance; attention: root.item-attention;
+                verdict: root.item-headline; guidance: root.item-guidance; policy-notice: root.item-policy-notice; attention: root.item-attention;
                 can-reveal: root.can-reveal; can-show-copy: root.can-show-copy; can-details: root.can-details; can-reveal-original: root.can-reveal-original;
                 can-copy-source: root.can-copy-source; can-copy-destination: root.can-copy-destination;
                 busy: root.native-open-pending || root.closing; details: root.details; byte-counts: root.byte-counts;

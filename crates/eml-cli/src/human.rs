@@ -6,6 +6,7 @@ use std::io::{self, Write};
 pub(crate) struct HumanSink<W> {
     writer: W,
     failed: bool,
+    interrupted_items: usize,
 }
 impl<W: Write> HumanSink<W> {
     /// Start one human stream on the supplied writer.
@@ -13,7 +14,21 @@ impl<W: Write> HumanSink<W> {
         Self {
             writer,
             failed: false,
+            interrupted_items: 0,
         }
+    }
+    // Commit the presentation adjustment only after the whole item is delivered.
+    fn deliver(
+        &mut self,
+        bytes: &[u8],
+        facts: Option<&eml_core::vocabulary::OutcomeFacts>,
+    ) -> io::Result<()> {
+        self.writer.write_all(bytes)?;
+        self.writer.flush()?;
+        if facts.is_some_and(eml_core::vocabulary::explicitly_interrupted) {
+            self.interrupted_items += 1;
+        }
+        Ok(())
     }
     /// Recover the supplied writer without another output attempt.
     #[cfg(test)]
@@ -29,11 +44,14 @@ impl<W: Write> EventSink for HumanSink<W> {
                 "Human output stream already failed",
             ));
         }
+        let facts = match &event {
+            Event::Item(item) => Some(eml_core::vocabulary::OutcomeFacts::from(&item.result)),
+            _ => None,
+        };
         let result = (|| {
             let mut buffer = BoundedEventBuffer::new(MAX_LINE_BYTES);
-            write_human(&mut buffer, event)?;
-            self.writer.write_all(buffer.bytes())?;
-            self.writer.flush()
+            write_human(&mut buffer, event, self.interrupted_items)?;
+            self.deliver(buffer.bytes(), facts.as_ref())
         })();
         self.failed = result.is_err();
         result
@@ -68,7 +86,11 @@ fn write_error(
     }
     Ok(())
 }
-fn write_human(writer: &mut impl Write, event: Event<'_>) -> io::Result<()> {
+fn write_human(
+    writer: &mut impl Write,
+    event: Event<'_>,
+    interrupted_items: usize,
+) -> io::Result<()> {
     match event {
         Event::Start(value) => writeln!(
             writer,
@@ -90,7 +112,13 @@ fn write_human(writer: &mut impl Write, event: Event<'_>) -> io::Result<()> {
             writeln!(
                 writer,
                 "{}",
-                eml_core::vocabulary::summary(&counts, value.exit_class(), value.interrupted())
+                eml_core::vocabulary::summary(
+                    &counts,
+                    value.exit_class(),
+                    value.interrupted(),
+                    interrupted_items
+                )
+                .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?
             )?;
             if let Some(error) = value.run_error() {
                 write_error(writer, error, "")?;
@@ -199,6 +227,84 @@ mod tests {
             );
         }
     }
+    #[test]
+    fn interruption_adjustment_commits_after_write_and_flush_only() {
+        let facts = eml_core::vocabulary::OutcomeFacts {
+            result: eml_core::vocabulary::ResultKind::Failed,
+            error: Some(eml_core::ErrorCode::Interrupted),
+            plan: None,
+            publication: eml_core::vocabulary::Publication::NotPublished,
+            address: eml_core::AddressState::NotChecked,
+            candidate_identity_known: false,
+            final_readback: None,
+            file_sync: None,
+            namespace_sync: eml_core::NamespaceObservation {
+                receipt: None,
+                required_edges: 0,
+                completed_edges: 0,
+                failed_edge_index: None,
+            },
+            cleanup: eml_core::CleanupReceipt {
+                state: eml_core::CleanupState::NotNeeded,
+                residual_name: None,
+                native_code: None,
+            },
+            existing: None,
+            related_resources: false,
+        };
+        for (remaining, fail_flush) in [(Some(3), false), (None, true), (None, false)] {
+            let mut sink = HumanSink::new(Writer {
+                remaining,
+                fail_flush,
+                ..Default::default()
+            });
+            let delivered = sink.deliver(b"interrupted item\n", Some(&facts)).is_ok();
+            assert_eq!(delivered, remaining.is_none() && !fail_flush);
+            assert_eq!(sink.interrupted_items, usize::from(delivered));
+        }
+    }
+    #[test]
+    fn genuine_failure_events_do_not_adjust_human_or_json_counts() {
+        let root = root();
+        fs::write(
+            root.path().join("a.eml"),
+            b"Content-Type: multipart/mixed\r\n\r\nbroken",
+        )
+        .unwrap();
+        let req = request(root.path(), RunMode::DryRun);
+        let mut human = HumanSink::new(Vec::new());
+        let outcome = run(&req, &RunControl::default(), &mut human).unwrap();
+        assert_eq!(outcome.counts().failed(), 1);
+        let mut inconsistent = HumanSink::new(Vec::new());
+        inconsistent.interrupted_items = 2;
+        assert_eq!(
+            inconsistent
+                .emit(Event::Summary(&outcome))
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::InvalidData
+        );
+        assert!(inconsistent.writer.is_empty());
+        assert!(inconsistent.emit(Event::Start(&start())).is_err());
+        assert!(inconsistent.writer.is_empty());
+        assert_eq!(human.interrupted_items, 0);
+        assert!(
+            String::from_utf8(human.into_inner())
+                .unwrap()
+                .contains("Failed 1; Not processed 0. Exit 1")
+        );
+        let mut json = eml_protocol::JsonSink::new(Vec::new());
+        run(&req, &RunControl::default(), &mut json).unwrap();
+        let records: Vec<serde_json::Value> = String::from_utf8(json.into_inner())
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        assert_eq!(records[1]["status"], "failed");
+        assert_eq!(records[2]["counts"]["failed"], 1);
+        assert_eq!(records[2]["counts"]["not_processed"], 0);
+        root.close().unwrap();
+    }
     fn root() -> tempfile::TempDir {
         let parent = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/event-tests");
         fs::create_dir_all(&parent).unwrap();
@@ -227,11 +333,17 @@ mod tests {
         assert!(!text.contains('\u{1b}'));
         assert!(!text.contains('\u{2028}'));
         assert!(text.contains("No new copy was published."));
-        assert!(text.contains(&eml_core::vocabulary::summary(
-            &outcome.counts(),
-            outcome.exit_class(),
-            outcome.interrupted()
-        )));
+        assert!(
+            text.contains(
+                &eml_core::vocabulary::summary(
+                    &outcome.counts(),
+                    outcome.exit_class(),
+                    outcome.interrupted(),
+                    0
+                )
+                .unwrap()
+            )
+        );
         assert_eq!(
             fs::read(root.path().join("a.no-attachments.eml")).unwrap(),
             b"different"

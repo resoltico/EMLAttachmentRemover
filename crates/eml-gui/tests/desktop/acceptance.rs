@@ -347,14 +347,23 @@ fn s9_s10_check_conversion_confirms_replacement_and_sends_a_fresh_create_request
     select_run(&ui, 0);
     click(&ui, "Create Copies…");
     assert_eq!(ui.get_confirmation(), Confirmation::ReplaceDraft);
+    mock_elapsed_time(Duration::from_millis(5));
+    assert!(has_label(&ui, "Replace the current draft (1 item)?"));
+    ui.set_draft_policy_expanded(true);
     click(&ui, "Cancel");
     assert_eq!(
         ui.get_selection().row_data(0).unwrap().path.full.as_str(),
         unrelated.to_str().unwrap()
     );
     assert!(ui.get_check_only());
+    c.stage(vec![root.path().join("second-unrelated.eml")])
+        .unwrap();
+    select_run(&ui, 0);
     click(&ui, "Create Copies…");
+    mock_elapsed_time(Duration::from_millis(5));
+    assert!(has_label(&ui, "Replace the current draft (2 items)?"));
     click(&ui, "Replace Draft");
+    assert!(!ui.get_draft_policy_expanded());
     assert_eq!(ui.get_confirmation(), Confirmation::None);
     assert_eq!(
         ui.get_selection().row_data(0).unwrap().path.full.as_str(),
@@ -1186,6 +1195,38 @@ fn draft_has_one_primary_commit_action_when_inputs_exist_and_none_when_empty() {
     );
     ui.invoke_clear_selection();
     assert_eq!(count(), 0);
+    c.set_destination(None);
+    c.stage(vec![root.path().join("source.eml")]).unwrap();
+    ui.set_ui_size(20.0);
+    ui.set_draft_policy_expanded(true);
+    ui.window().set_size(slint::LogicalSize::new(760.0, 520.0));
+    for check in [false, true] {
+        ui.invoke_mode_changed(check);
+        mock_elapsed_time(Duration::from_millis(5));
+        let draft = ElementHandle::find_by_element_type_name(&ui, "DraftPane")
+            .next()
+            .unwrap();
+        draft.scroll(0.0, -2080.0);
+        mock_elapsed_time(Duration::from_millis(180));
+        let bottom = draft.absolute_position().y + draft.size().height;
+        let text = if check {
+            "Nothing is written. Each message and the destination are checked."
+        } else {
+            "Copies are named ‹name›.no-attachments.eml. Existing files are never overwritten."
+        };
+        let explanation = ElementHandle::find_by_accessible_label(&ui, text)
+            .next()
+            .unwrap();
+        assert!(
+            explanation.absolute_position().y + explanation.size().height <= bottom,
+            "Wrapping footer text must remain reachable inside the draft viewport"
+        );
+        let primary = ElementHandle::find_by_element_type_name(&ui, "PrimaryButton")
+            .next()
+            .unwrap();
+        assert!(primary.absolute_position().y >= draft.absolute_position().y);
+        assert!(primary.absolute_position().y + primary.size().height <= bottom);
+    }
 }
 
 #[test]
@@ -1418,5 +1459,111 @@ fn s13_buttons_are_named_chips_are_checkable_and_rows_never_announce_live() {
                 );
             }
         }
+    }
+}
+
+#[test]
+fn policy_notice_uses_classifier_and_clears_across_selection_filter_and_draft() {
+    init_no_event_loop();
+    for (name, expected) in [
+        (
+            "planned-create-unix",
+            vocabulary::PREPARED_RELATED_RESOURCE_NOTICE,
+        ),
+        ("created", vocabulary::RELATED_RESOURCE_NOTICE),
+        (
+            "up-to-date-attachment",
+            vocabulary::EXISTING_RELATED_RESOURCE_NOTICE,
+        ),
+        ("published-with-error", vocabulary::RELATED_RESOURCE_NOTICE),
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        let mut records: Vec<serde_json::Value> = fixture(name)
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        let removal = serde_json::json!({"section":"2", "content_type":"image/png", "bytes":1, "filename":null, "reason":"related_resource"});
+        records[1]["removed"] = serde_json::json!([removal]);
+        let stream = records
+            .iter()
+            .map(|record| format!("{record}\n"))
+            .collect::<String>();
+        let c = controller(
+            root.path(),
+            script(
+                root.path(),
+                &("cat >/dev/null\n".to_owned() + &print(&stream)),
+            ),
+        );
+        if name.starts_with("planned") {
+            choose_operation(&c.window(), "Check only");
+        }
+        c.submit(vec![root.path().join("source.eml")]).unwrap();
+        pump(&c, || !c.is_busy());
+        let ui = c.window();
+        assert_eq!(ui.get_item_policy_notice().as_str(), expected, "{name}");
+        assert!(!ui.get_details_expanded());
+        assert!(has_label(&ui, expected));
+        ui.invoke_filter_results(5);
+        assert_eq!(ui.get_item_policy_notice(), "");
+        ui.invoke_filter_results(0);
+        assert_eq!(ui.get_item_policy_notice().as_str(), expected);
+        script(
+            root.path(),
+            &("cat >/dev/null\n".to_owned() + &print(&fixture("created"))),
+        );
+        ui.invoke_new_request();
+        choose_operation(&ui, "Create copies");
+        c.submit(vec![root.path().join("plain.eml")]).unwrap();
+        pump(&c, || !c.is_busy());
+        assert_eq!(ui.get_item_policy_notice(), "");
+        select_run(&ui, 0);
+        if ui.get_report_loading() {
+            assert_eq!(ui.get_item_policy_notice(), "");
+        }
+        pump(&c, || !ui.get_report_loading());
+        assert_eq!(ui.get_item_policy_notice().as_str(), expected);
+        ui.invoke_new_request();
+        assert_eq!(ui.get_item_policy_notice(), "");
+        assert!(ui.get_folder_column_needed());
+    }
+}
+
+#[test]
+fn interrupted_cleanup_consequences_remain_ordinary_guidance() {
+    init_no_event_loop();
+    for cleanup in ["residual", "unknown"] {
+        let root = tempfile::tempdir().unwrap();
+        let mut records: Vec<serde_json::Value> = fixture("started-preedge-cancellation")
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        records[1]["publication"]["cleanup"]["state"] = cleanup.into();
+        if cleanup == "residual" {
+            records[1]["publication"]["cleanup"]["residual_name"] =
+                serde_json::json!({"encoding":"unix-bytes", "base64":"Lm93bmVk"});
+        }
+        let stream = records
+            .iter()
+            .map(|record| format!("{record}\n"))
+            .collect::<String>();
+        let c = controller(
+            root.path(),
+            script(
+                root.path(),
+                &("cat >/dev/null\n".to_owned() + &print(&stream) + "exit 130\n"),
+            ),
+        );
+        c.submit(vec![root.path().join("source.eml")]).unwrap();
+        pump(&c, || !c.is_busy());
+        let ui = c.window();
+        let consequence = if cleanup == "residual" {
+            vocabulary::Consequence::ResidualCleanup
+        } else {
+            vocabulary::Consequence::UnknownCleanup
+        };
+        assert!(ui.get_item_guidance().starts_with(consequence.text()));
+        assert!(!ui.get_can_show_copy());
+        assert!(!ui.get_items().row_data(0).unwrap().attention);
     }
 }

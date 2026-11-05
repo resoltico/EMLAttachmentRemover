@@ -567,6 +567,7 @@ impl DesktopController {
         }
     }
     fn apply_snapshot(&self, snapshot: RequestSnapshot) {
+        self.ui.set_draft_policy_expanded(false);
         self.clear_operation();
         let mut s = self.session.borrow_mut();
         let request = snapshot.request();

@@ -445,6 +445,8 @@ impl DesktopController {
                 return;
             }
             *self.last_view.borrow_mut() = Some(revision);
+            self.ui
+                .set_folder_column_needed(folder_column_needed(report, &entry.request));
             self.ui.set_items(update_model(
                 self.ui.get_items(),
                 table_rows(
@@ -484,7 +486,9 @@ impl DesktopController {
             );
             let words = view_model::item_words(item);
             self.ui.set_item_headline(words.headline.into());
-            self.ui.set_item_guidance(words.guidance.into());
+            self.ui.set_item_guidance(view_model::guidance(item).into());
+            self.ui
+                .set_item_policy_notice(view_model::policy_notice(item).into());
             self.ui.set_item_status(view.status);
             self.ui.set_item_attention(view.attention);
             let (details, parts, fields) = view_model::details(item);
@@ -561,6 +565,7 @@ impl DesktopController {
         self.ui.set_item_status("".into());
         self.ui.set_item_headline("".into());
         self.ui.set_item_guidance("".into());
+        self.ui.set_item_policy_notice("".into());
         self.ui
             .set_details(update_model(self.ui.get_details(), Vec::new()));
         self.ui
@@ -571,6 +576,7 @@ impl DesktopController {
             .set_byte_counts(update_model(self.ui.get_byte_counts(), Vec::new()));
     }
     fn clear_items(&self) {
+        self.ui.set_folder_column_needed(true);
         self.ui.set_messages_scroll_y(0.0);
         self.ui.set_selected_visible_row(-1);
         self.ui.set_selected_item(-1);
@@ -642,6 +648,54 @@ fn chips(tally: state::Tally, selected: state::Filter) -> Vec<ChipView> {
     })
     .collect()
 }
+/// Native relative key shared by row sorting and full-run column analysis.
+fn folder_key(source: &Path, request: &RequestSnapshot) -> Option<PathBuf> {
+    if request.request().paths.iter().any(|path| path == source) {
+        None
+    } else {
+        request
+            .request()
+            .paths
+            .iter()
+            .filter_map(|root| source.strip_prefix(root).ok())
+            .max_by_key(|relative| std::cmp::Reverse(relative.components().count()))
+            .map(|relative| {
+                relative
+                    .parent()
+                    .filter(|parent| !parent.as_os_str().is_empty())
+                    .unwrap_or(Path::new("."))
+                    .to_owned()
+            })
+    }
+}
+/// Only a complete accepted inventory can establish that Folder is redundant.
+fn folder_column_needed(report: &eml_app::RunReport, request: &RequestSnapshot) -> bool {
+    let Some(start) = report.start().filter(|_| report.summary().is_some()) else {
+        return true;
+    };
+    if report.items().len() != start.total as usize {
+        return true;
+    }
+    let mut common = None;
+    for index in 0..report.items().len() {
+        let Some(source) = report.source_path(index) else {
+            return true;
+        };
+        let Some(parent) = source.parent() else {
+            return true;
+        };
+        let pair = (
+            parent.to_owned(),
+            folder_key(&source, request).unwrap_or_default(),
+        );
+        if common.as_ref().is_some_and(|common| *common != pair) {
+            return true;
+        }
+        common = Some(pair);
+    }
+    false
+}
+
 pub(super) fn table_rows(
     report: &eml_app::RunReport,
     request: &RequestSnapshot,
@@ -666,23 +720,7 @@ pub(super) fn table_rows(
                 .clone()
                 .unwrap_or_else(|| PathBuf::from(&item.source.display));
             let name = source.file_name().unwrap_or(source.as_os_str()).to_owned();
-            let folder = if request.request().paths.contains(&source) {
-                None
-            } else {
-                request
-                    .request()
-                    .paths
-                    .iter()
-                    .filter_map(|root| source.strip_prefix(root).ok())
-                    .max_by_key(|relative| std::cmp::Reverse(relative.components().count()))
-                    .map(|relative| {
-                        relative
-                            .parent()
-                            .filter(|parent| !parent.as_os_str().is_empty())
-                            .unwrap_or(Path::new("."))
-                            .to_owned()
-                    })
-            };
+            let folder = folder_key(&source, request);
             let mut view = view_model::item(item);
             view.original_index = index as i32;
             view.folder = folder
@@ -730,4 +768,96 @@ fn folder_label(path: &Path, home: &Path) -> String {
         |_| eml_protocol::TerminalPath::new(path).to_string(),
         |relative| format!("~/{}", eml_protocol::TerminalPath::new(relative)),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use base64::{Engine, engine::general_purpose::STANDARD};
+    fn report(sources: &[&str], total: usize, summary: bool, native: bool) -> eml_app::RunReport {
+        let records: Vec<serde_json::Value> =
+            include_str!("../../../tests/contract/protocol/created.jsonl")
+                .replace("@VERSION@", eml_core::product::VERSION)
+                .lines()
+                .map(|line| serde_json::from_str(line).unwrap())
+                .collect();
+        let mut start = records[0].clone();
+        start["total"] = total.into();
+        let mut report = eml_app::RunReport::new(eml_core::product::VERSION);
+        report.accept_frame(start.to_string().as_bytes()).unwrap();
+        for (index, source) in sources.iter().enumerate() {
+            let mut item = records[1].clone();
+            item["index"] = index.into();
+            item["source"]["display"] = (*source).into();
+            item["source"]["native"]["base64"] = STANDARD.encode(source.as_bytes()).into();
+            if !native {
+                item["source"]["native"]["encoding"] = "windows-utf16le".into();
+                item["source"]["native"]["base64"] = STANDARD
+                    .encode(
+                        source
+                            .encode_utf16()
+                            .flat_map(u16::to_le_bytes)
+                            .collect::<Vec<_>>(),
+                    )
+                    .into();
+            }
+            report.accept_frame(item.to_string().as_bytes()).unwrap();
+        }
+        if summary {
+            let mut end = records[2].clone();
+            end["counts"]["created"] = sources.len().into();
+            end["counts"]["not_processed"] = (total - sources.len()).into();
+            if sources.is_empty() {
+                end["exit_code"] = 1.into();
+                end["run_error"] = serde_json::json!({"code":"NO_INPUTS", "phase":"collection", "detail":"No inputs", "section":null});
+            } else if total > sources.len() {
+                end["interrupted"] = true.into();
+                end["exit_code"] = 130.into();
+            }
+            report.accept_frame(end.to_string().as_bytes()).unwrap();
+        }
+        report
+    }
+    #[test]
+    fn folder_redundancy_requires_full_native_inventory_and_equal_sort_keys() {
+        let request =
+            RequestSnapshot::new(vec!["/one".into(), "/two".into()], None, RunMode::Create)
+                .unwrap();
+        for (sources, total, summary, native, needed) in [
+            (vec!["/one/a.eml", "/one/b.eml"], 2, true, true, false),
+            (vec!["/one/a.eml", "/two/b.eml"], 2, true, true, true),
+            (vec!["/one/a.eml", "/one/sub/b.eml"], 2, true, true, true),
+            (vec!["/one/a.eml"], 2, true, true, true),
+            (vec!["/one/a.eml"], 1, false, true, true),
+            (vec!["/one/a.eml"], 1, true, false, true),
+            (vec![], 0, false, true, true),
+            (vec![], 0, true, true, false),
+        ] {
+            let report = report(&sources, total, summary, native);
+            assert_eq!(
+                folder_column_needed(&report, &request),
+                needed,
+                "{sources:?}"
+            );
+            let _empty_filtered = table_rows(
+                &report,
+                &request,
+                state::Filter::Attention,
+                state::Sort::default(),
+            );
+            assert_eq!(folder_column_needed(&report, &request), needed);
+        }
+        let full = report(&["/one/a.eml", "/one/b.eml"], 2, true, true);
+        let mixed_keys = RequestSnapshot::new(
+            vec!["/one".into(), "/one/a.eml".into()],
+            None,
+            RunMode::Create,
+        )
+        .unwrap();
+        assert!(folder_column_needed(&full, &mixed_keys));
+        assert!(folder_column_needed(
+            &eml_app::RunReport::new(eml_core::product::VERSION),
+            &request
+        ));
+    }
 }

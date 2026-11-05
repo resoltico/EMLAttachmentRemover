@@ -3,8 +3,10 @@
 These eight PNGs show the production controller and Slint views at 1080 × 700,
 using the pinned Cupertino widgets and software testing backend. The palette is
 explicitly light or dark. They are toolkit captures, not screenshots of native
-macOS panels. Captured from the production UI in this change after the final
-accessibility and caption corrections.
+macOS panels. Captured on 5 November 2026 from the production controller after the reviewed
+body-only guidance and ordinary inline-resource notice changes. The A/B/C/D
+states come from `capture_redesign_states_in_light_and_dark`; the capture uses
+controlled related-resource metadata in C so the ordinary notice is visible.
 
 | State | Content | Light | Dark |
 |---|---|---|---|
@@ -21,9 +23,16 @@ check uses the built bundle and real processor.
 To reproduce outside the merge gate:
 
 ```sh
-GUI_CAPTURE_DIR=/absolute/output/folder cargo test -p eml-gui --test desktop \
+GUI_CAPTURE_DIR=/absolute/output/folder cargo test --locked -p eml-gui --test desktop \
   captures::capture_redesign_states_in_light_and_dark -- --ignored
 ```
+
+The separate manual `captures::capture_policy_layout_at_supported_sizes_and_scales`
+test checks disclosure/footer and inspector-action reachability at 760 × 520 and
+1080 × 700, 14/20-logical-pixel text, 1×/2× display scales and both palettes, with and
+without a prior session sidebar. It writes its additional review images to the
+supplied external output folder; they are not another committed gallery. These
+checks do not replace native minimum-window legibility verification.
 
 The capture writes lossless PPMs; the checked-in PNGs are lossless conversions.
 

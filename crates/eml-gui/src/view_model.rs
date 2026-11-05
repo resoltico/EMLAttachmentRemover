@@ -164,10 +164,32 @@ pub(crate) fn item(item: &wire::ItemRecord) -> ItemView {
 pub(super) fn category(item: &wire::ItemRecord) -> crate::state::Category {
     crate::state::category(
         meaning(item).map(|value| (value.kind, value.severity)),
-        item.error
-            .value()
-            .and_then(|error| eml_core::ErrorCode::from_wire_name(&error.code)),
+        facts(item)
+            .as_ref()
+            .is_some_and(vocabulary::explicitly_interrupted),
     )
+}
+pub(super) fn policy_notice(item: &wire::ItemRecord) -> &'static str {
+    meaning(item)
+        .and_then(|meaning| meaning.related_notice)
+        .unwrap_or("")
+}
+pub(super) fn guidance(item: &wire::ItemRecord) -> String {
+    let ordinary = item_words(item).guidance;
+    let Some(facts) = facts(item).filter(vocabulary::explicitly_interrupted) else {
+        return ordinary.into();
+    };
+    let consequences = vocabulary::classify(&facts).consequences;
+    let warnings: Vec<_> = consequences
+        .into_iter()
+        .filter(|c| *c != vocabulary::Consequence::NoPublication)
+        .map(vocabulary::Consequence::text)
+        .collect();
+    if warnings.is_empty() {
+        ordinary.into()
+    } else {
+        format!("{} {}", warnings.join(" "), ordinary)
+    }
 }
 pub(super) fn report_facts(
     report: &eml_app::RunReport,
@@ -248,11 +270,6 @@ pub(crate) fn details(item: &wire::ItemRecord) -> (Vec<DetailView>, String, Stri
         rows.extend(value.consequences.iter().map(|consequence| DetailView {
             text: consequence.text().into(),
         }));
-        if let Some(notice) = value.related_notice {
-            rows.push(DetailView {
-                text: notice.into(),
-            });
-        }
         (
             rows,
             match value.removal_mode {
