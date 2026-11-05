@@ -211,10 +211,11 @@ fn header_ink_aligns_with_values_and_failed_runs_offer_review() {
     c.submit(vec![source]).unwrap();
     pump(&c, || !c.is_busy());
     let ui = c.window();
+    let output_label = ui.get_reveal_output_label();
     ui.set_can_reveal_output(false);
     mock_elapsed_time(Duration::from_millis(5));
     assert!(
-        has_label(&ui, "Show in Finder"),
+        has_label(&ui, output_label.as_str()),
         "Temporary disabled state must not retarget the primary action"
     );
     let more = element(&ui, "More actions", AccessibleRole::Button);
@@ -244,7 +245,7 @@ fn header_ink_aligns_with_values_and_failed_runs_offer_review() {
         ui.get_runs().row_data(1).unwrap().status,
         "1 needs attention"
     );
-    assert!(!has_label(&ui, "Show in Finder"));
+    assert!(!has_label(&ui, output_label.as_str()));
     assert!(has_label(&ui, "Review Request…"));
     click(&ui, "Review Request…");
     assert!(ui.get_reviewing());
