@@ -83,6 +83,246 @@ fn controller(root: &Path, cli: PathBuf) -> Rc<DesktopController> {
     mock_elapsed_time(Duration::from_millis(1));
     controller
 }
+
+#[test]
+#[ignore = "WP0 repro"]
+fn s1_idle_session_starts_work_after_settled_reports() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let c = controller(root.path(), completed(root.path(), "created"));
+    // F1 prevents even the third run from starting; no storage opt-in.
+    for index in 0..2 {
+        c.submit(vec![root.path().join(format!("source-{index}.eml"))])
+            .unwrap();
+        pump(&c, || !c.is_busy());
+    }
+    c.submit(vec![root.path().join("third.eml")]).unwrap();
+    c.tick();
+    assert_eq!(
+        c.window().get_waiting().row_count(),
+        0,
+        "Accepted work must start while idle"
+    );
+}
+
+#[test]
+#[ignore = "WP0 repro"]
+fn s3_window_constraints_allow_resizing_in_every_view() {
+    use i_slint_core::{item_tree::ItemTreeRc, layout::Orientation, window::WindowInner};
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let c = controller(root.path(), completed(root.path(), "created"));
+    let ui = c.window();
+    ui.window().set_size(slint::LogicalSize::new(1100.0, 700.0));
+    for settled in [false, true] {
+        if settled {
+            c.submit(vec![root.path().join("source.eml")]).unwrap();
+            pump(&c, || !c.is_busy());
+        }
+        mock_elapsed_time(Duration::from_millis(5));
+        let tree = WindowInner::from_pub(ui.window()).component();
+        let component = ItemTreeRc::borrow_pin(&tree);
+        for axis in [Orientation::Horizontal, Orientation::Vertical] {
+            let info = component.as_ref().layout_info(axis);
+            assert!(info.max >= 4000.0, "settled={settled}, {axis:?}: {info:?}");
+        }
+        assert_eq!(ui.window().size(), slint::PhysicalSize::new(1100, 700));
+        ui.window().set_size(slint::LogicalSize::new(1300.0, 800.0));
+        mock_elapsed_time(Duration::from_millis(5));
+        assert_eq!(ui.window().size(), slint::PhysicalSize::new(1300, 800));
+        ui.window().set_size(slint::LogicalSize::new(1100.0, 700.0));
+    }
+}
+
+#[test]
+#[ignore = "WP0 repro"]
+fn s4_interrupted_message_is_not_an_attention_failure() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let c = controller(
+        root.path(),
+        script(
+            root.path(),
+            &("cat >/dev/null\n".to_owned()
+                + &print(&fixture("started-preedge-cancellation"))
+                + "exit 130\n"),
+        ),
+    );
+    c.submit(vec![root.path().join("source.eml")]).unwrap();
+    pump(&c, || !c.is_busy());
+    let ui = c.window();
+    assert_eq!(ui.get_run_status(), RunStatus::Stopped.label());
+    assert!(
+        !ui.get_items().row_data(0).unwrap().attention,
+        "User Stop is not an attention failure"
+    );
+    let failed = ui
+        .get_counts()
+        .iter()
+        .find(|count| count.label == CountKind::Failed.label())
+        .unwrap();
+    assert_eq!(failed.value, 0);
+}
+
+#[test]
+#[ignore = "WP0 repro"]
+fn s18_result_rows_do_not_paint_over_inspector() {
+    use base64::{Engine as _, engine::general_purpose::STANDARD};
+    let capture = std::env::var_os("F3_CAPTURE").map(PathBuf::from);
+    if capture.is_some() {
+        slint::platform::set_platform(Box::new(i_slint_backend_testing::TestingBackend::new(
+            i_slint_backend_testing::TestingBackendOptions {
+                mock_time: true,
+                renderer_name: Some("software".into()),
+                ..Default::default()
+            },
+        )))
+        .unwrap();
+    } else {
+        init_no_event_loop();
+    }
+    let root = tempfile::tempdir().unwrap();
+    let created: Vec<serde_json::Value> = fixture("created")
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    let failed: Vec<serde_json::Value> = fixture("prepublication-failure")
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    let mut start = created[0].clone();
+    start["total"] = 60.into();
+    let mut records = vec![start];
+    for index in 0..60 {
+        let failure = match index {
+            5 => Some("PROTECTED"),
+            8 => Some("NO_BODY"),
+            13 => Some("UNSUPPORTED_MIME"),
+            _ => None,
+        };
+        let mut item = if failure.is_some() {
+            failed[1].clone()
+        } else {
+            created[1].clone()
+        };
+        item["index"] = index.into();
+        if let Some(code) = failure {
+            item["error"]["code"] = code.into();
+        }
+        for (field, name) in [
+            ("source", format!("{index:02}-message.eml")),
+            (
+                "destination",
+                format!("{index:02}-message.no-attachments.eml"),
+            ),
+        ] {
+            let path = root
+                .path()
+                .join("long-folder-context-".repeat(8))
+                .join(name);
+            let value = path.to_str().unwrap();
+            item[field] = serde_json::json!({"display": value, "native": {"encoding": "unix-bytes", "base64": STANDARD.encode(value)}});
+        }
+        records.push(item);
+    }
+    let mut summary = created[2].clone();
+    summary["counts"]["created"] = 57.into();
+    summary["counts"]["failed"] = 3.into();
+    summary["exit_code"] = 1.into();
+    records.push(summary);
+    let stream = records
+        .iter()
+        .map(|record| format!("{record}\n"))
+        .collect::<String>();
+    let stream = std::env::var_os("F3_REPORT")
+        .map(|path| fs::read_to_string(path).unwrap())
+        .unwrap_or(stream);
+    let c = controller(
+        root.path(),
+        script(
+            root.path(),
+            &("cat >/dev/null\n".to_owned() + &print(&stream) + "exit 1\n"),
+        ),
+    );
+    c.submit(vec![root.path().join("inbox")]).unwrap();
+    pump(&c, || !c.is_busy());
+    let ui = c.window();
+    ui.invoke_filter_attention(true);
+    assert_eq!(ui.get_items().row_count(), 3);
+    for (width, height) in [
+        (780.0, 600.0),
+        (780.0, 712.0),
+        (880.0, 600.0),
+        (1100.0, 700.0),
+    ] {
+        ui.window().set_size(slint::LogicalSize::new(width, height));
+        for expanded in [false, true] {
+            ui.set_details_expanded(expanded);
+            mock_elapsed_time(Duration::from_millis(5));
+            if let Some(directory) = &capture {
+                use std::io::Write;
+                let pixels = ui.window().take_snapshot().unwrap();
+                fs::create_dir_all(directory).unwrap();
+                let mut file =
+                    fs::File::create(directory.join(format!("{width}-{height}-{expanded}.ppm")))
+                        .unwrap();
+                writeln!(file, "P6\n{} {}\n255", pixels.width(), pixels.height()).unwrap();
+                for pixel in pixels.as_slice() {
+                    file.write_all(&[pixel.r, pixel.g, pixel.b]).unwrap();
+                }
+            }
+            let heading = ElementHandle::find_by_accessible_label(&ui, "Selected message")
+                .next()
+                .unwrap();
+            let viewport = ElementHandle::find_by_accessible_label(&ui, "Message results")
+                .next()
+                .unwrap();
+            let top = viewport.absolute_position().y;
+            let bottom = top + viewport.size().height;
+            assert!(
+                bottom <= heading.absolute_position().y,
+                "The list viewport must end before the inspector heading"
+            );
+            let mut checked = 0;
+            for row in [
+                "Protected content",
+                "No supported body",
+                "Unsupported content",
+            ]
+            .into_iter()
+            .flat_map(|label| ElementHandle::find_by_accessible_label(&ui, label))
+            {
+                let y = row.absolute_position().y;
+                if y < bottom && y + row.size().height > top {
+                    checked += 1;
+                    // Slint 1.18.1's Flickable clips its children. Raw text-cell
+                    // bounds may extend outside the viewport without painting
+                    // there; that alone is not evidence of the F3 defect.
+                    assert!(
+                        (y + row.size().height).min(bottom) <= heading.absolute_position().y,
+                        "width={width}, expanded={expanded}: outcome {y}+{} overlaps inspector at {}",
+                        row.size().height,
+                        heading.absolute_position().y
+                    );
+                }
+            }
+            assert!(checked > 0, "Must check visible outcome cells");
+        }
+    }
+    // The pack's literal F3 overlap was not reproduced after clipping was
+    // accounted for. Independently guard S18's required wide split layout;
+    // today's vertical stack fails this without inventing overlap evidence.
+    let heading = ElementHandle::find_by_accessible_label(&ui, "Selected message")
+        .next()
+        .unwrap();
+    let table = ElementHandle::find_by_accessible_label(&ui, "Message results")
+        .next()
+        .unwrap();
+    assert!(
+        heading.absolute_position().x >= table.absolute_position().x + table.size().width,
+        "S18: a wide result must put the inspector beside the table"
+    );
+}
 fn pump(controller: &DesktopController, predicate: impl Fn() -> bool) {
     let deadline = Instant::now() + Duration::from_secs(15);
     loop {

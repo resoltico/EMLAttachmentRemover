@@ -36,7 +36,7 @@ objc2-app-kit = { version = "0.3.2", optional = true, default-features = false, 
 slint-build = { version = "=1.18.1", default-features = false, features = ["compat-1-18"] }
 
 [dev-dependencies]
-i-slint-backend-testing = "=1.18.1"
+i-slint-backend-testing = { version = "=1.18.1", features = ["renderer-software"] }
 
 [[bin]]
 name = "emlattachmentremover-gui"
