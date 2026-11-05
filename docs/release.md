@@ -23,6 +23,9 @@ Distribution uses the `dist` Cargo profile: checked release arithmetic, Thin LTO
 one codegen unit and stripped symbols. Ordinary development builds keep their
 existing debug/incremental settings. Cargo metadata supplies the actual target
 directory, including Cargo configuration overrides.
+Commands resolve the invoking workspace with Cargo at runtime, including when
+called from a member directory. A shared target cache must not select the
+worktree in which an earlier `xtask` executable happened to be compiled.
 
 Use a fresh output folder. The CLI archive is flat: executable, LICENSE and
 THIRD-PARTY-NOTICES.txt. The app ZIP contains `EML Attachment Remover.app`, with

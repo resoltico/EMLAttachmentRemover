@@ -1,10 +1,7 @@
 // Copyright 2026 Ervins Strauhmanis
 // SPDX-License-Identifier: MPL-2.0
-import { AboutSlint, Button, TextEdit, VerticalBox, HorizontalBox } from "std-widgets.slint";
-component DialogButton inherits Button {
-    min-height: max(32px, 2.5rem);
-    max-height: self.min-height;
-}
+import { AboutSlint, TextEdit, VerticalBox, HorizontalBox, Palette } from "std-widgets.slint";
+import { ActionButton, TextButton, UiMetrics } from "controls.slint";
 component AboutLabel inherits TextInput {
     read-only: true; single-line: true; horizontal-alignment: center;
     accessible-label: self.text; vertical-stretch: 0;
@@ -13,12 +10,15 @@ export component AboutWindow inherits Window {
     in property <string> product-name;
     in property <string> version;
     in property <string> copyright;
+    in property <string> notice;
+    in property <string> notice-details;
+    private property <bool> show-notice-details: false;
     title: "About " + root.product-name;
     icon: @image-url("eml-icon.png");
-    in property <length> ui-size: 13px;
+    in property <length> ui-size: 14px;
     default-font-size: root.ui-size;
-    preferred-width: max(420px, root.ui-size * 30);
-    preferred-height: max(410px, root.ui-size * 27);
+    preferred-width: max(440px, root.ui-size * 30);
+    preferred-height: max(490px, root.ui-size * 32) + (root.notice != "" ? 64px : 0px) + (root.show-notice-details ? 100px : 0px);
     callback website(); callback licenses(); callback dismiss();
     callback focus-website();
     focus-website => { website.focus(); }
@@ -35,18 +35,21 @@ export component AboutWindow inherits Window {
     forward-focus: about-focus;
     about-focus := FocusScope {
         key-pressed(event) => { if event.text == Key.Escape { root.dismiss(); return accept; } return reject; }
-        VerticalBox { padding: 24px; spacing: 12px; alignment: center;
+        VerticalBox { padding: UiMetrics.gutter; spacing: UiMetrics.gap; alignment: center;
             HorizontalBox { alignment: center; padding: 0px;
                 Image { source: root.icon; width: 64px; height: 64px; image-fit: contain; accessible-label: "Application icon"; }
             }
-            name-text := AboutLabel { text: root.product-name; font-size: 18px; font-weight: 600; }
+            name-text := AboutLabel { text: root.product-name; font-size: root.ui-size * 1.4; font-weight: 600; }
             version-text := AboutLabel { text: "Version " + root.version; }
             purpose-text := AboutLabel { text: "Create body-only copies of EML messages.\nKeep original messages unchanged."; single-line: false; }
             copyright-text := AboutLabel { text: root.copyright; }
-            HorizontalBox { alignment: center; spacing: 12px; padding: 0px;
-                website := DialogButton { text: "Project website"; clicked => { root.website(); } }
-                DialogButton { text: "Licenses"; clicked => { root.licenses(); } }
+            HorizontalBox { alignment: center; spacing: UiMetrics.gap; padding: 0px;
+                website := ActionButton { text: "Project website"; clicked => { root.website(); } }
+                ActionButton { text: "Licenses"; clicked => { root.licenses(); } }
             }
+            if root.notice != "": Text { text: root.notice; wrap: word-wrap; vertical-alignment: center; color: Palette.foreground; accessible-live-region: polite; }
+            if root.notice-details != "": TextButton { text: root.show-notice-details ? "Hide details" : "Details…"; expandable: true; expanded: root.show-notice-details; clicked => { root.show-notice-details = !root.show-notice-details; } }
+            if root.show-notice-details && root.notice-details != "": TextEdit { text: root.notice-details; read-only: true; preferred-height: 100px; max-height: 100px; accessible-label: "Website opening details"; }
             HorizontalBox { alignment: center; vertical-stretch: 0; padding: 0px;
                 AboutSlint { width: 280px; height: 100px; horizontal-stretch: 0; vertical-stretch: 0; }
             }
@@ -57,9 +60,11 @@ export component LicenseWindow inherits Window {
     title: "Software and artwork licenses";
     icon: @image-url("eml-icon.png");
     preferred-width: 720px; preferred-height: 560px;
-    in property <length> ui-size: 13px;
+    in property <length> ui-size: 14px;
     in property <string> licenses;
     in property <string> notice: "Third-party terms and source references are included with the application.";
+    in property <string> notice-details;
+    private property <bool> show-notice-details: false;
     default-font-size: root.ui-size;
     callback third-party(); callback dismiss();
     callback focus-start();
@@ -76,11 +81,15 @@ export component LicenseWindow inherits Window {
     license-focus := FocusScope {
         forward-focus: license-text;
         key-pressed(event) => { if event.text == Key.Escape { root.dismiss(); return accept; } return reject; }
-        VerticalBox {
+        VerticalBox { padding: UiMetrics.gutter; spacing: UiMetrics.inset;
             license-text := TextEdit { text: root.licenses; read-only: true; accessible-label: "Software and artwork license terms"; }
-            HorizontalBox { padding: 12px; spacing: 12px; vertical-stretch: 0;
-                Text { text: root.notice; wrap: word-wrap; horizontal-stretch: 1; }
-                DialogButton { text: "Third-party licenses…"; clicked => { root.third-party(); } }
+            VerticalBox { padding: 0px; spacing: UiMetrics.gap; vertical-stretch: 0;
+                Text { text: root.notice; wrap: word-wrap; vertical-alignment: center; color: Palette.foreground; accessible-live-region: polite; }
+                if root.notice-details != "": TextButton { text: root.show-notice-details ? "Hide details" : "Details…"; expandable: true; expanded: root.show-notice-details; clicked => { root.show-notice-details = !root.show-notice-details; } }
+                if root.show-notice-details && root.notice-details != "": TextEdit { text: root.notice-details; read-only: true; preferred-height: 100px; max-height: 100px; accessible-label: "Notices opening details"; }
+                HorizontalBox { padding: 0px; alignment: end;
+                    ActionButton { text: "Third-party licenses…"; clicked => { root.third-party(); } }
+                }
             }
         }
     }

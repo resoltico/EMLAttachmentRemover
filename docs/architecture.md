@@ -74,15 +74,28 @@ See the [threat model](threat-model.md) for the supported environment.
 
 The desktop runs the public CLI from `Contents/Helpers`, never PATH. Native ingress stages absolute paths without starting a worker. Explicit Start
 captures the reviewed selection, current destination and mode in a protocol request. At most eight
-requests wait, and two retained reports reserve display capacity. A serial worker
-runs one request at a time; dismissing a completed report releases capacity.
+requests wait. Admission reserves at most ten tasks/results and never evicts
+diagnostics. Without temporary-storage consent, two retained reports reserve
+memory capacity; closing a settled result releases it. With explicit session-only
+consent, settled exact streams are written to private files whose names are
+successfully unlinked before any diagnostic bytes are written. One background
+writer/loader replays the existing protocol reducer and checks accepted observations
+before eviction. Storage failure keeps the original completion and pauses launches.
+Between IO jobs only the active and inspected full reports remain resident;
+one immutable export stream may additionally be pinned by a naming draft or owned
+export job. Replay temporarily allocates one additional bounded parsed report.
+A serial worker runs one request at a time. Private backing handles are released
+on result close or session exit; they provide no durable history or crash recovery.
 
 `WorkerRun` owns `std::process::Child`; background threads write/close stdin and
 drain stdout/stderr. The UI polls without blocking. Derived Slint rows update in place, preserving
 controls and keyboard focus across selection and append-only result updates. Stop sends SIGINT once; Force
 Stop kills the child; completion includes reaping and reader settlement. Partial
 accepted records survive malformed tails and worker failures. Exports write the
-exact retained stream to a new file in a background thread. An export draft owns
+exact retained stream in a background thread: a private same-folder staging file
+is written and file-synchronized before no-replace publication. Physical write
+failure exposes no partial final report. Directory-entry power-loss persistence
+is not promised, and a crash can leave a private staging file. An export draft owns
 captured immutable bytes independently of report navigation; its folder-picker
 lifetime token rejects callbacks for a cancelled/replaced draft. Name collisions
 stay in the application-owned naming window; the native folder chooser never
@@ -100,3 +113,11 @@ unsafe Objective-C calls. The About adapter routes the focused window’s standa
 application-menu item to the application-owned Slint About window; it does not
 modify or fork the toolkit. The worker uses the public protocol-1 CLI. The software renderer is the default; Skia remains an
 explicit build feature for measurement. Builds use upstream crates without forks.
+
+Draft settings and immutable result settings occupy separate workspaces. A compact
+task drawer navigates results/waiting work; the active strip owns Stop independently
+of selection. A shared Slint metrics/control module owns visual relationships.
+The result list has one keyboard focus scope and fixed-height virtualized rows;
+content-sized message details do not reserve an empty framed pane. Native open/reveal
+requests run off the UI thread, bounded to one per initiating view, with scoped
+feedback. Their acceptance is advisory, not proof of viewer contents or file identity.

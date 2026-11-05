@@ -312,3 +312,83 @@ fn desktop_worker_accepts_check_only_and_rejects_foreign_native_operands() {
         Err(ProtocolFailure::IncompatibleHelper)
     ));
 }
+
+#[test]
+fn report_export_preserves_exact_bytes_and_existing_entries_without_staging_residue() {
+    let root = tempfile::tempdir().unwrap();
+    let output = root.path().join("report – Rīga.jsonl");
+    // An incomplete worker stream is still valid export input: retain exactly
+    // what was captured, rather than inventing or reserializing records.
+    let received = b"{\"type\":\"start\"}\nunfinished";
+    eml_app::export_report(&output, received).unwrap();
+    assert_eq!(std::fs::read(&output).unwrap(), received);
+    assert_eq!(
+        eml_app::export_report(&output, b"replacement")
+            .unwrap_err()
+            .kind(),
+        std::io::ErrorKind::AlreadyExists
+    );
+    assert_eq!(std::fs::read(&output).unwrap(), received);
+    assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 1);
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{PermissionsExt, symlink};
+        assert_eq!(
+            std::fs::metadata(&output).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        let link = root.path().join("linked.jsonl");
+        symlink(&output, &link).unwrap();
+        assert_eq!(
+            eml_app::export_report(&link, b"replacement")
+                .unwrap_err()
+                .kind(),
+            std::io::ErrorKind::AlreadyExists
+        );
+        assert_eq!(std::fs::read_link(&link).unwrap(), output);
+        assert_eq!(std::fs::read(&output).unwrap(), received);
+        assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 2);
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn report_export_write_failure_leaves_no_final_file_or_owned_staging() {
+    const QUOTA_DIRECTORY: &str = "EML_TEST_EXPORT_QUOTA_DIRECTORY";
+    if let Some(directory) = std::env::var_os(QUOTA_DIRECTORY) {
+        let directory = std::path::PathBuf::from(directory);
+        let output = directory.join("report.jsonl");
+        let failure = eml_app::export_report(&output, &[b'x'; 8192]).unwrap_err();
+        assert_eq!(failure.kind(), std::io::ErrorKind::FileTooLarge);
+        assert!(!output.exists(), "a failed write published its final name");
+        assert_eq!(std::fs::read_dir(directory).unwrap().count(), 0);
+        return;
+    }
+
+    // A separate process gets the actual OS write failure. Neither the host
+    // filesystem nor concurrently running tests acquire a storage/resource cap.
+    let root = tempfile::tempdir().unwrap();
+    let result = std::process::Command::new("/bin/sh")
+        .args([
+            "-c",
+            "trap '' XFSZ; ulimit -f 1; exec \"$@\"",
+            "export-quota",
+        ])
+        .arg(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "report_export_write_failure_leaves_no_final_file_or_owned_staging",
+            "--nocapture",
+        ])
+        .env(QUOTA_DIRECTORY, root.path())
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "quota subprocess failed: {}\n{}\n{}",
+        result.status,
+        String::from_utf8_lossy(&result.stdout),
+        String::from_utf8_lossy(&result.stderr)
+    );
+}
