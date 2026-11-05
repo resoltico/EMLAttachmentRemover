@@ -6,7 +6,7 @@ impl DesktopController {
         self.ui.on_new_request(move || {
             if let Some(c) = weak.upgrade() {
                 let mut s = c.session.borrow_mut();
-                if !s.is_closing() {
+                if !s.is_closing() && s.state.confirmation.is_none() {
                     s.state.reviewing = true;
                     s.state.follow_run = None;
                 }
@@ -49,6 +49,9 @@ impl DesktopController {
         self.ui.on_clear_selection(move || {
             if let Some(c) = weak.upgrade() {
                 let mut s = c.session.borrow_mut();
+                if s.state.confirmation.is_some() || s.is_closing() {
+                    return;
+                }
                 s.state.selection.clear();
                 s.state.reviewing = true;
                 drop(s);
@@ -56,15 +59,11 @@ impl DesktopController {
             }
         });
         let weak = Rc::downgrade(self);
-        self.ui.on_review_selection(move || {
-            if let Some(c) = weak.upgrade() {
-                c.session.borrow_mut().state.reviewing = true;
-                c.refresh();
-            }
-        });
-        let weak = Rc::downgrade(self);
         self.ui.on_remove_selection(move |index| {
             if let Some(c) = weak.upgrade() {
+                if !c.inputs_enabled() {
+                    return;
+                }
                 let mut s = c.session.borrow_mut();
                 if let Ok(index) = usize::try_from(index)
                     && index < s.state.selection.len()
@@ -79,6 +78,9 @@ impl DesktopController {
         let weak = Rc::downgrade(self);
         self.ui.on_mode_changed(move |check| {
             if let Some(c) = weak.upgrade() {
+                if !c.inputs_enabled() {
+                    return;
+                }
                 c.clear_operation();
                 c.session.borrow_mut().state.mode = if check {
                     RunMode::DryRun
@@ -228,7 +230,7 @@ impl DesktopController {
         let weak = Rc::downgrade(self);
         self.ui.on_force_stop(move || {
             if let Some(c) = weak.upgrade() {
-                if c.ui.get_confirmation() != Confirmation::None {
+                if c.confirmation() != Confirmation::None {
                     return;
                 }
                 let notice = {
@@ -246,16 +248,19 @@ impl DesktopController {
                     )
                 };
                 c.ui.set_force_notice(notice.into());
-                c.ui.set_confirmation(Confirmation::ForceStop);
+                let id = c.session.borrow().active.as_ref().expect("active force-stop target").id;
+                c.set_confirmation(Some(state::PendingConfirmation::ForceStop(id)));
             }
         });
         let weak = Rc::downgrade(self);
         self.ui.on_confirm_force_stop(move || {
             if let Some(c) = weak.upgrade() {
-                if c.ui.get_confirmation() != Confirmation::ForceStop {
-                    return;
-                }
-                c.ui.set_confirmation(Confirmation::None);
+                let valid = {
+                    let s = c.session.borrow();
+                    matches!(&s.state.confirmation, Some(state::PendingConfirmation::ForceStop(id)) if s.active.as_ref().is_some_and(|active| active.id == *id))
+                };
+                if !valid { return; }
+                c.set_confirmation(None);
                 c.force_stop();
             }
         });
@@ -263,6 +268,48 @@ impl DesktopController {
         self.ui.on_review_request(move || {
             if let Some(c) = weak.upgrade() {
                 c.review_request();
+            }
+        });
+        let weak = Rc::downgrade(self);
+        self.ui.on_create_from_check(move || {
+            if let Some(c) = weak.upgrade() {
+                c.create_from_check();
+            }
+        });
+        let weak = Rc::downgrade(self);
+        self.ui.on_confirm_replace_draft(move || {
+            if let Some(c) = weak.upgrade() {
+                let pending = c.session.borrow_mut().state.confirmation.take();
+                if let Some(state::PendingConfirmation::ReplaceDraft(snapshot)) = pending {
+                    c.ui.set_confirmation(Confirmation::None);
+                    c.apply_snapshot(snapshot);
+                } else {
+                    c.session.borrow_mut().state.confirmation = pending;
+                }
+            }
+        });
+        let weak = Rc::downgrade(self);
+        self.ui.on_recent_destination(move |index| {
+            if let Some(c) = weak.upgrade() {
+                let path = usize::try_from(index).ok().and_then(|index| {
+                    c.session
+                        .borrow()
+                        .preferences
+                        .recent_destinations()
+                        .get(index)
+                        .cloned()
+                });
+                if let Some(path) = path {
+                    c.set_destination(Some(path));
+                }
+            }
+        });
+        let weak = Rc::downgrade(self);
+        self.ui.on_close_run(move |index| {
+            if let Some(c) = weak.upgrade()
+                && let Ok(index) = usize::try_from(index)
+            {
+                c.dismiss_run(index);
             }
         });
         let weak = Rc::downgrade(self);
@@ -306,8 +353,8 @@ impl DesktopController {
         let weak = Rc::downgrade(self);
         self.ui.on_cancel_confirmation(move || {
             if let Some(c) = weak.upgrade() {
-                let restore_export = c.ui.get_confirmation() == Confirmation::Quit;
-                c.ui.set_confirmation(Confirmation::None);
+                let restore_export = c.confirmation() == Confirmation::Quit;
+                c.set_confirmation(None);
                 if restore_export && c.export_draft.borrow().is_some() {
                     let _ = c.export_ui.show();
                 }
@@ -316,7 +363,7 @@ impl DesktopController {
         let weak = Rc::downgrade(self);
         self.ui.on_stop_and_quit(move || {
             if let Some(c) = weak.upgrade() {
-                if c.ui.get_confirmation() != Confirmation::Quit {
+                if c.confirmation() != Confirmation::Quit {
                     return;
                 }
                 {
@@ -324,7 +371,7 @@ impl DesktopController {
                     s.quit_when_idle = true;
                     s.state.queue.cancel_waiting();
                 }
-                c.ui.set_confirmation(Confirmation::None);
+                c.set_confirmation(None);
                 c.stop();
                 c.tick();
             }
@@ -332,7 +379,7 @@ impl DesktopController {
         let weak = Rc::downgrade(self);
         self.ui.on_force_and_quit(move || {
             if let Some(c) = weak.upgrade() {
-                if c.ui.get_confirmation() != Confirmation::Quit {
+                if c.confirmation() != Confirmation::Quit {
                     return;
                 }
                 {
@@ -340,7 +387,7 @@ impl DesktopController {
                     s.force_quit = true;
                     s.state.queue.cancel_waiting();
                 }
-                c.ui.set_confirmation(Confirmation::None);
+                c.set_confirmation(None);
                 c.force_stop();
                 c.tick();
             }

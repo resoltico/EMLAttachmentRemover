@@ -64,6 +64,7 @@ pub fn install_native(
     ui.window().on_winit_window_event(move |_, event| {
         if let Some(controller) = weak.upgrade() {
             match event {
+                WindowEvent::HoveredFile(_) => controller.hover_drop(true),
                 WindowEvent::DroppedFile(path) => controller.deliver_drop(path.clone()),
                 WindowEvent::HoveredFileCancelled => controller.cancel_drop(),
                 _ => {}
@@ -76,6 +77,9 @@ pub fn install_native(
         let Some(controller) = weak.upgrade() else {
             return;
         };
+        if !controller.inputs_enabled() {
+            return;
+        }
         let ui = controller.window();
         let _ = slint::spawn_local(async move {
             // rfd needs both native handle traits; keep the winit owner alive.
@@ -91,6 +95,7 @@ pub fn install_native(
                 .add_filter("EML messages", &["eml"])
                 .pick_files()
                 .await
+                && controller.inputs_enabled()
                 && let Err(error) = controller.stage(
                     files
                         .into_iter()
@@ -107,6 +112,9 @@ pub fn install_native(
         let Some(controller) = weak.upgrade() else {
             return;
         };
+        if !controller.inputs_enabled() {
+            return;
+        }
         let ui = controller.window();
         let _ = slint::spawn_local(async move {
             // rfd needs both native handle traits; keep the winit owner alive.
@@ -121,6 +129,7 @@ pub fn install_native(
                 .set_parent(parent.as_ref())
                 .pick_folder()
                 .await
+                && controller.inputs_enabled()
                 && let Err(error) = controller.stage(vec![folder.path().to_owned()])
             {
                 controller.message(&error.to_string());
@@ -132,6 +141,9 @@ pub fn install_native(
         let Some(controller) = weak.upgrade() else {
             return;
         };
+        if !controller.inputs_enabled() {
+            return;
+        }
         let ui = controller.window();
         let _ = slint::spawn_local(async move {
             // rfd needs both native handle traits; keep the winit owner alive.

@@ -1,9 +1,16 @@
 //! Pure draft, queue and navigation state. No toolkit or I/O dependencies.
-use eml_app::{RunId, RunQueue};
+use eml_app::{RequestSnapshot, RunId, RunQueue};
 use eml_core::RunMode;
 use std::path::PathBuf;
 
+pub(super) enum PendingConfirmation {
+    ForceStop(RunId),
+    Quit,
+    ReplaceDraft(RequestSnapshot),
+}
 pub(super) struct Session {
+    pub confirmation: Option<PendingConfirmation>,
+    pub has_started: bool,
     pub selection: Vec<PathBuf>,
     pub reviewing: bool,
     pub follow_run: Option<RunId>,
@@ -15,6 +22,8 @@ pub(super) struct Session {
 impl Default for Session {
     fn default() -> Self {
         Self {
+            confirmation: None,
+            has_started: false,
             selection: Vec::new(),
             reviewing: false,
             follow_run: None,

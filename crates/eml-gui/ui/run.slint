@@ -36,7 +36,8 @@ export component RunPane inherits VerticalBox {
     in-out property <bool> keyboard-navigation;
     in property <length> message-row-height;
     in-out property <length> messages-scroll-y;
-    in-out property <length> messages-view-height;
+    private property <length> messages-view-height: message-list.visible-height;
+    in property <int> selected-visible-row;
     in property <bool> native-open-pending;
     callback navigate-message(int);
     in property <length> outcome-width;
@@ -50,7 +51,27 @@ export component RunPane inherits VerticalBox {
     in property <bool> report-running;
     callback reveal();
     callback reveal-report();
-    callback reveal-selected();
+    function reveal-selected() {
+        if root.messages-view-height > 0px {
+            // Selection and viewport can arrive on different layout updates.
+            if root.selected-visible-row >= 0 && root.selected-visible-row < root.items.length {
+                if root.messages-scroll-y + root.selected-visible-row * root.message-row-height < 0px {
+                    root.messages-scroll-y = -root.selected-visible-row * root.message-row-height;
+                } else if root.messages-scroll-y + (root.selected-visible-row + 1) * root.message-row-height > root.messages-view-height {
+                    root.messages-scroll-y = max(-root.selected-visible-row * root.message-row-height,
+                        root.messages-view-height - (root.selected-visible-row + 1) * root.message-row-height);
+                }
+            }
+            // Revealing a row must never scroll past the current content extent.
+            root.messages-scroll-y = max(min(0px, root.messages-view-height - root.items.length * root.message-row-height),
+                min(0px, root.messages-scroll-y));
+        }
+    }
+    changed selected-visible-row => { root.reveal-selected(); }
+    changed messages-view-height => { root.reveal-selected(); }
+    changed message-row-height => { root.reveal-selected(); }
+    changed keyboard-navigation => { if root.keyboard-navigation { root.reveal-selected(); } }
+
     in property <string> review-label;
     callback review-request();
     in property <string> run-context;
@@ -60,7 +81,7 @@ export component RunPane inherits VerticalBox {
     callback select-item(int);
     in property <int> selected-item;
     in property <string> selected-removals;
-    in property <[PathView]> selection;
+    callback create-from-check();
     in property <[DetailView]> stripped;
     in property <string> technical-details-label;
     in property <length> ui-size;
@@ -73,7 +94,8 @@ export component RunPane inherits VerticalBox {
                 }
                 HorizontalBox { padding: 0px; spacing: UiMetrics.gap; vertical-stretch: 0;
                     ActionButton { text: "Save report…"; enabled: root.can-export && !root.closing; accessible-description: "Save the selected result's exact diagnostic JSONL."; clicked => { root.export-report(); } }
-                    if root.can-review: ActionButton { text: root.review-label; enabled: root.selection.length == 0 && !root.closing; primary: root.can-create; accessible-description: root.selection.length > 0 ? "Finish or clear the current reviewed selection first." : "Review the original selected roots and current settings before starting another request."; clicked => { root.review-request(); } }
+                    if root.can-review: ActionButton { text: root.review-label; enabled: !root.closing; accessible-description: "Load this run’s captured inputs and settings into the draft."; clicked => { root.review-request(); } }
+                    if root.can-create: ActionButton { text: "Create Copies…"; primary: true; enabled: !root.closing; clicked => { root.create-from-check(); } }
                     TextButton { text: "Close result"; enabled: root.can-dismiss; accessible-description: "Close this result. Original messages, created copies and saved reports stay unchanged."; clicked => { root.dismiss(); } }
                 }
                 if root.saved-report-path.full != "": HorizontalBox { padding: 0px; spacing: UiMetrics.gap; vertical-stretch: 0;
@@ -131,8 +153,7 @@ export component RunPane inherits VerticalBox {
                     }
                     message-list := ListView {
                         width: parent.width; height: parent.height;
-                        init => { root.messages-view-height = self.visible-height; }
-                        content-y <=> root.messages-scroll-y; changed visible-height => { root.messages-view-height = self.visible-height; }
+                        content-y <=> root.messages-scroll-y;
                         content-width: self.visible-width; accessible-role: list; accessible-label: "Message results";
                         for item[index] in root.items: Rectangle {
                             height: root.message-row-height;
@@ -145,9 +166,9 @@ export component RunPane inherits VerticalBox {
                             accessible-item-selectable: true; accessible-item-selected: item.original-index == root.selected-item;
                             accessible-action-default => { message-keys.focus(); root.select-item(item.original-index); }
                             TouchArea { clicked => { message-keys.focus(); root.keyboard-navigation = false; root.select-item(item.original-index); } }
-                            HorizontalBox { width: parent.width; height: parent.height; padding: UiMetrics.gap; padding-left: 12px; padding-right: 12px; spacing: UiMetrics.inset;
-                                PathLabel { path: item.path; text-size: root.ui-size; }
-                                Label { text: item.status; color: item.attention ? root.attention-color : Palette.foreground; width: root.outcome-width; horizontal-stretch: 0; wrap: word-wrap; vertical-alignment: center; }
+                            HorizontalBox { width: parent.width; height: parent.height; padding: 2px; padding-left: 12px; padding-right: 12px; spacing: UiMetrics.inset;
+                                FileName { path: item.path; text-size: root.ui-size; }
+                                Label { text: item.status; color: item.attention ? root.attention-color : Palette.foreground; width: root.outcome-width; horizontal-stretch: 0; overflow: elide; vertical-alignment: center; }
                             }
                             Rectangle { y: parent.height - 1px; height: 1px; background: Palette.border; opacity: 0.35; }
                         }

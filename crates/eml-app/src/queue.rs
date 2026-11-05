@@ -42,6 +42,10 @@ pub enum QueueError {
     IdentityLimit,
     /// The frontend has committed to closing and cannot admit more work.
     ShuttingDown,
+    /// A pending confirmation must settle before draft changes.
+    DecisionPending,
+    /// The chosen GUI destination folder no longer exists.
+    DestinationUnavailable,
 }
 impl std::fmt::Display for QueueError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -58,6 +62,8 @@ impl std::fmt::Display for QueueError {
             Self::SessionFull => write!(f, "This session already holds {MAX_SESSION_REQUESTS} tasks and results. Close a result or remove a waiting task before adding another."),
             Self::InactiveRun => f.write_str("The completion does not belong to the active request."),
             Self::IdentityLimit => f.write_str("This session cannot start another request. Save needed reports and restart the application."),
+            Self::DestinationUnavailable => f.write_str("Choose an existing folder to save copies"),
+            Self::DecisionPending => f.write_str("Finish or cancel the current decision before changing the draft."),
             Self::ShuttingDown => f.write_str("The application is closing. Reopen it before starting another request."),
         }
     }

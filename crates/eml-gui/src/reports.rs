@@ -4,7 +4,7 @@ impl DesktopController {
     pub(super) fn start_next(&self) {
         let mut s = self.session.borrow_mut();
         if s.is_closing()
-            || self.ui.get_confirmation() == Confirmation::Quit
+            || matches!(s.state.confirmation, Some(state::PendingConfirmation::Quit))
             || s.report_task.is_some()
             || s.memory_full()
         {
@@ -50,6 +50,7 @@ impl DesktopController {
                 let _ = s.state.queue.complete(id);
             }
         }
+        s.state.has_started = true;
         s.entries.push(entry);
         if s.state.follow_run == Some(id) || s.entries.len() == 1 {
             s.state.selected = s.entries.len() - 1;

@@ -29,6 +29,32 @@ impl DesktopController {
         self.ui.set_native_open_pending(main_open_pending);
         platform::set_busy(s.needs_quit_confirmation());
         self.ui.set_closing(s.is_closing());
+        self.ui
+            .set_can_edit(!s.is_closing() && s.state.confirmation.is_none());
+        self.ui.set_session_started(s.state.has_started);
+        self.ui.set_starts_after(
+            s.active
+                .as_ref()
+                .map_or_else(String::new, |active| {
+                    format!("Starts after Run {}", active.id)
+                })
+                .into(),
+        );
+        self.ui.set_recent_destinations(update_model(
+            self.ui.get_recent_destinations(),
+            s.preferences
+                .recent_destinations()
+                .iter()
+                .map(|path| {
+                    path.strip_prefix(&self.home)
+                        .map_or_else(
+                            |_| eml_protocol::TerminalPath::new(path).to_string(),
+                            |relative| format!("~/{}", eml_protocol::TerminalPath::new(relative)),
+                        )
+                        .into()
+                })
+                .collect(),
+        ));
         if s.is_closing() {
             self.export_draft.borrow_mut().take();
             let _ = self.export_ui.hide();
@@ -39,7 +65,20 @@ impl DesktopController {
             s.state
                 .selection
                 .iter()
-                .map(|path| view_model::path(&eml_protocol::TerminalPath::new(path).to_string()))
+                .map(|path| {
+                    let mut display =
+                        view_model::path(&eml_protocol::TerminalPath::new(path).to_string());
+                    if let Some(parent) = path.parent()
+                        && let Ok(relative) = parent.strip_prefix(&self.home)
+                    {
+                        display.directory =
+                            format!("~/{}", eml_protocol::TerminalPath::new(relative)).into();
+                    }
+                    SelectionView {
+                        path: display,
+                        folder: path.is_dir(),
+                    }
+                })
                 .collect(),
         ));
         self.ui
@@ -56,14 +95,16 @@ impl DesktopController {
         self.ui.set_worker_running(s.active.is_some());
         self.ui.set_start_label(if s.memory_full() {
             "Waiting for space — close a finished run".into()
+        } else if matches!(s.state.queue.capacity_error(), Some(QueueError::Full)) {
+            "Queue full — remove a waiting run".into()
         } else if s.state.queue.capacity_error().is_some() {
             "Close a finished run to add more".into()
         } else if s.active.is_some() || s.report_task.is_some() {
-            "Queue request".into()
+            "Add to Queue".into()
         } else if s.state.mode == RunMode::DryRun {
-            "Start check".into()
+            "Start Check".into()
         } else {
-            "Create copies".into()
+            "Create Copies".into()
         });
         self.ui
             .set_can_start(!s.state.selection.is_empty() && s.admission_error().is_none());
@@ -124,7 +165,7 @@ impl DesktopController {
             s.preferences
                 .destination()
                 .map(|p| eml_protocol::TerminalPath::new(p).to_string())
-                .unwrap_or_else(|| "Beside originals".into())
+                .unwrap_or_else(|| "Next to originals".into())
                 .into(),
         );
         self.ui.set_runs(update_model(
@@ -132,11 +173,8 @@ impl DesktopController {
             s.entries
                 .iter()
                 .map(|entry| {
-                    let mut view = run_view(
-                        entry.id,
-                        &entry.request,
-                        status(entry, s.active.as_ref()).label(),
-                    );
+                    let mut view =
+                        run_view(entry.id, &entry.request, status(entry, s.active.as_ref()));
                     view.unseen = entry.presentation.unseen;
                     view
                 })
@@ -147,7 +185,7 @@ impl DesktopController {
             s.state
                 .queue
                 .waiting_requests()
-                .map(|(id, request)| run_view(id, request, RunStatus::Queued.label()))
+                .map(|(id, request)| run_view(id, request, RunStatus::Queued))
                 .collect(),
         ));
         let Some(entry) = s.entries.get(s.state.selected) else {
@@ -208,10 +246,13 @@ impl DesktopController {
             entry.completion.is_some() || entry.stored.is_some() || entry.launch_error.is_some(),
         );
         self.ui.set_review_label(
-            if can_create(entry) {
-                "Review for copy creation"
+            if matches!(
+                run_status,
+                RunStatus::Stopped | RunStatus::StoppedBeforeStart | RunStatus::ForceStopped
+            ) {
+                "Continue…"
             } else {
-                "Review inputs again"
+                "Run Again…"
             }
             .into(),
         );

@@ -1,63 +1,80 @@
 // Copyright 2026 Ervins Strauhmanis
 // SPDX-License-Identifier: MPL-2.0
-import { TextEdit, HorizontalBox, VerticalBox, ListView, ScrollView, ProgressIndicator, Palette, RadioGroup, CheckBox } from "std-widgets.slint";
-import { ActionButton, TextButton, UiMetrics, Label, FileName, PathLabel } from "controls.slint";
-import { Confirmation, CountView, PathView, RunView, ItemView, DetailView, RemovalView } from "models.slint";
-
-export component SessionTasks inherits Rectangle {
-    in property <brush> attention-color;
-    callback close-tasks();
-    in property <bool> closing;
-    in property <string> queue-notice;
-    callback remove-waiting(int);
-    callback review-selection();
-    in property <bool> reviewing;
+import { VerticalBox, HorizontalBox, ScrollView } from "std-widgets.slint";
+import { RunView, Tone } from "models.slint";
+import { Theme } from "theme.slint";
+import { ActionButton, TextButton, Label, ToneDot } from "controls.slint";
+component RunEntry inherits Rectangle {
+    in property <RunView> run;
+    in property <bool> selected;
+    callback activated(); callback context();
+    private property <bool> flash;
+    changed run => { root.flash = root.run.unseen; }
+    Timer { interval: 600ms; running: root.flash; triggered => { root.flash = false; } }
+    animate background { duration: 200ms; }
+    min-height: 58px; border-radius: 6px;
+    background: root.selected || root.flash ? Theme.accent-soft : pointer.has-hover ? Theme.raised : transparent;
+    accessible-role: list-item; accessible-label: root.run.label + " · " + root.run.mode;
+    accessible-description: root.run.status + (root.run.unseen ? ", new result" : "");
+    accessible-item-selectable: true; accessible-item-selected: root.selected;
+    accessible-action-default => { root.activated(); }
+    HorizontalBox { padding: 8px; spacing: 8px;
+        ToneDot { tone: root.run.tone == Tone.running ? Theme.accent : root.run.tone == Tone.ok ? Theme.ok : root.run.tone == Tone.attention ? Theme.warn : Theme.idle; }
+        VerticalBox { padding: 0px; spacing: 3px;
+            Label { text: root.run.label + " · " + root.run.mode; font-weight: 600; overflow: elide; }
+            Label { text: root.run.status; color: Theme.muted; font-size: 12px; overflow: elide; }
+        }
+        if root.run.unseen: ToneDot { tone: Theme.accent; }
+    }
+    pointer := TouchArea {
+        clicked => { root.activated(); }
+        pointer-event(event) => { if event.button == PointerEventButton.right && event.kind == PointerEventKind.down { root.context(); } }
+    }
+}
+export component Sidebar inherits Rectangle {
     in property <[RunView]> runs;
-    callback select-run(int);
-    in property <int> selected-run;
-    in property <[PathView]> selection;
-    in property <length> ui-size;
     in property <[RunView]> waiting;
- background: Palette.background; border-width: 1px; border-color: Palette.border; border-radius: 6px;
-            FocusScope { key-pressed(event) => { if event.text == Key.Escape { root.close-tasks(); return accept; } return reject; }
-                VerticalBox { padding: UiMetrics.inset; spacing: UiMetrics.gap;
-                    HorizontalBox { padding: 0px;
-                        Label { text: "Tasks"; font-size: root.ui-size * 1.15; font-weight: 600; horizontal-stretch: 1; }
-                        TextButton { text: "Close"; clicked => { root.close-tasks(); } }
+    in property <int> selected-run;
+    in property <bool> reviewing;
+    in property <bool> can-edit;
+    callback new-request(); callback select-run(int); callback remove-waiting(int); callback close-run(int);
+    width: 230px; background: Theme.sidebar;
+    accessible-role: groupbox; accessible-label: "Session navigation";
+    VerticalBox { padding: 14px; spacing: 12px;
+        Label { text: "REQUEST"; font-size: 12px; font-weight: 600; color: Theme.muted; }
+        ActionButton { text: "New Request"; enabled: root.can-edit; clicked => { root.new-request(); } }
+        Label { text: "THIS SESSION"; font-size: 12px; font-weight: 600; color: Theme.muted; }
+        navigation := FocusScope {
+            vertical-stretch: 1;
+            key-pressed(event) => {
+                if root.runs.length == 0 { return reject; }
+                if event.text == Key.DownArrow { root.select-run(min(root.runs.length - 1, root.selected-run + 1)); return accept; }
+                if event.text == Key.UpArrow { root.select-run(max(0, root.selected-run - 1)); return accept; }
+                if event.text == Key.Home { root.select-run(0); return accept; }
+                if event.text == Key.End { root.select-run(root.runs.length - 1); return accept; }
+                return reject;
+            }
+            ScrollView { width: parent.width; height: parent.height; content-width: self.visible-width; content-height: content.preferred-height;
+                accessible-role: list; accessible-label: "Session runs";
+                content := VerticalBox { width: parent.visible-width; height: self.preferred-height; padding: 0px; spacing: 6px;
+                    for run[index] in root.runs: RunEntry { run: run; selected: !root.reviewing && root.selected-run == index;
+                        activated => { navigation.focus(); root.select-run(index); }
+                        context => { context-index = index; result-menu.show(); }
                     }
-                    if root.selection.length > 0: ActionButton { text: "Review selection (" + root.selection.length + ")"; accessible-description: "Return to the current input draft."; clicked => { root.close-tasks(); root.review-selection(); } }
-                    if root.queue-notice != "": Label { text: root.queue-notice; wrap: word-wrap; color: root.attention-color; }
-
-                    ScrollView { accessible-role: list; accessible-label: "Session tasks"; content-width: self.visible-width; content-height: task-content.preferred-height;
-                        task-content := VerticalBox { width: parent.visible-width; height: self.preferred-height; padding: 0px; spacing: UiMetrics.inset;
-                            if root.runs.length > 0: Label { text: "Session results · " + root.runs.length; font-weight: 600; }
-                            VerticalBox { padding: 0px; spacing: UiMetrics.gap; accessible-role: list; accessible-label: "Retained reports";
-                                for run[index] in root.runs: VerticalBox { padding: 0px; spacing: UiMetrics.label-gap;
-                                    TextButton { text: (index == root.selected-run && !root.reviewing ? "✓ " : "") + run.label + " · " + run.mode;
-                                        accessible-label: run.label + " · " + run.mode; accessible-description: run.status + "; " + run.selection.full + "; " + run.selections.accessible;
-                                        accessible-item-selectable: true; accessible-item-selected: index == root.selected-run && !root.reviewing;
-                                        clicked => { root.select-run(index); root.close-tasks(); }
-                                        Tooltip { text: @markdown("\{run.selection.full} · \{run.destination}"); }
-                                    }
-                                    Label { text: run.status; wrap: word-wrap; }
-                                    FileName { path: run.selection; text-size: root.ui-size; opacity: 0.75; }
-                                }
-                            }
-                            if root.waiting.length > 0: Label { text: "Waiting · " + root.waiting.length; font-weight: 600; }
-                            VerticalBox { padding: 0px; spacing: UiMetrics.inset; accessible-role: list; accessible-label: "Waiting selections";
-                                for run[index] in root.waiting: VerticalBox { padding: 0px; spacing: UiMetrics.label-gap;
-                                    HorizontalBox { padding: 0px; spacing: UiMetrics.gap;
-                                        Label { text: run.label + " · " + run.mode; horizontal-stretch: 1; wrap: word-wrap; }
-                                        TextButton { text: "Remove"; accessible-label: "Remove " + run.label; clicked => { root.remove-waiting(index); } }
-                                    }
-                                    FileName { path: run.selection; text-size: root.ui-size; }
-                                    Label { text: run.destination + " · " + run.selections.accessible; wrap: word-wrap; opacity: 0.75; }
-                                }
-                            }
-                            if root.runs.length == 0 && root.waiting.length == 0: Label { text: "No tasks have started in this session."; wrap: word-wrap; }
-                        }
+                    for run[index] in root.waiting: VerticalBox { padding: 0px; spacing: 2px;
+                        RunEntry { run: run; activated => { navigation.focus(); } }
+                        TextButton { text: "Remove " + run.label; enabled: root.can-edit; clicked => { root.remove-waiting(index); } }
                     }
                 }
             }
-
+        }
+    }
+    private property <int> context-index;
+    result-menu := PopupWindow { width: 180px; height: 52px; x: 20px; y: 100px;
+        Rectangle { background: Theme.surface; border-width: 1px; border-color: Theme.border;
+            ActionButton { x: 8px; y: 8px; width: parent.width - 16px; height: 32px; text: "Close Result"; enabled: root.context-index >= 0 && root.context-index < root.runs.length && root.runs[root.context-index].tone != Tone.running;
+                clicked => { result-menu.close(); root.close-run(root.context-index); }
+            }
+        }
+    }
 }

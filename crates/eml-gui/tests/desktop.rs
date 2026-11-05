@@ -386,7 +386,7 @@ fn automatic_session_reports_drain_queue_and_reload_exact_old_results() {
 }
 
 #[test]
-fn refused_check_review_preserves_operation_roots_and_corrected_destination() {
+fn refused_check_run_again_restores_its_captured_inputs_mode_and_destination() {
     init_no_event_loop();
     let root = tempfile::tempdir().unwrap();
     let cli = script(
@@ -419,6 +419,8 @@ fn refused_check_review_preserves_operation_roots_and_corrected_destination() {
     );
     assert!(c.window().get_reviewing());
     assert_eq!(c.window().get_selection().row_count(), 2);
+    assert_eq!(c.window().get_destination_label(), "Next to originals");
+    c.set_destination(Some(destination.clone()));
     assert_eq!(
         c.window().get_destination_label(),
         destination.to_str().unwrap()
@@ -434,7 +436,7 @@ fn click(ui: &MainWindow, label: &str) {
                 Some(
                     AccessibleRole::Button
                         | AccessibleRole::Checkbox
-                        | AccessibleRole::RadioButton
+                        | AccessibleRole::Tab
                         | AccessibleRole::ListItem
                 )
             )
@@ -453,23 +455,21 @@ fn start_reviewed_selection(ui: &MainWindow) {
     click_role(ui, ui.get_start_label().as_str(), AccessibleRole::Button);
 }
 fn choose_operation(ui: &MainWindow, label: &str) {
-    click_role(ui, label, AccessibleRole::RadioButton);
+    click_role(ui, label, AccessibleRole::Tab);
 }
-fn open_tasks(ui: &MainWindow) {
-    let waiting = ui.get_waiting().row_count();
-    let caption = if waiting == 0 {
-        "Tasks".into()
-    } else {
-        format!("Tasks · {waiting} waiting")
-    };
-    click_role(ui, &caption, AccessibleRole::Button);
+fn assert_sidebar(ui: &MainWindow) {
+    assert!(
+        has_label(ui, "Session navigation"),
+        "The session sidebar must remain visible"
+    );
 }
+
 fn result_caption(ui: &MainWindow, index: usize) -> String {
     let run = ui.get_runs().row_data(index).unwrap();
     format!("{} · {}", run.label, run.mode)
 }
 fn choose_result(ui: &MainWindow, index: usize) {
-    click_role(ui, &result_caption(ui, index), AccessibleRole::Button);
+    click_role(ui, &result_caption(ui, index), AccessibleRole::ListItem);
 }
 fn has_label(ui: &MainWindow, label: &str) -> bool {
     ElementHandle::find_by_accessible_label(ui, label)
@@ -492,25 +492,34 @@ fn visible_action_names_distinguish_mode_from_start_and_expose_destination_state
     let c = controller(root.path(), completed(root.path(), "created"));
     let ui = c.window();
     c.stage(vec![root.path().join("source.eml")]).unwrap();
-    for role in [AccessibleRole::RadioButton, AccessibleRole::Button] {
+    for (role, label) in [
+        (AccessibleRole::Tab, "Create copies"),
+        (AccessibleRole::Button, "Create Copies"),
+    ] {
         assert!(
-            ElementHandle::find_by_accessible_label(&ui, "Create copies")
+            ElementHandle::find_by_accessible_label(&ui, label)
                 .any(|element| element.accessible_role() == Some(role)),
             "The mode and committing action retain their visible name and distinct roles"
         );
     }
-    click(&ui, "Change…");
-    let beside = ElementHandle::find_by_accessible_label(&ui, "Beside originals")
+    click(
+        &ui,
+        &format!("Copy destination: {}", ui.get_destination_label()),
+    );
+    let beside = ElementHandle::find_by_accessible_label(&ui, "Next to originals")
         .find(|element| element.accessible_role() == Some(AccessibleRole::Button))
         .unwrap();
     assert_eq!(beside.accessible_checkable(), Some(true));
     assert_eq!(beside.accessible_checked(), Some(true));
-    click(&ui, "Beside originals");
+    click(&ui, "Next to originals");
     let output = root.path().join("copies");
     fs::create_dir(&output).unwrap();
     c.set_destination(Some(output));
-    click(&ui, "Change…");
-    let beside = ElementHandle::find_by_accessible_label(&ui, "Beside originals")
+    click(
+        &ui,
+        &format!("Copy destination: {}", ui.get_destination_label()),
+    );
+    let beside = ElementHandle::find_by_accessible_label(&ui, "Next to originals")
         .find(|element| element.accessible_role() == Some(AccessibleRole::Button))
         .unwrap();
     assert_eq!(beside.accessible_checked(), Some(false));
@@ -729,7 +738,7 @@ fn idle_quit_is_immediate_while_busy_quit_requires_a_real_decision() {
     assert!(!controller.request_quit());
     assert!(!controller.should_exit());
     assert!((controller.window().get_confirmation() == Confirmation::Quit));
-    ElementHandle::find_by_accessible_label(&controller.window(), "New request")
+    ElementHandle::find_by_accessible_label(&controller.window(), "New Request")
         .next()
         .unwrap()
         .mock_single_click(slint::platform::PointerEventButton::Left);
@@ -751,7 +760,7 @@ fn idle_quit_is_immediate_while_busy_quit_requires_a_real_decision() {
     );
 }
 #[test]
-fn create_after_check_sends_a_fresh_request_and_uses_the_current_destination() {
+fn s9_s10_check_conversion_confirms_replacement_and_sends_a_fresh_create_request() {
     init_no_event_loop();
     let root = tempfile::tempdir().unwrap();
     let requests = root.path().join("requests.jsonl");
@@ -761,76 +770,55 @@ fn create_after_check_sends_a_fresh_request_and_uses_the_current_destination() {
         print(&fixture("planned-create-unix")),
         print(&fixture("created"))
     );
-    let controller = controller(root.path(), script(root.path(), &body));
-    let ui = controller.window();
+    let c = controller(root.path(), script(root.path(), &body));
+    let ui = c.window();
     choose_operation(&ui, "Check only");
-    assert!(ui.get_check_only());
-    controller
-        .submit(vec![root.path().join("source.eml")])
-        .unwrap();
-    pump(&controller, || !controller.is_busy());
-    assert_eq!(ui.get_item_status().as_str(), "Copy planned");
+    let original = root.path().join("source.eml");
+    c.submit(vec![original.clone()]).unwrap();
+    pump(&c, || !c.is_busy());
     assert!(ui.get_can_create());
-    assert_eq!(ui.get_review_label(), "Review for copy creation");
+    assert!(has_label(&ui, "Create Copies…"));
     let unrelated = root.path().join("unrelated.eml");
-    controller.stage(vec![unrelated.clone()]).unwrap();
+    c.stage(vec![unrelated.clone()]).unwrap();
     ui.invoke_select_run(0);
-    controller.review_request();
+    click(&ui, "Create Copies…");
+    assert_eq!(ui.get_confirmation(), Confirmation::ReplaceDraft);
+    click(&ui, "Cancel");
     assert_eq!(
-        ui.get_selection().row_count(),
-        1,
-        "Check-to-Create must not merge into another pending selection"
-    );
-    assert_eq!(
-        ui.get_selection().row_data(0).unwrap().full.as_str(),
+        ui.get_selection().row_data(0).unwrap().path.full.as_str(),
         unrelated.to_str().unwrap()
     );
-    assert!(
-        ui.get_check_only(),
-        "A refused derivation must not change the next-request mode"
+    assert!(ui.get_check_only());
+    click(&ui, "Create Copies…");
+    click(&ui, "Replace Draft");
+    assert_eq!(ui.get_confirmation(), Confirmation::None);
+    assert_eq!(
+        ui.get_selection().row_data(0).unwrap().path.full.as_str(),
+        original.to_str().unwrap()
     );
-    assert_eq!(fs::read_to_string(&requests).unwrap().lines().count(), 1);
-    ui.invoke_clear_selection();
-    open_tasks(&ui);
-    choose_result(&ui, 0);
+    assert!(!ui.get_check_only());
+    assert_eq!(ui.get_destination_label(), "Next to originals");
     let output = root.path().join("copies");
     fs::create_dir(&output).unwrap();
-    controller.set_destination(Some(output.clone()));
-    click_role(&ui, ui.get_review_label().as_str(), AccessibleRole::Button);
-    assert!(!controller.is_busy());
-    assert_eq!(fs::read_to_string(&requests).unwrap().lines().count(), 1);
-    assert_eq!(ui.get_selection().row_count(), 1);
+    c.set_destination(Some(output.clone()));
     start_reviewed_selection(&ui);
-    pump(&controller, || !controller.is_busy());
-    let docs: Vec<serde_json::Value> = fs::read_to_string(requests)
+    pump(&c, || !c.is_busy());
+    let lines: Vec<serde_json::Value> = fs::read_to_string(requests)
         .unwrap()
         .lines()
         .map(|line| serde_json::from_str(line).unwrap())
         .collect();
-    assert_eq!(docs.len(), 2);
-    assert_eq!(docs[0]["dry_run"], true);
-    assert_eq!(docs[1]["dry_run"], false);
-    assert_eq!(docs[0]["paths"], docs[1]["paths"]);
-    assert!(docs[0]["output_directory"].is_null());
+    assert_eq!(lines.len(), 2);
+    assert_eq!(lines[0]["dry_run"], true);
+    assert_eq!(lines[1]["dry_run"], false);
+    assert_eq!(lines[0]["paths"], lines[1]["paths"]);
+    assert!(lines[0]["output_directory"].is_null());
     assert_eq!(
-        docs[1]["output_directory"],
+        lines[1]["output_directory"],
         serde_json::to_value(eml_protocol::NativePathValue::new(&output)).unwrap()
     );
-    assert_eq!(ui.get_runs().row_count(), 2);
-    assert_eq!(
-        ui.get_runs().row_data(0).unwrap().mode.as_str(),
-        vocabulary::mode_label(RunMode::DryRun)
-    );
-    assert_eq!(
-        ui.get_runs().row_data(1).unwrap().mode.as_str(),
-        vocabulary::mode_label(RunMode::Create)
-    );
-    assert_eq!(
-        ui.get_item_status().as_str(),
-        vocabulary::MeaningKind::Created.label()
-    );
-    assert!(!ui.get_can_create());
 }
+
 #[test]
 fn export_preserves_existing_bytes_and_busy_export_keeps_quit_confirmation() {
     init_no_event_loop();
@@ -973,7 +961,7 @@ fn run_failure_without_items_explains_incomplete_discovery_without_failed_items(
     assert_eq!(ui.get_items().row_count(), 0);
     // A complete successful report must clear the run-error and discovery notices.
     completed(root.path(), "created");
-    click(&ui, "New request");
+    click(&ui, "New Request");
     choose_operation(&ui, "Create copies");
     c.submit(vec![root.path().join("ordinary.eml")]).unwrap();
     pump(&c, || !c.is_busy());
@@ -1023,7 +1011,7 @@ fn report_warnings_survive_switching_and_export_feedback() {
         root.path(),
         &("cat >/dev/null\n".to_owned() + &print(&fixture("collection-limit")) + "exit 1\n"),
     );
-    click(&ui, "New request");
+    click(&ui, "New Request");
     choose_operation(&ui, "Check only");
     c.submit(vec![root.path().join("overflow")]).unwrap();
     pump(&c, || !c.is_busy());
@@ -1031,7 +1019,7 @@ fn report_warnings_survive_switching_and_export_feedback() {
     assert!(has_label(&ui, "Run error: INPUT_LIMIT_EXCEEDED"));
     assert!(!has_label(&ui, vocabulary::NO_REPLACEMENT));
     assert!(!ui.get_report_details().contains("earlier CLI diagnostic"));
-    open_tasks(&ui);
+    assert_sidebar(&ui);
     choose_result(&ui, 0);
     pump(&c, || !ui.get_report_loading());
     assert_eq!(
@@ -1042,7 +1030,7 @@ fn report_warnings_survive_switching_and_export_feedback() {
     assert!(ui.get_report_details().contains("earlier CLI diagnostic"));
     assert!(has_label(&ui, vocabulary::FORCE_STOP_NOTICE));
     assert!(!has_label(&ui, "Run error: INPUT_LIMIT_EXCEEDED"));
-    open_tasks(&ui);
+    assert_sidebar(&ui);
     choose_result(&ui, 1);
     pump(&c, || !ui.get_report_loading());
     assert!(has_label(&ui, "Run error: INPUT_LIMIT_EXCEEDED"));
@@ -1096,6 +1084,7 @@ fn unavailable_settings_launch_with_preserved_objects_and_session_only_destinati
         };
         assert!(warning.contains(cause), "Missing reason: {warning}");
         let destination = root.path().join("session-copies");
+        fs::create_dir(&destination).unwrap();
         c.set_destination(Some(destination.clone()));
         assert_eq!(
             c.window().get_destination_label().as_str(),
@@ -1294,12 +1283,12 @@ fn reviewed_selection_does_not_spawn_and_start_captures_current_settings() {
     assert_eq!(ui.get_selection().row_count(), 0);
     assert!(ui.get_run_context().contains(destination.to_str().unwrap()));
     c.stage(vec![first]).unwrap();
-    click(&ui, "Clear selection");
+    click(&ui, "Clear");
     assert!(
         ui.get_reviewing(),
         "Clearing inputs keeps an empty draft usable beside results"
     );
-    assert!(has_label(&ui, "Choose messages to begin"));
+    assert!(has_label(&ui, "Drop email files or folders here"));
     assert_eq!(ui.get_selection().row_count(), 0);
     assert_eq!(ui.get_runs().row_count(), 1);
 }
@@ -1339,13 +1328,14 @@ fn selection_count_admission_preserves_duplicates_order_and_previous_review() {
     let selection = c.window().get_selection();
     assert_eq!(selection.row_count(), eml_core::MAX_INPUT_PATHS);
     assert_eq!(
-        selection.row_data(0).unwrap().full.as_str(),
+        selection.row_data(0).unwrap().path.full.as_str(),
         first.to_str().unwrap()
     );
     assert!(
         selection
             .row_data(1)
             .unwrap()
+            .path
             .full
             .ends_with("accepted-0.eml")
     );
@@ -1384,13 +1374,14 @@ fn full_queue_retains_review_and_waiting_snapshots_do_not_follow_new_settings() 
     assert!(ui.get_reviewing());
     assert!(!ui.get_can_start());
     choose_operation(&ui, "Check only");
+    fs::create_dir(root.path().join("later-destination")).unwrap();
     c.set_destination(Some(root.path().join("later-destination")));
     let waiting = ui.get_waiting().row_data(0).unwrap();
     assert_eq!(
         waiting.mode.as_str(),
         vocabulary::mode_label(RunMode::Create)
     );
-    assert_eq!(waiting.destination.as_str(), "Beside originals");
+    assert_eq!(waiting.destination.as_str(), "Next to originals");
     ui.invoke_remove_waiting(0);
     assert!(ui.get_can_start());
     assert_eq!(ui.get_selection().row_count(), 1);
@@ -1510,20 +1501,20 @@ fn task_actions_result_actions_and_inspector_have_distinct_visible_scopes() {
             "Active-worker {name} must be separate from the selected result actions"
         );
     }
-    open_tasks(&ui);
-    let reports = ElementHandle::find_by_accessible_label(&ui, "Retained reports")
+    assert_sidebar(&ui);
+    let reports = ElementHandle::find_by_accessible_label(&ui, "Session runs")
         .next()
         .unwrap();
     let first = ElementHandle::find_by_accessible_label(&ui, &result_caption(&ui, 0))
-        .find(|e| e.accessible_role() == Some(AccessibleRole::Button))
+        .find(|e| e.accessible_role() == Some(AccessibleRole::ListItem))
         .unwrap();
     assert!(first.absolute_position().y >= reports.absolute_position().y);
     assert!(first.absolute_position().y + first.size().height <= 600.1);
     assert_eq!(first.accessible_item_selected(), Some(true));
     choose_result(&ui, 0);
     assert!(
-        !has_label(&ui, "Retained reports"),
-        "Task navigation closes its drawer"
+        has_label(&ui, "Session runs"),
+        "Session navigation stays visible after choosing a run"
     );
     click(&ui, "Stop");
     pump(&c, || !c.is_busy());
@@ -1707,7 +1698,7 @@ fn save_dialog_captures_the_report_and_navigation_is_not_stolen_by_waiting_work(
     let saved = c.capture_export().unwrap();
     // A different report becomes selected while the first report's dialog is open.
     completed(root.path(), "planned-create-unix");
-    click(&c.window(), "New request");
+    click(&c.window(), "New Request");
     choose_operation(&c.window(), "Check only");
     c.submit(vec![root.path().join("second.eml")]).unwrap();
     pump(&c, || !c.is_busy());
@@ -1972,7 +1963,7 @@ fn failure_inspector_stays_visible_and_filtered_keyboard_navigation_keeps_origin
 }
 
 #[test]
-fn initial_result_viewport_matches_layout_and_keeps_first_selection_visible() {
+fn initial_result_selection_is_visible_without_resizing() {
     init_no_event_loop();
     let root = tempfile::tempdir().unwrap();
     let seed: Vec<serde_json::Value> = fixture("created")
@@ -2039,20 +2030,14 @@ fn initial_result_viewport_matches_layout_and_keeps_first_selection_visible() {
         .match_type_name("Flickable")
         .find_first()
         .unwrap();
-    assert!(
-        (ui.get_messages_view_height() - visible.size().height).abs() < 0.1,
-        "Initial geometry mirror {} differs from real viewport {}",
-        ui.get_messages_view_height(),
-        visible.size().height
-    );
     let selected = ElementHandle::find_by_accessible_label(&ui, inputs[0].to_str().unwrap())
         .find(|e| e.accessible_role() == Some(AccessibleRole::ListItem))
         .unwrap();
     assert_eq!(ui.get_selected_item(), 0);
-    assert!(selected.absolute_position().y >= viewport.absolute_position().y - 0.1);
+    assert!(selected.absolute_position().y >= visible.absolute_position().y - 0.1);
     assert!(
         selected.absolute_position().y + selected.size().height
-            <= viewport.absolute_position().y + viewport.size().height + 0.1
+            <= visible.absolute_position().y + visible.size().height + 0.1
     );
 }
 
@@ -2152,14 +2137,14 @@ fn fitted_mixed_result_keeps_all_rows_visible_with_a_middle_selection() {
         .next()
         .unwrap();
     assert!(
-        viewport.size().height >= 168.0 - 0.1,
-        "All three56px rows fit"
+        viewport.size().height >= 102.0 - 0.1,
+        "All three fixed 34px rows fit"
     );
     assert_eq!(
         ui.get_messages_scroll_y(),
         0.0,
         "Fitted3-row viewport {} must not scroll past its first row",
-        ui.get_messages_view_height()
+        viewport.size().height
     );
     for path in inputs {
         let row = ElementHandle::find_by_accessible_label(&ui, path.to_str().unwrap())
@@ -2196,7 +2181,7 @@ fn fitted_mixed_result_attention_filter_keeps_its_only_row_visible() {
         ui.get_messages_scroll_y(),
         0.0,
         "One-row filtered viewport {} must not contain a stale negative offset",
-        ui.get_messages_view_height()
+        viewport.size().height
     );
     let row = ElementHandle::find_by_accessible_label(&ui, inputs[1].to_str().unwrap())
         .find(|e| e.accessible_role() == Some(AccessibleRole::ListItem))
@@ -2204,7 +2189,7 @@ fn fitted_mixed_result_attention_filter_keeps_its_only_row_visible() {
             panic!(
                 "Filtered model has one row but its AX list is empty: y{}, viewport{}",
                 ui.get_messages_scroll_y(),
-                ui.get_messages_view_height()
+                viewport.size().height
             )
         });
     assert!(row.absolute_position().y >= viewport.absolute_position().y - 0.1);
@@ -2228,7 +2213,7 @@ fn report_selection_empty_filter_survives_current_task_reselection() {
     assert!(!ui.get_can_reveal());
     assert!(has_label(&ui, "No reported messages need attention."));
     let selection = ui.get_selected_item();
-    open_tasks(&ui);
+    assert_sidebar(&ui);
     choose_result(&ui, 0);
     assert!(
         ui.get_attention_only(),
@@ -2246,9 +2231,9 @@ fn report_selection_empty_filter_survives_current_task_reselection() {
         "The inspector cannot show a healthy item outside the empty filtered list"
     );
     assert!(!ui.get_can_reveal());
-    click(&ui, "New request");
+    click(&ui, "New Request");
     assert!(ui.get_reviewing());
-    open_tasks(&ui);
+    assert_sidebar(&ui);
     choose_result(&ui, 0);
     assert!(!ui.get_reviewing());
     assert!(
@@ -2274,7 +2259,7 @@ fn report_selection_keeps_explicit_item_on_current_task_reselection() {
     click(&ui, "Technical details");
     assert_eq!(ui.get_selected_item(), 2);
     assert!(ui.get_details_expanded());
-    open_tasks(&ui);
+    assert_sidebar(&ui);
     choose_result(&ui, 0);
     pump(&c, || !ui.get_report_loading());
     assert_eq!(
@@ -2287,9 +2272,9 @@ fn report_selection_keeps_explicit_item_on_current_task_reselection() {
         "Same-context selection preserves expanded details"
     );
     assert_eq!(ui.get_item_source(), inputs[2].to_str().unwrap());
-    click(&ui, "New request");
+    click(&ui, "New Request");
     assert!(ui.get_reviewing());
-    open_tasks(&ui);
+    assert_sidebar(&ui);
     choose_result(&ui, 0);
     pump(&c, || !ui.get_report_loading());
     assert_eq!(
@@ -2395,6 +2380,7 @@ fn queue_drawer_keeps_removal_and_settings_recovery_visible() {
     wait_started(&c);
     let queued = c.submit(vec![root.path().join("waiting.eml")]).unwrap();
     let ui = c.window();
+    ui.invoke_new_request();
     for (width, height, font) in [
         (1060.0, 760.0, 14.0),
         (780.0, 600.0, 14.0),
@@ -2405,18 +2391,14 @@ fn queue_drawer_keeps_removal_and_settings_recovery_visible() {
         mock_elapsed_time(Duration::from_millis(5));
         let warning = ElementHandle::find_by_accessible_label(
             &ui,
-            "Settings unavailable — destination changes won't be saved",
+            "Settings unavailable — changes won't be saved",
         )
         .next()
         .unwrap();
         assert!(warning.size().height > 0.0 && warning.absolute_position().y >= 0.0);
         assert!(warning.absolute_position().y + warning.size().height < height);
-        let close = ElementHandle::find_by_accessible_label(&ui, "Close result")
-            .next()
-            .unwrap();
-        assert!(close.absolute_position().y + close.size().height <= height + 0.1);
-        open_tasks(&ui);
-        let viewport = ElementHandle::find_by_accessible_label(&ui, "Session tasks")
+        assert_sidebar(&ui);
+        let viewport = ElementHandle::find_by_accessible_label(&ui, "Session runs")
             .next()
             .unwrap();
         assert!(
@@ -2455,7 +2437,7 @@ fn queue_drawer_keeps_removal_and_settings_recovery_visible() {
                 text: slint::platform::Key::Escape.into(),
             });
         mock_elapsed_time(Duration::from_millis(5));
-        assert!(!has_label(&ui, "Session tasks"));
+        assert!(has_label(&ui, "Session runs"));
     }
     click(&ui, "Details… — destination settings");
     mock_elapsed_time(Duration::from_millis(5));
@@ -2477,7 +2459,7 @@ fn queue_drawer_keeps_removal_and_settings_recovery_visible() {
             text: slint::platform::Key::Escape.into(),
         });
     mock_elapsed_time(Duration::from_millis(5));
-    open_tasks(&ui);
+    assert_sidebar(&ui);
     click(&ui, &format!("Remove Run {queued}"));
     assert_eq!(ui.get_waiting().row_count(), 0);
     c.stop();
@@ -2702,4 +2684,154 @@ fn s5_background_completion_badge_does_not_steal_the_current_view() {
     ui.invoke_select_run(2);
     pump(&c, || !ui.get_report_loading());
     assert!(!ui.get_runs().row_data(2).unwrap().unseen);
+}
+
+#[test]
+fn s15_pending_confirmation_ignores_new_and_previously_batched_drops() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let c = controller(root.path(), controlled(root.path(), true));
+    c.submit(vec![root.path().join("running.eml")]).unwrap();
+    wait_started(&c);
+    c.deliver_drop(root.path().join("before-prompt.eml"));
+    assert!(!c.request_quit());
+    c.deliver_drop(root.path().join("during-prompt.eml"));
+    mock_elapsed_time(Duration::from_millis(5));
+    assert_eq!(c.window().get_selection().row_count(), 0);
+    assert!(matches!(
+        c.stage(vec![root.path().join("late-panel.eml")]),
+        Err(eml_app::QueueError::DecisionPending)
+    ));
+    c.window().invoke_cancel_confirmation();
+    c.force_stop();
+    pump(&c, || !c.is_busy());
+}
+
+#[test]
+fn s17_old_preferences_are_preserved_and_new_schema_remembers_three_recent_folders() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("preferences.json");
+    let old = serde_json::to_vec(&serde_json::json!({"destination":root.path().join("previous")}))
+        .unwrap();
+    fs::write(&path, &old).unwrap();
+    let c = controller(root.path(), completed(root.path(), "created"));
+    assert_eq!(c.window().get_destination_label(), "Next to originals");
+    assert!(has_label(
+        &c.window(),
+        "Settings unavailable — changes won't be saved"
+    ));
+    c.set_destination(Some(root.path().join("session-only")));
+    assert_eq!(fs::read(&path).unwrap(), old);
+    let fresh = root.path().join("fresh.json");
+    let mut prefs = Preferences::load(fresh.clone());
+    for name in ["a", "b", "c", "a", "d"] {
+        prefs.set_destination(Some(root.path().join(name))).unwrap();
+    }
+    prefs
+        .set_report_folder(root.path().join("reports"))
+        .unwrap();
+    let loaded = Preferences::load(fresh);
+    assert_eq!(
+        loaded.recent_destinations(),
+        &[
+            root.path().join("d"),
+            root.path().join("a"),
+            root.path().join("c")
+        ]
+    );
+    assert_eq!(
+        loaded.last_report_folder(),
+        Some(root.path().join("reports").as_path())
+    );
+}
+
+#[test]
+fn nonexistent_destination_blocks_start_with_an_actionable_reason() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let c = controller(root.path(), completed(root.path(), "created"));
+    c.stage(vec![root.path().join("source.eml")]).unwrap();
+    let folder = root.path().join("copies");
+    c.set_destination(Some(folder.clone()));
+    assert!(!c.window().get_can_start());
+    assert_eq!(
+        c.window().get_start_reason(),
+        "Choose an existing folder to save copies"
+    );
+    assert!(matches!(
+        c.start_selection(),
+        Err(eml_app::QueueError::DestinationUnavailable)
+    ));
+    fs::create_dir(&folder).unwrap();
+    c.set_destination(Some(folder));
+    assert!(c.window().get_can_start());
+}
+
+#[test]
+fn draft_has_one_primary_commit_action_when_inputs_exist_and_none_when_empty() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let c = controller(root.path(), completed(root.path(), "created"));
+    let ui = c.window();
+    let count = || ElementHandle::find_by_element_type_name(&ui, "PrimaryButton").count();
+    assert_eq!(count(), 0, "The empty drop zone has no action to commit");
+    c.stage(vec![root.path().join("source.eml")]).unwrap();
+    assert_eq!(count(), 1);
+    ui.invoke_mode_changed(true);
+    assert_eq!(count(), 1);
+    c.set_destination(Some(root.path().join("missing")));
+    assert!(!ui.get_can_start());
+    assert_eq!(
+        count(),
+        1,
+        "The blocked primary remains visible with its explanation"
+    );
+    ui.invoke_clear_selection();
+    assert_eq!(count(), 0);
+}
+
+fn capture_window(ui: &MainWindow, directory: &Path, name: &str) {
+    use std::io::Write;
+    let pixels = ui.window().take_snapshot().unwrap();
+    fs::create_dir_all(directory).unwrap();
+    let mut file = fs::File::create(directory.join(format!("{name}.ppm"))).unwrap();
+    writeln!(file, "P6\n{} {}\n255", pixels.width(), pixels.height()).unwrap();
+    for pixel in pixels.as_slice() {
+        file.write_all(&[pixel.r, pixel.g, pixel.b]).unwrap();
+    }
+}
+
+#[test]
+#[ignore = "Manual production-view screenshot capture; set GUI_CAPTURE_DIR"]
+fn capture_redesign_states_in_light_and_dark() {
+    use slint::language::ColorScheme;
+    let directory =
+        PathBuf::from(std::env::var_os("GUI_CAPTURE_DIR").expect("set GUI_CAPTURE_DIR"));
+    slint::platform::set_platform(Box::new(i_slint_backend_testing::TestingBackend::new(
+        i_slint_backend_testing::TestingBackendOptions {
+            mock_time: true,
+            renderer_name: Some("software".into()),
+            ..Default::default()
+        },
+    )))
+    .unwrap();
+    for (scheme, color) in [("light", ColorScheme::Light), ("dark", ColorScheme::Dark)] {
+        let root = tempfile::tempdir().unwrap();
+        let c = controller(root.path(), completed(root.path(), "created"));
+        let ui = c.window();
+        ui.global::<eml_gui::Palette>().set_color_scheme(color);
+        assert_eq!(ui.global::<eml_gui::Theme>().get_dark(), scheme == "dark");
+        ui.window().set_size(slint::LogicalSize::new(1080.0, 700.0));
+        mock_elapsed_time(Duration::from_millis(5));
+        capture_window(&ui, &directory, &format!("A-{scheme}"));
+        let folder = root.path().join("Inbox");
+        fs::create_dir(&folder).unwrap();
+        let file = root.path().join("Quarterly invoice.eml");
+        fs::write(&file, b"From: sender@example.com\r\n\r\nMessage body\r\n").unwrap();
+        c.stage(vec![folder, file]).unwrap();
+        mock_elapsed_time(Duration::from_millis(5));
+        capture_window(&ui, &directory, &format!("B-{scheme}"));
+        ui.hide().unwrap();
+    }
 }

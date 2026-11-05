@@ -103,7 +103,7 @@ struct ExportDraft {
     source: ReportExport,
     directory: PathBuf,
 }
-struct Session {
+struct SessionRuntime {
     state: state::Session,
     entries: Vec<Entry>,
     active: Option<Active>,
@@ -114,7 +114,7 @@ struct Session {
     should_exit: bool,
     report_task: Option<ReportTask>,
 }
-impl Session {
+impl SessionRuntime {
     fn is_closing(&self) -> bool {
         self.quit_when_idle || self.force_quit || self.should_exit
     }
@@ -128,8 +128,16 @@ impl Session {
     fn admission_error(&self) -> Option<QueueError> {
         if self.is_closing() {
             Some(QueueError::ShuttingDown)
+        } else if self.state.confirmation.is_some() {
+            Some(QueueError::DecisionPending)
         } else if self.memory_full() {
             Some(QueueError::MemoryReportsFull)
+        } else if self
+            .preferences
+            .destination()
+            .is_some_and(|path| !path.is_dir())
+        {
+            Some(QueueError::DestinationUnavailable)
         } else {
             self.state.queue.capacity_error()
         }
@@ -138,7 +146,6 @@ impl Session {
         self.active.is_some() || self.export.is_some() || self.state.queue.waiting() > 0
     }
 }
-// Accepted records append; unchanged facts do not rebuild the Slint models.
 #[derive(Clone, Copy, PartialEq, Eq)]
 struct PresentationRevision {
     run: RunId,
@@ -158,7 +165,7 @@ pub struct DesktopController {
     export_ui: ExportWindow,
     export_draft: RefCell<Option<ExportDraft>>,
     export_directory: RefCell<PathBuf>,
-    session: RefCell<Session>,
+    session: RefCell<SessionRuntime>,
     drops: RefCell<ingress::DropBatch>,
     cli: PathBuf,
     home: PathBuf,
@@ -205,7 +212,7 @@ impl DesktopController {
             drops: RefCell::default(),
             open_jobs: RefCell::default(),
             operation_serial: Cell::new(0),
-            session: RefCell::new(Session {
+            session: RefCell::new(SessionRuntime {
                 state: state::Session::default(),
                 entries: Vec::new(),
                 active: None,
@@ -236,7 +243,7 @@ impl DesktopController {
     }
     /// Apply a future-request destination; existing queue snapshots stay unchanged.
     pub fn set_destination(&self, destination: Option<PathBuf>) {
-        if self.session.borrow().is_closing() {
+        if !self.inputs_enabled() {
             return;
         }
         self.clear_operation();
@@ -256,6 +263,9 @@ impl DesktopController {
         let mut s = self.session.borrow_mut();
         if s.is_closing() {
             return Err(QueueError::ShuttingDown);
+        }
+        if s.state.confirmation.is_some() {
+            return Err(QueueError::DecisionPending);
         }
         // Preserve request admission's absolute-path error before limiting count.
         if paths.iter().any(|path| !path.is_absolute()) {
@@ -312,12 +322,17 @@ impl DesktopController {
     }
     /// Add one window-dropped path; a zero-delay timer commits the whole native drop.
     pub fn deliver_drop(self: &Rc<Self>, path: PathBuf) {
+        if !self.inputs_enabled() {
+            return;
+        }
+        self.hover_drop(false);
         if self.drops.borrow_mut().push(path) {
             let weak = Rc::downgrade(self);
             slint::Timer::single_shot(std::time::Duration::ZERO, move || {
                 if let Some(c) = weak.upgrade() {
                     let paths = c.drops.borrow_mut().commit();
                     if let Some(paths) = paths
+                        && c.inputs_enabled()
                         && let Err(error) = c.stage(paths)
                     {
                         c.message(&error.to_string());
@@ -328,12 +343,9 @@ impl DesktopController {
     }
     /// Cancel an uncommitted hover/drop batch.
     pub fn cancel_drop(&self) {
+        self.hover_drop(false);
         self.drops.borrow_mut().cancel();
     }
-
-    // One bounded IO job. Keep originals until storage succeeds; only the active
-    // and inspected reports remain resident between jobs. Export owns at most one
-    // additional immutable stream, independently of navigation or dismissal.
 
     /// Poll actual child/pipe and export settlement without blocking the event loop.
     pub fn tick(&self) {
@@ -363,7 +375,9 @@ impl DesktopController {
                 None
             };
             if let Some((id, completion)) = completed {
-                if self.ui.get_confirmation() == Confirmation::ForceStop {
+                if matches!(&s.state.confirmation, Some(state::PendingConfirmation::ForceStop(run)) if *run == id)
+                {
+                    s.state.confirmation = None;
                     self.ui.set_confirmation(Confirmation::None);
                 }
 
@@ -429,11 +443,14 @@ impl DesktopController {
                 self.operation(&format!("Export for Run {}", job.run), &message);
             }
 
-            if self.ui.get_confirmation() == Confirmation::Quit
-                && s.active.is_none()
+            if matches!(
+                &s.state.confirmation,
+                Some(state::PendingConfirmation::Quit)
+            ) && s.active.is_none()
                 && s.export.is_none()
                 && s.state.queue.waiting() == 0
             {
+                s.state.confirmation = None;
                 self.ui.set_confirmation(Confirmation::None);
                 s.should_exit = true;
             }
@@ -481,7 +498,7 @@ impl DesktopController {
                 self.message(&error.to_string());
             }
             self.ui.window().set_minimized(false);
-            self.ui.set_confirmation(Confirmation::Quit);
+            self.set_confirmation(Some(state::PendingConfirmation::Quit));
             false
         } else {
             self.cancel_export();
@@ -531,47 +548,94 @@ impl DesktopController {
             entry.worker_error.get_or_insert_with(|| error.to_string());
         }
     }
-    /// Review original roots again under current destination settings; never auto-run.
+    /// Load this run's captured inputs and settings into the draft.
     pub fn review_request(&self) {
-        {
-            let s = self.session.borrow();
-            if s.is_closing() {
-                self.message(&QueueError::ShuttingDown.to_string());
-                return;
+        self.review_snapshot(false);
+    }
+    /// Load a settled Check run into the draft in Create mode.
+    pub fn create_from_check(&self) {
+        self.review_snapshot(true);
+    }
+    fn review_snapshot(&self, create: bool) {
+        let snapshot =
+            {
+                let s = self.session.borrow();
+                if s.is_closing() || s.state.confirmation.is_some() {
+                    return;
+                }
+                let Some(entry) = s.entries.get(s.state.selected).filter(|entry| {
+                    completion_state(entry).is_some() || entry.launch_error.is_some()
+                }) else {
+                    return;
+                };
+                if create && !can_create(entry) {
+                    return;
+                }
+                let request = entry.request.request();
+                RequestSnapshot::new(
+                    request.paths.clone(),
+                    match &request.output {
+                        eml_core::OutputLocation::BesideSource => None,
+                        eml_core::OutputLocation::Directory(path) => Some(path.clone()),
+                    },
+                    if create {
+                        RunMode::Create
+                    } else {
+                        request.mode
+                    },
+                )
+            };
+        match snapshot {
+            Ok(snapshot) if !self.session.borrow().state.selection.is_empty() => {
+                self.set_confirmation(Some(state::PendingConfirmation::ReplaceDraft(snapshot)))
             }
-            if !s.state.selection.is_empty() {
-                self.message("A draft already contains selected paths. Finish or clear it before reviewing this request again; the draft was preserved.");
-                return;
-            }
+            Ok(snapshot) => self.apply_snapshot(snapshot),
+            Err(error) => self.message(&error.to_string()),
         }
-        let paths = {
-            let s = self.session.borrow();
-            s.entries
-                .get(s.state.selected)
-                .filter(|entry| {
-                    entry.completion.is_some()
-                        || entry.stored.is_some()
-                        || entry.launch_error.is_some()
-                })
-                .map(|entry| {
-                    (
-                        entry.request.request().paths.clone(),
-                        if can_create(entry) {
-                            RunMode::Create
-                        } else {
-                            entry.request.request().mode
-                        },
-                    )
-                })
+    }
+    fn apply_snapshot(&self, snapshot: RequestSnapshot) {
+        self.clear_operation();
+        let mut s = self.session.borrow_mut();
+        let request = snapshot.request();
+        s.state.selection = request.paths.clone();
+        s.state.mode = request.mode;
+        s.state.reviewing = true;
+        s.state.follow_run = None;
+        let destination = match &request.output {
+            eml_core::OutputLocation::BesideSource => None,
+            eml_core::OutputLocation::Directory(path) => Some(path.clone()),
         };
-        if let Some((paths, mode)) = paths {
-            // Only the explicit completed-Check conversion changes operation.
-            // Generic recovery retains the request's mode for correction.
-            self.session.borrow_mut().state.mode = mode;
-            if let Err(error) = self.stage(paths) {
-                self.message(&error.to_string());
-            }
+        let result = s.preferences.set_destination(destination);
+        drop(s);
+        if let Err(error) = result {
+            self.message(&error.to_string());
         }
+        self.refresh();
+    }
+    fn confirmation(&self) -> Confirmation {
+        match &self.session.borrow().state.confirmation {
+            None => Confirmation::None,
+            Some(state::PendingConfirmation::Quit) => Confirmation::Quit,
+            Some(state::PendingConfirmation::ForceStop(_)) => Confirmation::ForceStop,
+            Some(state::PendingConfirmation::ReplaceDraft(_)) => Confirmation::ReplaceDraft,
+        }
+    }
+    fn set_confirmation(&self, pending: Option<state::PendingConfirmation>) {
+        if pending.is_some() {
+            self.ui.set_drop_hovered(false);
+        }
+        self.session.borrow_mut().state.confirmation = pending;
+        self.ui.set_confirmation(self.confirmation());
+        self.refresh();
+    }
+    /// Whether native input and draft actions may proceed at this moment.
+    pub fn inputs_enabled(&self) -> bool {
+        let s = self.session.borrow();
+        !s.is_closing() && s.state.confirmation.is_none()
+    }
+    /// Highlight the draft drop target while native hover events are available.
+    pub fn hover_drop(&self, hovered: bool) {
+        self.ui.set_drop_hovered(hovered && self.inputs_enabled());
     }
     /// The application-owned no-replace report naming window.
     pub fn export_window(&self) -> ExportWindow {
@@ -893,19 +957,38 @@ impl DesktopController {
         self.ui.set_operation_details("".into());
     }
     fn dismiss(&self) {
+        let index = self.session.borrow().state.selected;
+        self.dismiss_run(index);
+    }
+    fn dismiss_run(&self, index: usize) {
         self.clear_operation();
+        let mut s = self.session.borrow_mut();
+        if s.is_closing() || s.state.confirmation.is_some() {
+            return;
+        }
+        let Some(entry) = s.entries.get(index) else {
+            return;
+        };
+        let id = entry.id;
+        if s.export.as_ref().is_some_and(|job| job.run == id)
+            || self
+                .export_draft
+                .borrow()
+                .as_ref()
+                .is_some_and(|draft| draft.source.run == id)
         {
-            let mut s = self.session.borrow_mut();
-            let selected = s.state.selected;
-            if let Some(entry) = s.entries.get(selected) {
-                let id = entry.id;
-                if s.state.queue.dismiss(id) {
-                    s.entries.remove(selected);
-                    s.state.selected = selected.min(s.entries.len().saturating_sub(1));
-                    s.state.selected_item = 0;
-                }
+            return;
+        }
+        if s.state.queue.dismiss(id) {
+            s.entries.remove(index);
+            if index < s.state.selected {
+                s.state.selected -= 1;
+            } else if index == s.state.selected {
+                s.state.selected = index.min(s.entries.len().saturating_sub(1));
+                s.state.selected_item = 0;
             }
         }
+        drop(s);
         self.maintain_reports();
         self.start_next();
         self.refresh();
@@ -927,17 +1010,32 @@ fn default_item_selection(handle: &eml_app::ReportHandle, attention_only: bool) 
 }
 fn request_destination(request: &RequestSnapshot) -> String {
     match &request.request().output {
-        eml_core::OutputLocation::BesideSource => "Beside originals".into(),
+        eml_core::OutputLocation::BesideSource => "Next to originals".into(),
         eml_core::OutputLocation::Directory(path) => {
             eml_protocol::TerminalPath::new(path).to_string()
         }
     }
 }
-fn run_view(id: RunId, request: &RequestSnapshot, status: &str) -> RunView {
+fn run_view(id: RunId, request: &RequestSnapshot, status: RunStatus) -> RunView {
     RunView {
+        tone: match status {
+            RunStatus::Queued => Tone::Neutral,
+            RunStatus::Checking
+            | RunStatus::Creating
+            | RunStatus::StopRequested
+            | RunStatus::ForceStopRequested => Tone::Running,
+            RunStatus::Completed => Tone::Ok,
+            RunStatus::Stopped | RunStatus::StoppedBeforeStart => Tone::Stopped,
+            RunStatus::CompletedWithFailures
+            | RunStatus::ForceStopped
+            | RunStatus::RequestRefused
+            | RunStatus::Incomplete
+            | RunStatus::IdentityFailure
+            | RunStatus::StartFailed => Tone::Attention,
+        },
         unseen: false,
         label: format!("Run {id}").into(),
-        status: status.into(),
+        status: status.label().into(),
         mode: vocabulary::mode_label(request.request().mode).into(),
         destination: request_destination(request).into(),
         selection: view_model::path(

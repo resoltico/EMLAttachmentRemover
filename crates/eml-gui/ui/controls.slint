@@ -22,11 +22,13 @@ export component ActionButton inherits Button {
     preferred-height: self.min-height;
     max-height: self.min-height;
 }
+export component PrimaryButton inherits ActionButton { primary: true; }
 // Fluent has no borderless button variant. Keep the small utility/disclosure role
 // separate from committing buttons, with the same keyboard and AX activation.
 export component TextButton inherits Rectangle {
     in property <string> text;
     in property <bool> icon-only;
+    in property <length> trailing-inset;
     in property <bool> enabled: true;
     in property <bool> expanded;
     in property <bool> expandable;
@@ -61,7 +63,7 @@ export component TextButton inherits Rectangle {
     }
     caption := Text {
         visible: !root.icon-only;
-        text: root.text; color: root.danger ? UiMetrics.attention : Palette.foreground;
+        text: root.text; overflow: elide; color: root.danger ? UiMetrics.attention : Palette.foreground;
         opacity: root.enabled ? 1 : 0.5;
         x: 8px; width: max(0px, parent.width - 16px); height: parent.height;
         vertical-alignment: center;
@@ -140,7 +142,12 @@ export component Chip inherits TextButton {
     border-width: 1px;
     border-color: root.selected ? Palette.accent-background : Palette.border;
 }
-export component PopupButton inherits ActionButton {
+export component PopupButton inherits TextButton {
+    min-width: 120px; preferred-width: 220px; horizontal-stretch: 1;
+    trailing-inset: 22px;
+    background: Theme.raised; border-width: 1px; border-radius: 6px;
+    border-color: root.has-focus ? Theme.accent : Theme.border;
+    Icon { kind: IconKind.chevron; x: parent.width - 22px; y: (parent.height - self.height) / 2; }
     accessible-expandable: true;
 }
 export component ToneDot inherits Rectangle {
@@ -149,18 +156,23 @@ export component ToneDot inherits Rectangle {
     background: root.tone;
     accessible-role: none;
 }
-export component Segmented inherits HorizontalBox {
+export component Segmented inherits Rectangle {
     in property <bool> check-only;
     in property <bool> enabled: true;
     callback changed(bool);
-    spacing: 0px; padding: 0px;
+    min-height: segments.min-height;
+    border-radius: 8px; background: Theme.raised; border-width: 1px; border-color: Theme.border;
     accessible-role: tab-list; accessible-label: "Action";
-    ActionButton { text: "Create copies"; enabled: root.enabled;
-        accessible-role: tab; accessible-item-selected: !root.check-only;
-        clicked => { root.changed(false); }
-    }
-    ActionButton { text: "Check only"; enabled: root.enabled;
-        accessible-role: tab; accessible-item-selected: root.check-only;
-        clicked => { root.changed(true); }
+    segments := HorizontalBox { width: parent.width; height: parent.height; padding: 2px; spacing: 2px;
+        TextButton { text: "Create copies"; enabled: root.enabled; min-width: 0px; horizontal-stretch: 1;
+            background: !root.check-only ? Theme.surface : transparent; border-radius: 6px;
+            accessible-role: tab; accessible-item-selected: !root.check-only;
+            clicked => { root.changed(false); }
+        }
+        TextButton { text: "Check only"; enabled: root.enabled; min-width: 0px; horizontal-stretch: 1;
+            background: root.check-only ? Theme.surface : transparent; border-radius: 6px;
+            accessible-role: tab; accessible-item-selected: root.check-only;
+            clicked => { root.changed(true); }
+        }
     }
 }

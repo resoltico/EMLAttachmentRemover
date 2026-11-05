@@ -7,6 +7,8 @@ import { Confirmation, CountView, PathView, RunView, ItemView, DetailView, Remov
 export component DecisionContent inherits Rectangle {
     callback cancel-confirmation();
     callback confirm-force-stop();
+    callback confirm-replace-draft();
+    in property <int> replace-count;
     in-out property <Confirmation> confirmation;
     in property <bool> export-running;
     callback force-and-quit();
@@ -20,11 +22,12 @@ export component DecisionContent inherits Rectangle {
                 init => { cancel-decision.focus(); }
                 key-pressed(event) => { if event.text == Key.Escape { root.cancel-confirmation(); return accept; } return reject; }
                 VerticalBox { padding: UiMetrics.gutter; spacing: UiMetrics.inset;
-                    Label { text: root.confirmation == Confirmation.quit ? "Quit with unfinished work?" : "Force stop this task?"; font-size: root.ui-size * 1.15; font-weight: 600; wrap: word-wrap; }
-                    Label { text: root.confirmation == Confirmation.quit ? (root.worker-running || root.export-running ? "A task or report export is still in progress. Quitting cancels waiting requests; completed copies and original messages are retained." : root.waiting.length + (root.waiting.length == 1 ? " request is waiting." : " requests are waiting.") + " Quitting cancels this queued work; originals and completed copies are retained.") : root.force-notice; wrap: word-wrap; }
+                    Label { text: root.confirmation == Confirmation.replace-draft ? "Replace the current draft (" + root.replace-count + " items)?" : root.confirmation == Confirmation.quit ? "Quit with unfinished work?" : "Force stop this task?"; font-size: root.ui-size * 1.15; font-weight: 600; wrap: word-wrap; }
+                    Label { text: root.confirmation == Confirmation.replace-draft ? "The current draft will be replaced with this run’s captured inputs and settings." : root.confirmation == Confirmation.quit ? (root.worker-running || root.export-running ? "A task or report export is still in progress. Quitting cancels waiting requests; completed copies and original messages are retained." : root.waiting.length + (root.waiting.length == 1 ? " request is waiting." : " requests are waiting.") + " Quitting cancels this queued work; originals and completed copies are retained.") : root.force-notice; wrap: word-wrap; }
                     if root.confirmation == Confirmation.quit: ActionButton { text: root.worker-running ? "Stop and wait" : (root.export-running ? "Finish export and quit" : "Cancel waiting and quit"); accessible-label: self.text; clicked => { root.stop-and-quit(); } }
-                    if root.worker-running: TextButton { text: root.confirmation == Confirmation.quit ? "Force stop and quit" : "Force stop now"; danger: true; accessible-description: "Stops the message worker abruptly. Any report export is allowed to finish."; clicked => { if root.confirmation == Confirmation.quit { root.force-and-quit(); } else { root.confirm-force-stop(); } } }
-                    cancel-decision := ActionButton { text: root.confirmation == Confirmation.quit ? "Cancel quit" : "Cancel force stop"; accessible-label: self.text; clicked => { root.cancel-confirmation(); } }
+                    if root.confirmation == Confirmation.replace-draft: ActionButton { text: "Replace Draft"; clicked => { root.confirm-replace-draft(); } }
+                    if root.worker-running && root.confirmation != Confirmation.replace-draft: TextButton { text: root.confirmation == Confirmation.quit ? "Force stop and quit" : "Force stop now"; danger: true; accessible-description: "Stops the message worker abruptly. Any report export is allowed to finish."; clicked => { if root.confirmation == Confirmation.quit { root.force-and-quit(); } else { root.confirm-force-stop(); } } }
+                    cancel-decision := ActionButton { text: root.confirmation == Confirmation.replace-draft ? "Cancel" : root.confirmation == Confirmation.quit ? "Cancel quit" : "Cancel force stop"; accessible-label: self.text; clicked => { root.cancel-confirmation(); } }
                 }
             }
 

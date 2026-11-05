@@ -1,65 +1,98 @@
 // Copyright 2026 Ervins Strauhmanis
 // SPDX-License-Identifier: MPL-2.0
-import { TextEdit, HorizontalBox, VerticalBox, ListView, ScrollView, ProgressIndicator, Palette, RadioGroup, CheckBox } from "std-widgets.slint";
-import { ActionButton, TextButton, UiMetrics, Label, FileName, PathLabel } from "controls.slint";
-import { Confirmation, CountView, PathView, RunView, ItemView, DetailView, RemovalView } from "models.slint";
+import { HorizontalBox, VerticalBox, ListView, ScrollView } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+import { SelectionView } from "models.slint";
+import { ActionButton, PrimaryButton, TextButton, IconButton, Icon, IconKind, Label, PathLabel, Segmented, PopupButton, UiMetrics } from "controls.slint";
 
-export component DraftPane inherits VerticalBox {
-    in property <brush> attention-color;
+export component DraftPane inherits ScrollView {
+    in property <[SelectionView]> selection;
     in property <bool> can-start;
-    in-out property <bool> check-only;
-    callback choose-files();
-    callback choose-folder();
-    callback clear-selection();
-    in property <bool> closing;
+    in property <bool> can-edit;
+    in property <bool> check-only;
+    in property <bool> drop-hovered;
     in property <string> destination-label;
-    in property <length> message-row-height;
-    callback mode-changed(bool);
-    callback open-destination();
-    callback remove-selection(int);
-    in property <[PathView]> selection;
     in property <string> start-label;
     in property <string> start-reason;
-    callback start-selection();
+    in property <string> starts-after;
     in property <length> ui-size;
- padding: 0px; spacing: UiMetrics.inset;
-                HorizontalBox { padding: 0px; spacing: UiMetrics.gap; vertical-stretch: 0;
-                    VerticalBox { padding: 0px; spacing: UiMetrics.label-gap; horizontal-stretch: 1;
-                        Label { text: root.selection.length == 0 ? "Choose messages to begin" : "Review request"; font-size: root.ui-size * 1.4; font-weight: 600; }
-                        Label { text: root.selection.length == 0 ? "Drop .eml files or a folder here, or choose them below." : root.selection.length + (root.selection.length == 1 ? " selection · folders are scanned when started" : " selections · folders are scanned when started"); wrap: word-wrap; opacity: 0.75; }
-                    }
-                    ActionButton { text: "Add files…"; enabled: !root.closing; accessible-label: self.text; clicked => { root.choose-files(); } }
-                    ActionButton { text: "Add folder…"; enabled: !root.closing; accessible-label: self.text; clicked => { root.choose-folder(); } }
-                }
-                RadioGroup { title: "Operation"; orientation: horizontal; enabled: !root.closing;
-                    selected(value) => { if (value == "Check only") != root.check-only { root.mode-changed(value == "Check only"); } }
-                    RadioButton { text: "Create copies"; checked: !root.check-only; }
-                    RadioButton { text: "Check only"; checked: root.check-only; }
-                }
-                HorizontalBox { padding: 0px; spacing: UiMetrics.gap; vertical-stretch: 0;
-                    VerticalBox { padding: 0px; spacing: UiMetrics.label-gap; horizontal-stretch: 1;
-                        Label { text: root.check-only ? "Check destination" : "Save copies"; font-weight: 600; }
-                        Label { text: root.destination-label; overflow: elide; Tooltip { text: @markdown("\{root.destination-label}"); } }
-                    }
-                    ActionButton { text: "Change…"; enabled: !root.closing; accessible-description: "Choose the destination for this request."; clicked => { root.open-destination(); } }
-                }
-                ListView { content-width: self.visible-width; accessible-role: list; accessible-label: "Selection ready to start";
-                    preferred-height: min(240px, root.selection.length * root.message-row-height); min-height: 0px; vertical-stretch: 1;
-                    for path[index] in root.selection: Rectangle { height: root.message-row-height;
-                        HorizontalBox { width: parent.width; height: parent.height; padding: UiMetrics.gap; padding-left: 12px; padding-right: 12px; spacing: UiMetrics.gap;
-                            PathLabel { path: path; text-size: root.ui-size; }
-                            TextButton { text: "Remove"; enabled: !root.closing; accessible-label: "Remove selection " + path.full; clicked => { root.remove-selection(index); } }
-                        }
-                        Rectangle { y: parent.height - 1px; height: 1px; background: Palette.border; opacity: 0.35; }
-                    }
-                }
+    callback choose-files(); callback choose-folder(); callback clear-selection();
+    callback mode-changed(bool); callback open-destination();
+    callback remove-selection(int); callback start-selection();
+    content-width: self.visible-width;
+    content-height: max(self.visible-height, content.preferred-height);
+    content := VerticalBox { width: parent.visible-width; height: max(parent.visible-height, self.preferred-height);
+    padding: 0px; spacing: 16px;
 
-
-                if root.selection.length > 0 && !root.can-start: Label { text: root.start-reason; wrap: word-wrap; color: root.attention-color; }
-                HorizontalBox { padding: 0px; spacing: UiMetrics.gap; vertical-stretch: 0;
-                    Label { text: root.check-only ? "No copies will be written." : "Copies use name.no-attachments.eml."; wrap: word-wrap; opacity: 0.75; horizontal-stretch: 1; vertical-alignment: center; }
-                    if root.selection.length > 0: TextButton { text: "Clear selection"; enabled: !root.closing; accessible-label: self.text; clicked => { root.clear-selection(); } }
-                    ActionButton { text: root.start-label; enabled: root.can-start; primary: true; accessible-description: root.start-reason; clicked => { root.start-selection(); } }
+    HorizontalBox { padding: 0px; spacing: 8px; vertical-stretch: 0;
+        VerticalBox { padding: 0px; spacing: 4px; horizontal-stretch: 1;
+            Label { text: "New Request"; font-size: 22px; font-weight: 700; }
+            if root.selection.length > 0: Label { text: root.selection.length + " items added · folders are searched when you start"; color: Theme.muted; wrap: word-wrap; }
+        }
+        if root.selection.length > 0: ActionButton { text: "Add Files…"; enabled: root.can-edit; clicked => { root.choose-files(); } }
+        if root.selection.length > 0: ActionButton { text: "Add Folder…"; enabled: root.can-edit; clicked => { root.choose-folder(); } }
+    }
+    if root.selection.length == 0: Rectangle {
+        min-height: 120px; vertical-stretch: 1; horizontal-stretch: 1;
+        border-width: 2px; border-radius: 12px;
+        border-color: root.drop-hovered ? Theme.accent : Theme.border;
+        background: root.drop-hovered ? Theme.accent-soft : Theme.surface;
+        accessible-role: groupbox; accessible-label: "Drop email files or folders";
+        VerticalBox { padding: 24px; spacing: 16px; alignment: center;
+            HorizontalBox { alignment: center; Icon { kind: IconKind.folder; width: 48px; height: 48px; stroke: Theme.accent; } }
+            Label { text: "Drop email files or folders here"; horizontal-alignment: center; font-size: 20px; font-weight: 600; wrap: word-wrap; }
+            Label { text: "Copies keep the message text and drop attachments. Your original .eml files are never changed."; horizontal-alignment: center; color: Theme.muted; wrap: word-wrap; }
+            HorizontalBox { padding: 0px; spacing: 8px; alignment: center;
+                ActionButton { text: "Add Files…"; enabled: root.can-edit; clicked => { root.choose-files(); } }
+                ActionButton { text: "Add Folder…"; enabled: root.can-edit; clicked => { root.choose-folder(); } }
+            }
+        }
+    }
+    if root.selection.length > 0: ListView {
+        accessible-role: list; accessible-label: "Inputs ready to start";
+        content-width: self.visible-width; min-height: max(64px, root.ui-size * 4 + UiMetrics.scroll-inset * 2); preferred-height: min(300px, root.selection.length * max(60px, root.ui-size * 4) + UiMetrics.scroll-inset * 2); vertical-stretch: 1;
+        for input[index] in root.selection: Rectangle {
+            height: max(60px, root.ui-size * 4);
+            border-radius: 6px; background: hover.has-hover ? Theme.raised : transparent;
+            hover := TouchArea { }
+            HorizontalBox { width: parent.width; height: parent.height; padding: 8px; spacing: 12px;
+                Icon { kind: input.folder ? IconKind.folder : IconKind.file; }
+                PathLabel { path: input.path; text-size: root.ui-size; }
+                remove := IconButton { icon: IconKind.remove; text: "Remove " + input.path.prefix + input.path.suffix; accessible-description: input.path.full; enabled: root.can-edit;
+                    opacity: hover.has-hover || self.has-focus ? 1 : 0;
+                    clicked => { root.remove-selection(index); }
                 }
-
+            }
+        }
+    }
+    if root.selection.length > 0: Label { text: "Drop more files or folders anywhere in this window."; color: Theme.muted; wrap: word-wrap; }
+    Rectangle {
+        private property <length> action-width: max(260px, root.ui-size * 20);
+        private property <length> control-height: max(32px, root.ui-size * 1.4 + 10px);
+        private property <length> group-height: root.ui-size * 1.4 + 6px + self.control-height;
+        private property <bool> stacked: self.width < self.action-width + 236px;
+        height: self.stacked ? self.group-height * 2 + 10px : self.group-height;
+        horizontal-stretch: 1;
+        VerticalBox { x: 0px; y: 0px; width: min(parent.width, parent.action-width); height: parent.group-height; padding: 0px; spacing: 6px;
+            Label { text: "Action"; color: Theme.muted; }
+            Segmented { check-only: root.check-only; enabled: root.can-edit; changed(value) => { root.mode-changed(value); } }
+        }
+        VerticalBox { x: parent.stacked ? 0px : parent.action-width + 16px;
+            y: parent.stacked ? parent.group-height + 10px : 0px;
+            width: min(max(220px, root.ui-size * 16), parent.width - self.x); height: parent.group-height;
+            padding: 0px; spacing: 6px;
+            Label { text: root.check-only ? "Check against" : "Save copies"; color: Theme.muted; }
+            PopupButton { text: root.destination-label; enabled: root.can-edit; accessible-label: "Copy destination: " + root.destination-label; clicked => { root.open-destination(); } }
+        }
+    }
+    if root.selection.length > 0 && !root.can-start: Label { text: root.start-reason; color: Theme.warn; wrap: word-wrap; accessible-live-region: polite; }
+    if root.selection.length > 0: HorizontalBox { padding: 0px; spacing: 12px; vertical-stretch: 0;
+        VerticalBox { padding: 0px; spacing: 4px; horizontal-stretch: 1;
+            Label { text: root.check-only ? "Nothing is written. Each message and the destination are checked." : "Copies are named ‹name›.no-attachments.eml. Existing files are never overwritten."; color: Theme.muted; wrap: word-wrap; }
+            if root.starts-after != "": Label { text: root.starts-after; color: Theme.muted; }
+        }
+        TextButton { text: "Clear"; enabled: root.can-edit; clicked => { root.clear-selection(); } }
+        PrimaryButton { text: root.start-label; enabled: root.can-start; accessible-description: root.start-reason; clicked => { root.start-selection(); } }
+    }
+    }
 }
