@@ -5,6 +5,28 @@ authorizes removal independently, and verifies exact expected bytes and retained
 structure. Retained text/plain and text/html payloads are never decoded or
 regenerated. Filesystem execution is separate; see the [architecture](architecture.md).
 
+## Message admission
+
+Each parsed message root, including retained identity-encoded forwarded messages,
+must contain at least one syntactically valid header field. Empty files,
+separator-only roots, orphan continuations and text or binary input without an
+initial header block return `MALFORMED` during preparation, without publishing a
+copy. A header appearing after an invalid first line does not rescue the input.
+
+This intentionally replaces headerless-root acceptance. Subject-only,
+extension-field-only and Content-Type-only exports remain supported, including
+empty bodies and headers ending at EOF. Existing CRLF, LF, CR and outer Unix
+`From ` envelope tolerance remains. Ordinary MIME parts can still omit fields;
+removable attachments and discarded related resources remain opaque. Body bytes,
+including binary and non-UTF-8 bytes, are preserved rather than validated.
+
+This is a minimum structural admission rule, not whole-message RFC validation or
+semantic identification: arbitrary data that forms valid header syntax may still
+qualify. We do not require the originator/date fields specified by
+[RFC 5322 §3.6](https://www.rfc-editor.org/rfc/rfc5322#section-3.6), because incomplete
+exports are supported. MIME body parts have distinct header requirements; see
+[RFC 2046 §5.1](https://www.rfc-editor.org/rfc/rfc2046#section-5.1).
+
 ## Retained body and removal policy
 
 Preparation creates body-only copies. All retained text/plain and

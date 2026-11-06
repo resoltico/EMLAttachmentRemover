@@ -27,7 +27,8 @@ fn multipart(parts: &[Vec<u8>]) -> Vec<u8> {
 #[test]
 fn raw_message_at_and_above_limit() {
     assert_eq!(MAX_MESSAGE_BYTES, 256 * 1024 * 1024);
-    let mut wire = vec![b'x'; MAX_MESSAGE_BYTES];
+    let mut wire = b"Subject: size boundary\r\n\r\n".to_vec();
+    wire.resize(MAX_MESSAGE_BYTES, b'x');
     accepted(&wire);
     wire.push(b'x');
     limited(&wire);

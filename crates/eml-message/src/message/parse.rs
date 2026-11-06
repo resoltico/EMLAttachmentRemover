@@ -132,6 +132,11 @@ impl Parser<'_, '_> {
             let (fields, separator, envelope) = self
                 .headers(start, envelope_allowed)
                 .map_err(|e| located(e, source_section.clone()))?;
+            // A message root must establish header syntax. Ordinary MIME parts
+            // can omit fields; their default media type comes from the container.
+            if root && fields.is_empty() {
+                return Err(malformed("Message root has no valid header fields"));
+            }
             let unique = |name: &str| -> Result<Option<&Field>, PreparationError> {
                 let mut values = fields.iter().filter(|field| field.name == name);
                 let first = values.next();
