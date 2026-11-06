@@ -247,16 +247,14 @@ fn refusal(input: &[u8], expected: Refusal) {
     );
 }
 #[test]
-fn empty_and_root_text_are_structural_bodies() {
+fn minimal_structured_roots_preserve_empty_and_binary_bodies() {
     for input in [
-        b"".as_slice(),
-        b"\r\n",
-        b"Subject: fields only\r\n",
+        b"Subject: fields only\r\n".as_slice(),
         b"Content-Type: text/html\r\n\r\n",
         b"Content-Type: text/plain\r\nContent-Disposition: attachment\r\n\r\nbody",
-        b"Meeting at 10:00\rfinal",
+        b"Subject: meeting\r\rMeeting at 10:00\rfinal",
         b"From owner\rSubject: test\r\rbody",
-        b"body\0bytes\xff",
+        b"Subject: binary body\r\n\r\nbody\0bytes\xff",
     ] {
         check(input, input, vec![]);
     }
@@ -341,8 +339,8 @@ fn cooperative_preparation_control_is_per_run() {
     let cancelled = RunControl::default();
     cancelled.request_stop();
     assert_eq!(
-        prepare_message(b"body", &cancelled).unwrap_err(),
+        prepare_message(b"Subject: body\n\nbody", &cancelled).unwrap_err(),
         PreparationError::Interrupted
     );
-    assert!(prepare_message(b"body", &RunControl::default()).is_ok());
+    assert!(prepare_message(b"Subject: body\n\nbody", &RunControl::default()).is_ok());
 }

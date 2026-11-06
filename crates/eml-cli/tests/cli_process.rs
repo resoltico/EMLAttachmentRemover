@@ -622,3 +622,60 @@ fn force_kill_preserves_original_bytes_mtime_and_the_complete_published_copy() {
         golden
     );
 }
+
+#[test]
+fn root_admission_agrees_across_create_check_and_request_without_touching_existing_files() {
+    for (source, admitted) in [
+        (b"not an email at all\0\xff".as_slice(), false),
+        (b"Subject: minimal\r\n\r\nbody\0\xff".as_slice(), true),
+    ] {
+        for dry in [false, true] {
+            for request in [false, true] {
+                let root = root();
+                fs::write(root.path().join("a.eml"), source).unwrap();
+                let mut args = vec!["--format", "json"];
+                if request {
+                    args.extend(["--request", "-"]);
+                } else {
+                    if dry {
+                        args.push("--dry-run");
+                    }
+                    args.extend(["--", "a.eml"]);
+                }
+                let input = document(dry);
+                let output = invoke(root.path(), &args, request.then_some(input.as_slice()));
+                assert_eq!(output.status.code(), Some(i32::from(!admitted)));
+                let values = events(&output.stdout);
+                let item = &values[1];
+                if admitted {
+                    assert_eq!(item["status"], if dry { "planned" } else { "created" });
+                    if !dry {
+                        assert_eq!(
+                            fs::read(root.path().join("a.no-attachments.eml")).unwrap(),
+                            source
+                        );
+                    }
+                } else {
+                    assert_eq!(item["status"], "failed");
+                    assert_eq!(item["error"]["code"], "MALFORMED");
+                    assert_eq!(item["error"]["phase"], "prepare");
+                    assert_eq!(item["publication"]["state"], "not_published");
+                    assert!(!root.path().join("a.no-attachments.eml").exists());
+                    fs::write(root.path().join("a.no-attachments.eml"), b"existing target")
+                        .unwrap();
+                    let retry = invoke(root.path(), &args, request.then_some(input.as_slice()));
+                    assert_eq!(events(&retry.stdout)[1]["error"]["code"], "MALFORMED");
+                    assert_eq!(
+                        fs::read(root.path().join("a.no-attachments.eml")).unwrap(),
+                        b"existing target"
+                    );
+                }
+                assert_eq!(fs::read(root.path().join("a.eml")).unwrap(), source);
+                assert_eq!(
+                    fs::read_dir(root.path()).unwrap().count(),
+                    if dry && admitted { 1 } else { 2 }
+                );
+            }
+        }
+    }
+}

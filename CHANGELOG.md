@@ -6,6 +6,8 @@ Use concise bullets without category labels or subheadings, grouping related cha
 
 ## [Unreleased]
 
+- Reject headerless message roots as MALFORMED without creating copies; minimal header-bearing exports and headerless MIME body parts remain supported.
+
 - Keep enlarged text clear of overlay scrollbars and move result actions onto a separate row when the header is narrow.
 - Prevent blank input-row clicks from removing selections; align field controls, segmented captions and result headings, and bound icon action targets.
 - Anchor destination and session menus to their controls; retain destination names and full-path tooltips, and clarify failure recovery and zero-removal outcomes.

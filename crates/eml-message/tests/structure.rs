@@ -33,17 +33,11 @@ fn physical_header_names_use_ftext_and_the_first_colon() {
     for byte in [0, b' ', b'\t', 0x7f, 0x80, 0xff] {
         let mut wire = vec![b'X', byte, b'Y'];
         wire.extend_from_slice(b": value\r\nnot a field\r\n");
-        let prepared = prepare_message(&wire, &RunControl::default()).unwrap();
-        assert_eq!(prepared.as_bytes(), wire);
+        refusal(&wire, Refusal::Malformed);
     }
     refusal(b"X:Y: still a value\r\nnot a field\r\n", Refusal::Malformed);
     let wire = b":not a field\r\nContent-Type: multipart/signed\r\n";
-    assert_eq!(
-        prepare_message(wire, &RunControl::default())
-            .unwrap()
-            .as_bytes(),
-        wire
-    );
+    refusal(wire, Refusal::Malformed);
 }
 #[test]
 fn unix_from_is_only_an_outer_envelope_with_a_following_field() {
@@ -55,12 +49,7 @@ fn unix_from_is_only_an_outer_envelope_with_a_following_field() {
         b"From owner\r\nnot a field\r\nContent-Type: multipart/signed\r\n".as_slice(),
         b"From owner\r\n Subject: not a field\r\n",
     ] {
-        assert_eq!(
-            prepare_message(wire, &RunControl::default())
-                .unwrap()
-                .as_bytes(),
-            wire
-        );
+        refusal(wire, Refusal::Malformed);
     }
     let body = b"From owner\r\nContent-Type: multipart/signed\r\n\r\nordinary text";
     let part = mixed(&[body]);
@@ -73,12 +62,7 @@ fn unix_from_is_only_an_outer_envelope_with_a_following_field() {
     let mut forward = b"Content-Type: message/rfc822\r\n\r\n".to_vec();
     forward.extend_from_slice(body);
     let wire = mixed(&[&forward]);
-    assert_eq!(
-        prepare_message(&wire, &RunControl::default())
-            .unwrap()
-            .as_bytes(),
-        wire
-    );
+    refusal(&wire, Refusal::Malformed);
 }
 #[test]
 fn nested_boundary_prefixes_are_distinct_but_reuse_and_premature_outer_edges_refuse() {
