@@ -108,6 +108,12 @@ removed, and task-created app, Finder, Preview and Settings windows were closed.
 Three stale launch-service alerts created by CUA reads after earlier Quit actions
 were dismissed; those cleanup alerts are separate from document-delivery evidence.
 
+An independent control reproduced the drag limitation without involving this
+app: within one Finder icon-view window, dragging an isolated email icon onto
+an isolated folder icon left the file in place and the destination empty. This
+also failed with the file explicitly selected. Source bytes remained unchanged.
+The control's capture and observations are retained privately outside the repo.
+
 A fresh local build directory resolved the reproducibility question around the
 local gate: `CARGO_TARGET_DIR=/Users/erst/Tools/one-list-clean-verify-target cargo
 xtask ci` passed with 346 tests, zero failures and one explicitly manual capture
@@ -122,7 +128,13 @@ passed for commit `86108db`, including exact-archive floor smoke on macOS 15.8.2
 ARM64 and 15.7.9 x86_64, CLI golden checks, native app launch with operands, idle
 Quit and source preservation. Its tag-only release drafting job was skipped;
 no release was created. This establishes runtime evidence on both CPU types,
-not just compilation. The smoke supplies document paths as launch arguments;
-it does **not** establish Finder/Dock AppleEvent delivery on macOS 15. That part
-of R2 still needs an interactive minimum-OS environment. The available local
-host is macOS 27.2; no macOS 15 VM was available locally.
+not just compilation. That first smoke supplied document paths as launch
+arguments. The floor smoke now additionally runs
+[a native document-event probe](../../scripts/smoke-macos-document-event.sh):
+after startup, one `open -a` event must produce the real GUI's read-only helper
+request containing both the initial and newly delivered native paths. This uses
+a separate re-signed copy with an isolated bundle identifier and recording helper;
+the original exact archive checks remain intact. Omitting native delivery was
+shown to fail locally. This checks our native adapter without OS UI automation;
+it does not replace the required actual Dock gesture. Floor-run results are in
+the redesign PR. The available interactive local host is macOS 27.2.

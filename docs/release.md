@@ -32,8 +32,8 @@ THIRD-PARTY-NOTICES.txt. The app ZIP contains `EML Attachment Remover.app`, with
 GUI executable `Contents/MacOS/EMLAttachmentRemover`, public CLI helper
 `Contents/Helpers/emlattachmentremover`, and icon/notices/LICENSE in Resources.
 The GUI Cargo target is `emlattachmentremover-gui`; the bundle identifier is
-`io.github.resoltico.emlattachmentremover`. The bundle has no Services/document
-declarations or Assets.car. The icon is the committed complete ICNS; re-exporting its editable
+`io.github.resoltico.emlattachmentremover`. The bundle declares email and folder
+document types as Viewer/Alternate, with no Services or Assets.car. The icon is the committed complete ICNS; re-exporting its editable
 source is an artwork-maintenance task, described in
 [artwork guide](../artwork/README.md).
 
@@ -72,6 +72,17 @@ macos-15-intel. CLI smoke compares every MIME fixture with its golden bytes or
 expected refusal and checks original bytes. App smoke verifies signatures and CPU
 slices, launches with two selected paths and requests idle Quit without writing
 copies. It then invokes the bundled CLI helper and compares copies with a golden. It does not automate Finder, Dock, file dialogs or other OS UI.
+
+The floor smoke also runs [the native document-event probe](../scripts/smoke-macos-document-event.sh),
+which requires Python 3 (standard library only; tested with 3.9 and 3.15).
+After the exact archive checks, it makes a separate ad hoc signed copy with an
+isolated bundle identifier and a recording helper that forwards read-only requests
+to the real CLI and refuses create requests. The first check establishes startup;
+one `open -a` delivery must then produce a request containing both native paths.
+The probe checks source preservation and unregisters its temporary bundle. It
+stays outside the merge gate and does not replace manual Dock acceptance.
+Passing `--omit-delivery` to the probe is a negative control: it must fail because
+no second request arrives. There are no delivery retries.
 
 A branch `workflow_dispatch` builds, smokes and uploads archives and SHA256SUMS.
 Producer archives and CLI extraction folders use runner-temporary directories
