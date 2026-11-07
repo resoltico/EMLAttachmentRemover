@@ -68,7 +68,8 @@ Finder Open With on an email and cold launch-by-document reached the preview
 without a system alert; Mail remained the default. Folder delivery through
 `open -a` did the same. Finder on this host has no Open With context item for a
 folder. **An actual Dock drop is still unverified**: CUA could not acquire its
-surface. macOS 15 and physical Intel Mac document opening also remain unverified.
+surface. Finder/Dock gestures were not manually exercised on macOS 15; the
+native adapter's minimum-OS runtime evidence is recorded below.
 Both binary slices and the archive signature were checked separately. The later
 minimum-OS archive smoke described below adds runtime evidence on both CPUs.
 
@@ -113,6 +114,8 @@ app: within one Finder icon-view window, dragging an isolated email icon onto
 an isolated folder icon left the file in place and the destination empty. This
 also failed with the file explicitly selected. Source bytes remained unchanged.
 The control's capture and observations are retained privately outside the repo.
+A fresh CUA session with fresh fixtures and explicit source selection reproduced
+the same failure; resetting the automation bindings did not resolve it.
 
 A fresh local build directory resolved the reproducibility question around the
 local gate: `CARGO_TARGET_DIR=/Users/erst/Tools/one-list-clean-verify-target cargo
@@ -135,6 +138,8 @@ after startup, one `open -a` event must produce the real GUI's read-only helper
 request containing both the initial and newly delivered native paths. This uses
 a separate re-signed copy with an isolated bundle identifier and recording helper;
 the original exact archive checks remain intact. Omitting native delivery was
-shown to fail locally. This checks our native adapter without OS UI automation;
-it does not replace the required actual Dock gesture. Floor-run results are in
-the redesign PR. The available interactive local host is macOS 27.2.
+shown to fail locally. [Floor run 42389677519](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/42389677519)
+passed the native event probe on macOS 15.8.2 ARM64 and 15.7.9 x86_64 at commit
+`052ee84`, in addition to the unchanged exact-archive checks. This checks our
+native adapter without OS UI automation; it does not replace the required actual
+Dock gesture. The available interactive local host is macOS 27.2.
