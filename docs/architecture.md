@@ -9,7 +9,7 @@ and human outcome vocabulary. Frontends adapt inputs and render those facts.
 | `eml-core` | Native request admission, collection, destination preflight, filesystem execution, diagnostics, product identity and vocabulary |
 | `eml-protocol` | Strict protocol-1 request decoding, native path encoding, typed JSONL events and bounded checked output |
 | `emlattachmentremover` | Public CLI arguments, request transport, signals and human/JSON sinks |
-| `eml-app` | Immutable queued requests, bounded report reducer and std child-process supervision |
+| `eml-app` | Immutable request snapshots, bounded report reducer and std child-process supervision |
 | `eml-gui` | Pure session state, Slint views and GUI wording, bounded report I/O, native ingress/preferences and macOS About/Quit adapters |
 | `xtask` | Distribution archives, notices and the local merge gate |
 
