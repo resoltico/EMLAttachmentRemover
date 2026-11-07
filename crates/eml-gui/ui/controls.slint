@@ -37,6 +37,7 @@ export component TextButton inherits Rectangle {
     in property <bool> expanded;
     in property <bool> expandable;
     in property <bool> danger;
+    in property <color> foreground: Theme.text;
     out property <bool> has-focus: keys.has-focus;
     callback clicked();
     min-width: (root.show-caption ? caption.preferred-width : 0px) + root.horizontal-inset * 2 + root.leading-inset + root.trailing-inset;
@@ -67,7 +68,7 @@ export component TextButton inherits Rectangle {
     }
     caption := Text {
         visible: root.show-caption;
-        text: root.text; overflow: elide; color: root.danger ? UiMetrics.attention : Theme.text;
+        text: root.text; overflow: elide; color: root.danger ? UiMetrics.attention : root.foreground;
         opacity: root.enabled ? 1 : 0.5;
         x: root.horizontal-inset + root.leading-inset;
         width: max(0px, parent.width - root.horizontal-inset * 2 - root.leading-inset - root.trailing-inset); height: parent.height;
@@ -83,7 +84,8 @@ export component Chip inherits TextButton {
     in property <bool> selected;
     accessible-checkable: true;
     accessible-checked: root.selected;
-    background: root.selected ? Theme.accent-soft : Theme.surface;
+    background: root.selected ? Theme.accent : Theme.surface;
+    foreground: root.selected ? (Theme.dark ? #202024 : #ffffff) : Theme.text;
     border-width: root.has-focus ? 2px : 1px;
     border-color: root.selected || root.has-focus ? Theme.accent : Theme.border;
 }

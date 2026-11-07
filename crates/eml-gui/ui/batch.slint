@@ -16,6 +16,8 @@ export component BatchPane inherits Rectangle {
     callback reveal-report(); callback show-copy(); callback show-original(); callback copy-details(); callback destination(); callback output();
     private property <length> column-width: min(980px,root.width - 48px);
     private property <length> column-x: (root.width - self.column-width) / 2;
+    private property <length> text-x: root.column-x + UiMetrics.scroll-inset + 8px;
+    private property <length> text-width: root.column-width - 2 * (UiMetrics.scroll-inset + 8px);
     private property <length> row-height: max(44px,root.ui-size * 2 + 12px);
     private property <bool> wide: root.width >= 900px;
     private property <length> email-column: root.column-width * 0.32;
@@ -35,8 +37,8 @@ export component BatchPane inherits Rectangle {
     changed list-height => { root.reveal-selected(); }
     VerticalBox { width: parent.width; height: parent.height; padding: 0px; spacing: 0px;
         Rectangle { height: header.preferred-height;
-            header := VerticalBox { x: root.column-x; width: root.column-width; padding-top: 18px; padding-bottom: 12px; padding-left: 0px; padding-right: 0px; spacing: 6px;
-                HorizontalBox { padding: 0px; spacing: 8px;
+            header := VerticalBox { x: root.text-x; width: root.text-width; padding-top: 18px; padding-bottom: 12px; padding-left: 0px; padding-right: 0px; spacing: 6px;
+                HorizontalBox { min-height: max(32px, root.ui-size * 1.4 + 10px); padding: 0px; spacing: 8px;
                     Label { text: root.view.title; font-size: 22px; font-weight: 700; horizontal-stretch: 1; overflow: elide; accessible-live-region: polite; }
                     if root.view.state == BatchState.checking || root.view.state == BatchState.ready: ActionButton { text: root.words.add-files; enabled: root.view.can-add; clicked => { root.add-files(); } }
                     if root.view.state == BatchState.checking || root.view.state == BatchState.ready: ActionButton { text: root.words.add-folder; enabled: root.view.can-add; clicked => { root.add-folder(); } }
@@ -44,7 +46,7 @@ export component BatchPane inherits Rectangle {
                 }
                 HorizontalBox { padding: 0px; spacing: 8px;
                     Label { text: root.view.summary; color: Theme.muted; overflow: elide; horizontal-stretch: 1; }
-                    if root.view.problems != "": Chip { text: root.view.problems; selected: root.view.filtered; clicked => { root.filter(); } }
+                    if root.view.problems != "": Chip { text: root.view.filtered ? "Show all" : root.view.problems; selected: root.view.filtered; clicked => { root.filter(); } }
                 }
                 if root.view.banner != "": Label { text: "⚠ " + root.view.banner; color: Theme.warn; wrap: word-wrap; }
                 if root.view.notice != "": HorizontalBox { padding: 0px; spacing: 8px;
@@ -126,9 +128,9 @@ export component BatchPane inherits Rectangle {
             accessible-role: groupbox; accessible-label: root.words.details-label;
             preferred-height: min(root.height * 0.4, detail-content.preferred-height + 64px);
             max-height: self.preferred-height; min-height: detail-actions.preferred-height + 24px + root.ui-size * 1.4; vertical-stretch: 0;
-            VerticalBox { x: root.column-x; width: root.column-width; height: parent.height; padding: 8px; spacing: 6px;
+            VerticalBox { x: root.text-x - UiMetrics.scroll-inset; width: root.text-width + UiMetrics.scroll-inset * 2; height: parent.height; padding-top: 8px; padding-bottom: 8px; padding-left: 0px; padding-right: 0px; spacing: 6px;
                 ScrollView { vertical-stretch: 1; min-height: 0px; content-width: self.visible-width; content-height: detail-content.preferred-height;
-                    detail-content := VerticalBox { width: parent.visible-width - UiMetrics.overlay-scrollbar-width * 2; x: UiMetrics.overlay-scrollbar-width; padding: 4px; spacing: 6px;
+                    detail-content := VerticalBox { width: parent.visible-width; x: 0px; padding: 0px; spacing: 6px;
                         Label { text: root.detail.name; font-weight: 650; overflow: elide; }
                         Label { text: root.detail.sentence; wrap: word-wrap; }
                         for part in root.detail.parts: HorizontalBox { padding: 0px; spacing: 8px;
@@ -137,8 +139,8 @@ export component BatchPane inherits Rectangle {
                             Label { text: part.size; width: 75px; font-size: 12px; color: Theme.muted; horizontal-alignment: right; overflow: elide; }
                         }
                         Rectangle { min-height: 18px; vertical-stretch: 0; accessible-role: text; accessible-label: root.detail.path;
-                            path-prefix := Label { x: 0px; width: min(self.preferred-width,max(0px,parent.width - path-suffix.preferred-width)); height: parent.height; text: root.detail.path-prefix; font-size: 11.5px; font-family: "monospace"; color: Theme.muted; overflow: elide; accessible-role: none; }
-                            path-suffix := Label { x: path-prefix.width; width: min(self.preferred-width,max(0px,parent.width - path-prefix.width)); height: parent.height; text: root.detail.path-suffix; font-size: 11.5px; font-family: "monospace"; color: Theme.muted; overflow: elide; accessible-role: none; }
+                            path-prefix := Label { x: 0px; width: min(self.preferred-width,max(0px,parent.width - path-suffix.preferred-width)); height: parent.height; text: root.detail.path-prefix; font-size: 11.5px; color: Theme.muted; overflow: elide; accessible-role: none; }
+                            path-suffix := Label { x: path-prefix.width; width: min(self.preferred-width,max(0px,parent.width - path-prefix.width)); height: parent.height; text: root.detail.path-suffix; font-size: 11.5px; color: Theme.muted; overflow: elide; accessible-role: none; }
                         }
                     }
                 }
@@ -151,7 +153,7 @@ export component BatchPane inherits Rectangle {
         }
 
         Rectangle { height: max(60px,root.ui-size * 2 + 30px); background: Theme.raised; border-width: 1px; border-color: Theme.border;
-            HorizontalBox { x: root.column-x; width: root.column-width; height: max(32px,root.ui-size * 1.4 + 10px); y: (parent.height - self.height) / 2; padding: 0px; spacing: 10px;
+            HorizontalBox { x: root.text-x; width: root.text-width; height: max(32px,root.ui-size * 1.4 + 10px); y: (parent.height - self.height) / 2; padding: 0px; spacing: 10px;
                 if root.view.state == BatchState.checking || root.view.state == BatchState.ready: Label { text: root.words.save-copies; color: Theme.muted; }
                 if root.view.state == BatchState.checking || root.view.state == BatchState.ready: ActionButton { text: root.view.destination + " ▾"; enabled: root.view.can-add; clicked => { root.destination(); } }
                 if root.view.state == BatchState.removing: VerticalBox { padding: 0px; spacing: 4px; horizontal-stretch: 1;

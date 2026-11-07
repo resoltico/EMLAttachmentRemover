@@ -310,7 +310,15 @@ pub(super) fn header(batch: &Batch, rows: &[Row], total: Option<u32>) -> Header 
     };
     Header {
         title,
-        summary: parts.join(" · "),
+        summary: if batch.problems_only {
+            format!(
+                "Showing {problems} of {} · {}",
+                rows.len(),
+                parts.join(" · ")
+            )
+        } else {
+            parts.join(" · ")
+        },
         problems: pill,
     }
 }
@@ -419,7 +427,7 @@ pub(super) fn attachment(part: &eml_protocol::records::RemovedRecord) -> crate::
             "Calendar invite"
         }
         Removal::NonBodyPart => "Other content",
-        Removal::Attachment => "Attachment",
+        Removal::Attachment => "",
     };
     crate::AttachmentView {
         name: attachment_name(part).into(),
