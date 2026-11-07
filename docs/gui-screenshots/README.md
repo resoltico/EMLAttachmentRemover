@@ -117,6 +117,10 @@ The control's capture and observations are retained privately outside the repo.
 A fresh CUA session with fresh fixtures and explicit source selection reproduced
 the same failure; resetting the automation bindings did not resolve it.
 
+The owner subsequently waived the manual Dock gesture requirement for this
+redesign. Dock delivery remains unverified; the waiver permits merge and does
+not convert the unsuccessful automation attempts into passing evidence.
+
 A fresh local build directory resolved the reproducibility question around the
 local gate: `CARGO_TARGET_DIR=/Users/erst/Tools/one-list-clean-verify-target cargo
 xtask ci` passed with 346 tests, zero failures and one explicitly manual capture
@@ -141,5 +145,5 @@ the original exact archive checks remain intact. Omitting native delivery was
 shown to fail locally. [Floor run 42389677519](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/42389677519)
 passed the native event probe on macOS 15.8.2 ARM64 and 15.7.9 x86_64 at commit
 `052ee84`, in addition to the unchanged exact-archive checks. This checks our
-native adapter without OS UI automation; it does not replace the required actual
-Dock gesture. The available interactive local host is macOS 27.2.
+native adapter without OS UI automation; it does not establish an actual Dock
+gesture result. The available interactive local host is macOS 27.2.
