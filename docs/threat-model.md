@@ -38,7 +38,7 @@ Filesystem regression tests cover existing-winner preservation, links, aliases,
 changed sources, no-replace fallback and cleanup failures. Actual CLI subprocess
 tests check completed-copy and original preservation across forced termination.
 
-Settled session reports are kept automatically in private, unnamed temporary files; closing a result or quitting releases its backing file.
+Current batch reports stay in bounded memory; they are not automatically written to disk. An outstanding explicit save retains its captured stream until settlement.
 
 Report exports use a user-approved save path, including replacement approved by the
 native save panel. Complete bytes are staged privately in the same folder and

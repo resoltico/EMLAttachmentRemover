@@ -92,9 +92,10 @@ Before the owner tags or publishes:
    matching `vVERSION` tag; tag annotations do not supply the release notes.
    Review the final PR's native CI and both macOS floor-smoke results.
 2. On Intel and Apple Silicon, manually check real window drag delivery, native
-   file/folder dialogs, selection review, explicit Start and destination selection,
+   file/folder dialogs, automatic preview, Remove Attachments and destination selection,
    keyboard navigation, appearance,
-   AboutSlint, Stop/Force Stop, busy Quit and technical report export. Check
+   AboutSlint, Stop/Continue, busy Quit/Quit Now and exact report export. Check
+   Finder Open With for an email and a folder, Dock drops and launch-by-document. Check
    non-Unicode/long paths and a realistic mailbox selection where practical.
 3. Review the software-renderer screenshots and retained upstream license texts.
    Check the full icon at normal/high display scale. Real OS interaction and
