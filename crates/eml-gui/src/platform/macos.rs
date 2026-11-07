@@ -1,10 +1,12 @@
 //! Route the standard application-menu About action and admit native Quit.
 #![expect(
     unsafe_code,
-    reason = "The bounded application menu and Quit adapters own their Objective-C boundary"
+    reason = "The application menu, Quit and document-opening adapters own their Objective-C boundary"
 )]
 use objc2::{
-    Encode, MainThreadMarker, ffi, msg_send,
+    Encode, MainThreadMarker,
+    encode::EncodeReturn,
+    ffi, msg_send,
     rc::Retained,
     runtime::{AnyClass, AnyObject, ClassBuilder, Imp, Sel},
     sel,
@@ -12,12 +14,63 @@ use objc2::{
 use objc2_app_kit::NSApplication;
 use std::{
     cell::OnceCell,
-    ffi::CString,
+    ffi::{CStr, CString},
+    os::unix::ffi::OsStringExt,
+    path::PathBuf,
+    sync::Mutex,
     sync::atomic::{AtomicBool, Ordering},
 };
 static BUSY: AtomicBool = AtomicBool::new(false);
 static QUIT: AtomicBool = AtomicBool::new(false);
 static ABOUT: AtomicBool = AtomicBool::new(false);
+static OPENED: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
+pub(super) fn take_opened() -> Vec<PathBuf> {
+    OPENED
+        .lock()
+        .map(|mut paths| std::mem::take(&mut *paths))
+        .unwrap_or_default()
+}
+extern "C" fn open_urls(_: &AnyObject, _: Sel, _: &NSApplication, urls: &AnyObject) {
+    // Only immutable foreign-array reads cross the unwind boundary; all Rust
+    // mutations are callback-local or protected by the queue mutex.
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        // SAFETY: NSApplicationDelegate supplies NSArray<NSURL *> for this exact
+        // selector. Each object is borrowed for this callback; no pointer escapes.
+        let count: usize = unsafe { msg_send![urls, count] };
+        let mut paths = Vec::new();
+        for index in 0..count {
+            let url: *mut AnyObject = unsafe { msg_send![urls, objectAtIndex: index] };
+            if url.is_null() {
+                continue;
+            }
+            let file: objc2::runtime::Bool = unsafe { msg_send![url, isFileURL] };
+            if !file.as_bool() {
+                continue;
+            }
+            let absolute: *mut AnyObject = unsafe { msg_send![url, absoluteURL] };
+            if absolute.is_null() {
+                continue;
+            }
+            let bytes: *const std::ffi::c_char =
+                unsafe { msg_send![absolute, fileSystemRepresentation] };
+            if bytes.is_null() {
+                continue;
+            }
+            // NSURL's filesystem representation is NUL-terminated and remains
+            // valid for this autorelease scope. Copy losslessly before returning.
+            let path = PathBuf::from(std::ffi::OsString::from_vec(
+                unsafe { CStr::from_ptr(bytes) }.to_bytes().to_vec(),
+            ));
+            if path.is_absolute() {
+                paths.push(path);
+            }
+        }
+        if let Ok(mut opened) = OPENED.lock() {
+            opened.extend(paths);
+        }
+        let _ = slint::invoke_from_event_loop(|| {});
+    }));
+}
 thread_local! {
     // NSMenuItem does not retain its target. Own it until the UI thread exits.
     static ABOUT_TARGET: OnceCell<Retained<AnyObject>> = const { OnceCell::new() };
@@ -76,6 +129,30 @@ pub(super) fn install() -> Result<(), Box<dyn std::error::Error>> {
     .as_bool()
     {
         return Err("Could not install the Quit adapter".into());
+    }
+    let open_selector = sel!(application:openURLs:);
+    if class.instance_method(open_selector).is_some() {
+        return Err("Cannot install document opening on this application delegate".into());
+    }
+    let open_types = CString::new(format!("{}@:@@", <()>::ENCODING_RETURN))?;
+    // SAFETY: the absent selector is installed only on the pinned Winit delegate.
+    // Its void/object/object ABI matches NSApplicationDelegate and catches unwind.
+    let open_implementation = unsafe {
+        std::mem::transmute::<extern "C" fn(&AnyObject, Sel, &NSApplication, &AnyObject), Imp>(
+            open_urls,
+        )
+    };
+    if !unsafe {
+        ffi::class_addMethod(
+            class as *const AnyClass as *mut AnyClass,
+            open_selector,
+            open_implementation,
+            open_types.as_ptr(),
+        )
+    }
+    .as_bool()
+    {
+        return Err("Could not install document opening".into());
     }
     let about_selector = sel!(emlShowAbout:);
     let base = AnyClass::get(c"NSObject").ok_or("NSObject is unavailable")?;

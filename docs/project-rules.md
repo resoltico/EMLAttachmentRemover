@@ -40,4 +40,4 @@ defenses outside it without changing it first.
 Slint is the GUI toolkit. Desktop library and headless development supports
 macOS and Linux; native desktop distribution targets macOS. Signing is ad hoc
 only. Intel Macs are supported. macOS-only integration is limited to
-application-menu About routing and the Quit shim.
+application-menu About routing, the Quit shim and document opening.

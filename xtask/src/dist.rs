@@ -241,6 +241,10 @@ fn plist(bundle_version: u32) -> String {
 <key>CFBundleIconFile</key><string>EML</string>
 <key>LSMinimumSystemVersion</key><string>15.0</string>
 <key>NSHighResolutionCapable</key><true/>
+<key>CFBundleDocumentTypes</key><array>
+<dict><key>CFBundleTypeRole</key><string>Viewer</string><key>LSHandlerRank</key><string>Alternate</string><key>LSItemContentTypes</key><array><string>com.apple.mail.email</string></array></dict>
+<dict><key>CFBundleTypeRole</key><string>Viewer</string><key>LSHandlerRank</key><string>Alternate</string><key>LSItemContentTypes</key><array><string>public.folder</string></array></dict>
+</array>
 </dict></plist>
 "#
     )
@@ -266,7 +270,21 @@ mod tests {
         }
         let plist = plist(native_bundle_version(VERSION).unwrap());
         assert!(!plist.contains("NSServices"));
-        assert!(!plist.contains("CFBundleDocumentTypes"));
+        assert!(plist.contains("CFBundleDocumentTypes"));
+        assert!(plist.contains("com.apple.mail.email"));
+        assert!(plist.contains("public.folder"));
+        assert_eq!(
+            plist
+                .matches("<key>LSHandlerRank</key><string>Alternate</string>")
+                .count(),
+            2
+        );
+        assert_eq!(
+            plist
+                .matches("<key>CFBundleTypeRole</key><string>Viewer</string>")
+                .count(),
+            2
+        );
         assert!(plist.contains("<string>EMLAttachmentRemover</string>"));
     }
 
