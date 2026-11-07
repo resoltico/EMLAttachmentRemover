@@ -65,7 +65,7 @@ fn pump(controller: &DesktopController, predicate: impl Fn() -> bool) {
         }
         assert!(
             Instant::now() < deadline,
-            "Desktop fixture did not reach its expected state: state={} title={} banner={} busy={}",
+            "Desktop fixture did not reach its expected state: state={:?} title={} banner={} busy={}",
             controller.window().get_view().state,
             controller.window().get_view().title,
             controller.window().get_view().banner,
