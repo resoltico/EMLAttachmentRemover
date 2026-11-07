@@ -1064,7 +1064,7 @@ fn s17_menu_shortcuts_obey_the_same_predicates_as_buttons() {
 }
 
 #[test]
-fn s7_continue_clears_an_unavailable_problems_filter_instead_of_hiding_successes() {
+fn s7_continue_retains_problems_filter_until_successes_replace_prior_results() {
     init_no_event_loop();
     let root = tempfile::tempdir().unwrap();
     let first = stream(
@@ -1083,7 +1083,7 @@ fn s7_continue_clears_an_unavailable_problems_filter_instead_of_hiding_successes
     let cli = script(
         root.path(),
         &format!(
-            "request=$(cat)\ncase \"$request\" in *'\"dry_run\":true'*) {};; *) if [ -f continued ]; then {}else touch continued; {}fi;; esac",
+            "request=$(cat)\ncase \"$request\" in *'\"dry_run\":true'*) {};; *) if [ -f continued ]; then while [ ! -f release ]; do :; done; {}else touch continued; {}fi;; esac",
             emit(&check_stream(root.path(), &["bad.eml", "good.eml"])),
             emit(&second),
             emit(&first)
@@ -1098,8 +1098,10 @@ fn s7_continue_clears_an_unavailable_problems_filter_instead_of_hiding_successes
     c.window().invoke_toggle_problems();
     assert!(c.window().get_view().filtered);
     c.start_selection();
-    assert!(!c.window().get_view().filtered);
+    assert!(c.window().get_view().filtered);
+    fs::write(root.path().join("release"), b"go").unwrap();
     pump(&c, || !c.is_busy());
+    assert!(!c.window().get_view().filtered);
     assert_eq!(c.window().get_rows().row_count(), 2);
     assert!(c.window().get_view().problems.is_empty());
 }
@@ -1430,7 +1432,101 @@ fn t3_deep_folder_keeps_its_end_and_full_accessible_label() {
     );
     let folder = label(&c.window(), &row.folder);
     assert!(folder.size().width > 30.0);
-    let source = include_str!("../../ui/batch.slint");
-    assert!(source.contains("text: row.folder-suffix"));
-    assert!(!source.contains("Label { text: row.folder;"));
+    let suffix = label(&c.window(), "Inbox");
+    assert!(suffix.size().width >= 30.0, "final folder is clipped");
+    assert!(suffix.absolute_position().x >= folder.absolute_position().x);
+    assert!(
+        suffix.absolute_position().x + suffix.size().width
+            <= folder.absolute_position().x + folder.size().width + 0.1
+    );
+}
+
+#[test]
+fn t5_detail_header_columns_and_footer_share_one_left_edge() {
+    init_no_event_loop();
+    for font in [13.0, 18.0] {
+        let root = tempfile::tempdir().unwrap();
+        let check = check_stream(root.path(), &["one.eml", "two.eml", "three.eml"]);
+        let create = stream(root.path(), &[("one.eml", "created-attachment")], false);
+        let c = controller(root.path(), dual(root.path(), &check, &create));
+        let ui = c.window();
+        ui.set_ui_size(font);
+        ui.window().set_size(slint::LogicalSize::new(760.0, 520.0));
+        c.stage(vec![root.path().join("inputs")]).unwrap();
+        pump(&c, || !c.is_busy());
+        select_first(&c);
+        let title = label(&ui, "3 emails");
+        let x = title.absolute_position().x;
+        for e in [
+            label(&ui, "one.eml"),
+            label(&ui, "Email"),
+            label(&ui, "Save copies"),
+        ] {
+            assert!(
+                (e.absolute_position().x - x).abs() <= 1.0,
+                "left edge {:?} vs {x}",
+                e.absolute_position()
+            );
+        }
+        let ready_y = label(&ui, "Email").absolute_position().y;
+        c.start_selection();
+        pump(&c, || !c.is_busy());
+        mock_elapsed_time(Duration::from_millis(1));
+        assert!((label(&ui, "Email").absolute_position().y - ready_y).abs() <= 1.0);
+    }
+}
+
+#[test]
+fn t6_detail_omits_generic_kind_and_preserves_inline_image_kind() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let mut values: Vec<Value> = check_stream(root.path(), &["one.eml"])
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let generic = values.iter().map(|v| format!("{v}\n")).collect::<String>();
+    let c = controller(root.path(), dual(root.path(), &generic, ""));
+    c.stage(vec![root.path().join("inputs")]).unwrap();
+    pump(&c, || !c.is_busy());
+    select_first(&c);
+    assert_eq!(c.window().get_detail().parts.row_data(0).unwrap().kind, "");
+    assert!(!labels(&c.window()).iter().any(|s| s == "Attachment"));
+    drop(c);
+    values[1]["removed"][0]["reason"] = "related_resource".into();
+    values[1]["removed"][0]["content_type"] = "image/png".into();
+    let inline = values.iter().map(|v| format!("{v}\n")).collect::<String>();
+    let c = controller(root.path(), dual(root.path(), &inline, ""));
+    c.stage(vec![root.path().join("inputs")]).unwrap();
+    pump(&c, || !c.is_busy());
+    select_first(&c);
+    assert_eq!(
+        c.window().get_detail().parts.row_data(0).unwrap().kind,
+        "Inline image"
+    );
+    label(&c.window(), "Inline image");
+}
+
+#[test]
+fn t8_filter_announces_visible_count_and_show_all() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let mut cases = vec![
+        ("bad1.eml", "prepublication-failure"),
+        ("bad2.eml", "prepublication-failure"),
+    ];
+    let names: Vec<_> = (0..34).map(|n| format!("mail{n}.eml")).collect();
+    cases.extend(names.iter().map(|n| (n.as_str(), "planned-create-unix")));
+    let check = stream(root.path(), &cases, true);
+    let c = controller(root.path(), dual(root.path(), &check, ""));
+    c.stage(vec![root.path().join("inputs")]).unwrap();
+    pump(&c, || !c.is_busy());
+    let original = c.window().get_view().summary;
+    c.window().invoke_toggle_problems();
+    assert_eq!(c.window().get_rows().row_count(), 2);
+    assert!(c.window().get_view().summary.starts_with("Showing 2 of 36"));
+    label(&c.window(), "Show all");
+    c.window().invoke_toggle_problems();
+    assert_eq!(c.window().get_view().summary, original);
+    assert_eq!(c.window().get_rows().row_count(), 36);
+    label(&c.window(), "2 can’t be copied");
 }
