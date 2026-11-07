@@ -133,7 +133,7 @@ fn facts(item: &wire::ItemRecord) -> Option<OutcomeFacts> {
             .any(|part| part.reason == wire::Removal::RelatedResource),
     })
 }
-fn meaning(item: &wire::ItemRecord) -> Option<vocabulary::OutcomeMeaning> {
+pub(super) fn meaning(item: &wire::ItemRecord) -> Option<vocabulary::OutcomeMeaning> {
     facts(item).map(|facts| vocabulary::classify(&facts))
 }
 pub(super) fn item_words(item: &wire::ItemRecord) -> crate::wording::ItemWords {

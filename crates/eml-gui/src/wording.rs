@@ -1,4 +1,9 @@
 //! GUI-owned wording for typed outcomes. CLI vocabulary is used only in technical details.
+#[expect(
+    dead_code,
+    reason = "One-list wording is staged until the WP5 controller cutover"
+)]
+pub(crate) mod batch;
 use crate::state::Tally;
 use eml_core::{
     ErrorCode, RunMode,

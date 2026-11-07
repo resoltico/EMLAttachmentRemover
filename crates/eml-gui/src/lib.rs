@@ -6,6 +6,11 @@ mod actions;
     reason = "Batch transitions are staged until the WP5 controller cutover"
 )]
 mod batch;
+#[expect(
+    dead_code,
+    reason = "One-list presentation is staged until the WP5 controller cutover"
+)]
+mod batch_present;
 mod callbacks;
 mod feedback;
 pub mod ingress;
