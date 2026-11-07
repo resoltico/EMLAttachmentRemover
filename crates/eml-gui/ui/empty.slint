@@ -1,0 +1,24 @@
+import { VerticalBox, HorizontalBox } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+import { AppWords } from "batch-models.slint";
+import { ActionButton, Label } from "controls.slint";
+export component EmptyBatch inherits Rectangle {
+    in property <AppWords> words;
+    in property <bool> enabled;
+    in property <bool> hovered;
+    callback add-files(); callback add-folder();
+    background: Theme.surface;
+    Rectangle { width: min(560px, parent.width - 48px); height: content.preferred-height + 64px;
+        x: (parent.width - self.width) / 2; y: max(0px,(parent.height - self.height) / 2);
+        border-width: 2px; border-color: root.hovered ? Theme.accent : Theme.border; border-radius: 14px;
+        background: root.hovered ? Theme.accent-soft : Theme.surface;
+        content := VerticalBox { padding: 24px; spacing: 14px; alignment: center;
+            Label { text: root.words.empty-title; font-size: 22px; font-weight: 700; horizontal-alignment: center; wrap: word-wrap; }
+            Label { text: root.words.empty-body; color: Theme.muted; horizontal-alignment: center; wrap: word-wrap; }
+            HorizontalBox { padding: 0px; spacing: 8px; alignment: center;
+                ActionButton { text: root.words.add-files; enabled: root.enabled; clicked => { root.add-files(); } }
+                ActionButton { text: root.words.add-folder; enabled: root.enabled; clicked => { root.add-folder(); } }
+            }
+        }
+    }
+}
