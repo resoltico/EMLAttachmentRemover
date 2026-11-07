@@ -41,12 +41,16 @@ normal captures. Both appearances were visually reviewed.
 |---|---|---|
 | Full screen, 1920×1080 | [JPEG](manual/full-light.jpg) | [JPEG](manual/full-dark.jpg) |
 | Normal, 1080×732 frame / 1080×700 client | [JPEG](manual/normal-light.jpg) | [JPEG](manual/normal-dark.jpg) |
+| Minimum, 760×552 frame / 760×520 client | [JPEG](manual/minimum-light.jpg) | [JPEG](manual/minimum-dark.jpg) |
 
-The requested **native 760×520 capture is not complete**. Edge drags did not
-reliably reach that width through CUA. An earlier app build reached a 920×520
-client area; the final normal captures above are labelled with their actual size.
-Exact 760×520 is covered by the toolkit image and geometry/constraint checks,
-which is separate evidence from native OS resizing.
+The requested native minimum-size captures are now complete on product commit
+`86108db`: the installed Moom utility's temporary Resize action set the actual
+frame to 760×552, including the 32-pixel title bar. The resulting 760×520 client
+area shows three complete rows, the selected email's attachment details and both
+detail actions. Both appearances were visually reviewed; Size is hidden as
+required. These are raw native JPEG captures, without cropping or scaling. The
+temporary resize action was removed afterward. Earlier CUA edge-drag attempts
+had failed; the screenshots above supersede that capture gap.
 
 Observed: native file and folder panels; automatic preview; destination changes;
 seven saved small-batch copies (one as is, one malformed input refused); native
@@ -65,7 +69,8 @@ without a system alert; Mail remained the default. Folder delivery through
 `open -a` did the same. Finder on this host has no Open With context item for a
 folder. **An actual Dock drop is still unverified**: CUA could not acquire its
 surface. macOS 15 and physical Intel Mac document opening also remain unverified.
-Both binary slices and the archive signature were checked separately.
+Both binary slices and the archive signature were checked separately. The later
+minimum-OS archive smoke described below adds runtime evidence on both CPUs.
 
 The original app preferences and light appearance were restored after testing;
 task-created native windows and synthetic source/copy fixtures were cleaned up.
@@ -87,13 +92,37 @@ the viewport became 95 pixels and only one complete 48-pixel row fit. The mutati
 was restored. The existing toolkit and native captures still show the unchanged
 product; they do not establish Linux native rendering or macOS 15 behavior.
 
-A further bounded native attempt did not complete Dock delivery or the exact
-minimum-size captures. Acquiring `/System/Library/CoreServices/Dock.app` returned
-CUA `timeoutReached`; an outer-edge resize returned `windowNotFoundAtPosition`,
-and an inside-edge drag left the 1080×732 frame unchanged. These are tool/OS
-interaction blockers, not passing product checks. No Dock gesture was delivered.
-The available host is macOS 27.2; the only local UTM VM found is Windows ARM, and
-no suitable macOS 15 environment was available. Completing those checks requires
-an accessible Dock/resize surface and a macOS 15 host; Intel runtime verification
-also requires an Intel Mac. Universal compilation alone does not establish either
-runtime result.
+Initial bounded native attempts could not complete Dock delivery or exact
+minimum-size captures. The minimum-size gap was subsequently resolved with the
+existing Moom utility as described above. Dock acquisition by path and bundle ID
+still returned CUA `timeoutReached`, including after keyboard focus. A separate
+investigation used Preview's native full-screen capture to locate the actual
+Dock and attempted a Finder-file drag to its app icon, with both the original
+left-side Dock and a temporarily bottom-positioned Dock (positive destination
+coordinates). The app did not receive the fixture. This is **not a passing Dock
+check**, and gesture failure cannot yet be distinguished from a product failure.
+No assurance was removed or substituted. Desktop diagnostic captures remain
+private outside this repository; they include unrelated windows. Original Light
+appearance and Left Dock position were restored, the temporary Moom action was
+removed, and task-created app, Finder, Preview and Settings windows were closed.
+Three stale launch-service alerts created by CUA reads after earlier Quit actions
+were dismissed; those cleanup alerts are separate from document-delivery evidence.
+
+A fresh local build directory resolved the reproducibility question around the
+local gate: `CARGO_TARGET_DIR=/Users/erst/Tools/one-list-clean-verify-target cargo
+xtask ci` passed with 346 tests, zero failures and one explicitly manual capture
+ignored, including fresh universal archive signing and verification. An earlier
+run using the existing target directory and one focused diagnostic had failed
+the unchanged CLI FIFO/SIGINT test (signal termination instead of exit 130).
+That failure evidence is retained; no test or product code changed to obtain the
+clean-build result. Cache contamination is not established as the root cause.
+
+The existing branch-dispatched [archive workflow 42385688624](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/42385688624)
+passed for commit `86108db`, including exact-archive floor smoke on macOS 15.8.2
+ARM64 and 15.7.9 x86_64, CLI golden checks, native app launch with operands, idle
+Quit and source preservation. Its tag-only release drafting job was skipped;
+no release was created. This establishes runtime evidence on both CPU types,
+not just compilation. The smoke supplies document paths as launch arguments;
+it does **not** establish Finder/Dock AppleEvent delivery on macOS 15. That part
+of R2 still needs an interactive minimum-OS environment. The available local
+host is macOS 27.2; no macOS 15 VM was available locally.
