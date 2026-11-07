@@ -90,7 +90,10 @@ export component BatchPane inherits Rectangle {
                                 prefix := Label { x: 0px; width: min(self.preferred-width,max(0px,parent.width - suffix.preferred-width)); height: parent.height; text: row.prefix; overflow: elide; font-weight: 550; }
                                 suffix := Label { x: prefix.width; width: min(self.preferred-width,max(0px,parent.width - prefix.width)); height: parent.height; text: row.suffix; font-weight: 550; overflow: elide; }
                             }
-                            Label { text: row.folder; font-size: 12px; color: Theme.muted; overflow: elide; }
+                            Rectangle { min-height: 17px; vertical-stretch: 0; accessible-role: text; accessible-label: row.folder;
+                                folder-prefix := Label { x: 0px; width: min(self.preferred-width,max(0px,parent.width - folder-suffix.preferred-width)); height: parent.height; text: row.folder-prefix; font-size: 12px; color: Theme.muted; overflow: elide; accessible-role: none; }
+                                folder-suffix := Label { x: folder-prefix.width; width: min(self.preferred-width,max(0px,parent.width - folder-prefix.width)); height: parent.height; text: row.folder-suffix; font-size: 12px; color: Theme.muted; overflow: elide; accessible-role: none; }
+                            }
                         }
                         Rectangle { width: root.attachments-column;
                         HorizontalBox { width: parent.width; height: parent.height; padding: 0px; spacing: 5px;

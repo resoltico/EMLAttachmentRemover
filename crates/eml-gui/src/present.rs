@@ -320,6 +320,11 @@ impl crate::DesktopController {
                     name: name.into(),
                     prefix: prefix.into(),
                     suffix: suffix.into(),
+                    folder_prefix: folder
+                        .rsplit_once('/')
+                        .map_or("", |(p, _)| &folder[..p.len() + 1])
+                        .into(),
+                    folder_suffix: folder.rsplit('/').next().unwrap_or(&folder).into(),
                     folder: folder.into(),
                     chip1: names
                         .first()
