@@ -69,3 +69,31 @@ Both binary slices and the archive signature were checked separately.
 
 The original app preferences and light appearance were restored after testing;
 task-created native windows and synthetic source/copy fixtures were cleaned up.
+
+## Cross-platform follow-up
+
+The original final-tree `cargo xtask ci` pass was on macOS 27.2. GitHub Actions
+run [42349434185](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/42349434185)
+then failed S13 on both Linux x86_64 and ARM64: the stressed layout test required
+an outer list height of 100 pixels. Reproduction with Slint 1.18.1 measured a
+96-pixel Linux viewport containing two complete 48-pixel rows. Cupertino adds a
+four-pixel frame around the same 96-pixel viewport. The fixed test checks actual
+row bounds against the clipping viewport, verifies fixed row heights and rejects
+overlap in both S13 geometry cases. Product layout did not change.
+
+All three S13 tests pass locally on macOS and Linux ARM64. As a negative control,
+reducing the list height by one pixel made the stressed-layout test fail on both:
+the viewport became 95 pixels and only one complete 48-pixel row fit. The mutation
+was restored. The existing toolkit and native captures still show the unchanged
+product; they do not establish Linux native rendering or macOS 15 behavior.
+
+A further bounded native attempt did not complete Dock delivery or the exact
+minimum-size captures. Acquiring `/System/Library/CoreServices/Dock.app` returned
+CUA `timeoutReached`; an outer-edge resize returned `windowNotFoundAtPosition`,
+and an inside-edge drag left the 1080×732 frame unchanged. These are tool/OS
+interaction blockers, not passing product checks. No Dock gesture was delivered.
+The available host is macOS 27.2; the only local UTM VM found is Windows ARM, and
+no suitable macOS 15 environment was available. Completing those checks requires
+an accessible Dock/resize surface and a macOS 15 host; Intel runtime verification
+also requires an Intel Mac. Universal compilation alone does not establish either
+runtime result.
