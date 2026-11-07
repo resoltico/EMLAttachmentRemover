@@ -46,14 +46,14 @@ struct ExportJob {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum OpenTarget {
     Main,
-    #[cfg(feature = "desktop")]
+    #[cfg(any(feature = "desktop", test))]
     About,
-    #[cfg(feature = "desktop")]
+    #[cfg(any(feature = "desktop", test))]
     Licenses,
 }
 struct OpenJob {
     target: OpenTarget,
-    serial: u64,
+    generation: u64,
     failure: &'static str,
     task: JoinHandle<Result<(), String>>,
 }
@@ -70,6 +70,7 @@ struct Runtime {
 /// Immutable bytes and unique ownership token for a native Save Report panel.
 #[derive(Clone)]
 pub struct ReportExport {
+    epoch: u64,
     jsonl: Arc<[u8]>,
     token: Rc<()>,
 }
@@ -88,7 +89,7 @@ pub struct DesktopController {
     notice: RefCell<Option<(String, u64)>>,
     saved_report: RefCell<Option<PathBuf>>,
     open_jobs: RefCell<Vec<OpenJob>>,
-    serial: Cell<u64>,
+    open_feedback_generation: Cell<u64>,
     panel_epoch: Cell<u64>,
     presentation_dirty: Cell<bool>,
 }
@@ -145,7 +146,7 @@ impl DesktopController {
             notice: RefCell::default(),
             saved_report: RefCell::default(),
             open_jobs: RefCell::default(),
-            serial: Cell::new(0),
+            open_feedback_generation: Cell::new(0),
             panel_epoch: Cell::new(0),
             presentation_dirty: Cell::new(true),
         });
@@ -208,9 +209,8 @@ impl DesktopController {
         Ok(())
     }
     fn changed(&self) {
-        self.serial.set(self.serial.get().wrapping_add(1));
+        self.invalidate_open_feedback();
         self.notice.borrow_mut().take();
-        self.pending_save.borrow_mut().take();
         self.saved_report.borrow_mut().take();
     }
     fn effect(&self, effect: Option<Effect>) {
@@ -409,7 +409,6 @@ impl DesktopController {
             return false;
         }
         self.panel_epoch.set(self.panel_epoch.get().wrapping_add(1));
-        self.pending_save.borrow_mut().take();
         self.drops.borrow_mut().cancel();
         if r.active.as_ref().is_some_and(|a| a.kind == Kind::Create) || r.export.is_some() {
             r.quit = true;
@@ -477,6 +476,7 @@ impl DesktopController {
     }
     /// Transient user feedback, outside report facts.
     pub fn message(&self, text: &str) {
+        self.invalidate_open_feedback();
         self.presentation_dirty.set(true);
         *self.notice.borrow_mut() =
             Some((eml_protocol::DisplayText::new(text).to_string(), now_ms()));
@@ -603,6 +603,30 @@ impl DesktopController {
         drop(rows);
         self.refresh();
     }
+    fn invalidate_open_feedback(&self) {
+        self.open_feedback_generation
+            .set(self.open_feedback_generation.get().wrapping_add(1));
+    }
+    fn set_open_feedback(&self, target: OpenTarget, text: &str, detail: &str) {
+        let detail = eml_protocol::DisplayText::new(detail).to_string();
+        match target {
+            OpenTarget::Main => self.message(&if detail.is_empty() {
+                text.to_owned()
+            } else {
+                format!("{text} {detail}")
+            }),
+            #[cfg(any(feature = "desktop", test))]
+            OpenTarget::About => {
+                self.about.set_notice(text.into());
+                self.about.set_notice_details(detail.into());
+            }
+            #[cfg(any(feature = "desktop", test))]
+            OpenTarget::Licenses => {
+                self.licenses.set_notice(text.into());
+                self.licenses.set_notice_details(detail.into());
+            }
+        }
+    }
     #[cfg(any(feature = "desktop", test))]
     pub(crate) fn open_advisory(
         &self,
@@ -619,34 +643,38 @@ impl DesktopController {
         {
             return;
         }
+        self.set_open_feedback(target, wording::OPENING, "");
         match std::thread::Builder::new()
             .name("native-open".into())
             .spawn(open)
         {
             Ok(task) => self.open_jobs.borrow_mut().push(OpenJob {
                 target,
-                serial: self.serial.get(),
+                generation: self.open_feedback_generation.get(),
                 failure,
                 task,
             }),
-            Err(e) => self.message(&e.to_string()),
+            Err(error) => self.set_open_feedback(target, failure, &error.to_string()),
         }
     }
     fn poll_open_jobs(&self) {
         let mut jobs = self.open_jobs.borrow_mut();
-        let mut i = 0;
-        while i < jobs.len() {
-            if !jobs[i].task.is_finished() {
-                i += 1;
+        let mut index = 0;
+        while index < jobs.len() {
+            if !jobs[index].task.is_finished() {
+                index += 1;
                 continue;
             }
-            let job = jobs.remove(i);
-            let result = job.task.join();
-            if job.target == OpenTarget::Main && job.serial != self.serial.get() {
+            let job = jobs.remove(index);
+            if job.target == OpenTarget::Main
+                && job.generation != self.open_feedback_generation.get()
+            {
                 continue;
             }
-            if !matches!(result, Ok(Ok(()))) {
-                self.message(job.failure);
+            match job.task.join() {
+                Ok(Ok(())) => self.set_open_feedback(job.target, wording::OPEN_SENT, ""),
+                Ok(Err(error)) => self.set_open_feedback(job.target, job.failure, &error),
+                Err(_) => self.set_open_feedback(job.target, job.failure, wording::OPEN_FAILED),
             }
         }
     }
@@ -663,69 +691,4 @@ fn strings(values: impl IntoIterator<Item = String>) -> ModelRc<slint::SharedStr
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn stale_native_opener_feedback_cannot_replace_a_later_batch_notice() {
-        i_slint_backend_testing::init_no_event_loop();
-        let root = tempfile::tempdir().unwrap();
-        let c = DesktopController::new(
-            root.path().join("absent-cli"),
-            root.path().to_owned(),
-            preferences::Preferences::load(root.path().join("settings")),
-        )
-        .unwrap();
-        let (tx, rx) = std::sync::mpsc::channel();
-        c.open_advisory(OpenTarget::Main, "stale opener error", move || {
-            rx.recv().unwrap();
-            Err("failed".into())
-        });
-        c.stage(vec![root.path().join("next.eml")]).unwrap();
-        c.message("current batch notice");
-        tx.send(()).unwrap();
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
-        while !c.open_jobs.borrow().is_empty() {
-            c.tick();
-            assert!(std::time::Instant::now() < deadline);
-            std::thread::yield_now();
-        }
-        assert_eq!(
-            c.notice.borrow().as_ref().unwrap().0,
-            "current batch notice"
-        );
-    }
-    #[test]
-    fn quit_waits_for_owned_report_writer_and_invalidates_late_panels() {
-        i_slint_backend_testing::init_no_event_loop();
-        let root = tempfile::tempdir().unwrap();
-        let c = DesktopController::new(
-            root.path().join("absent"),
-            root.path().to_owned(),
-            preferences::Preferences::load(root.path().join("settings")),
-        )
-        .unwrap();
-        let (tx, rx) = std::sync::mpsc::channel();
-        let task = std::thread::spawn(move || {
-            rx.recv().unwrap();
-            Ok(())
-        });
-        c.runtime.borrow_mut().export = Some(ExportJob {
-            path: root.path().join("report"),
-            task,
-        });
-        let epoch = c.panel_epoch();
-        assert!(!c.request_quit());
-        assert_ne!(epoch, c.panel_epoch());
-        c.stop_and_quit();
-        c.tick();
-        assert!(!c.should_exit());
-        tx.send(()).unwrap();
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
-        while !c.should_exit() {
-            c.tick();
-            assert!(std::time::Instant::now() < deadline);
-            std::thread::yield_now();
-        }
-        assert!(!c.is_busy());
-    }
-}
+mod tests;

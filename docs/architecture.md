@@ -100,8 +100,11 @@ Accepted check and create reports remain in memory. Each exact stream is bounded
 below 256 MiB by protocol framing; parsed observations have independent resource
 bounds. Only the current check and create slots remain attached to the batch.
 One outstanding export or native-save capture can retain a prior batch's stream
-in addition to those two streams. Starting another batch cannot invalidate a
-physical report write already in progress. There are no automatic backing files.
+in addition to those two streams. Starting another batch cannot invalidate an
+already captured save. Its panel retains the single save lifetime until submission
+or cancellation, preventing overlapping captures. Quit invalidates unsubmitted
+panels through the native-panel epoch. Physical writes already in progress settle
+before exit. There are no automatic backing files.
 
 Save Report captures exact immutable bytes from the latest settled create stream,
 or the settled check if no create stream exists. A lifetime token rejects stale
@@ -115,7 +118,9 @@ power loss is not promised; a crash can leave a private staging file.
 and CLI vocabulary remain authoritative for processing facts. `view_model.rs`
 adapts accepted receipts to core meaning. `present.rs` unites check/create rows
 by lossless native source path, retaining create precedence and distinguishing
-Waiting, interrupted Not processed and completed No longer found. Natural order
+Waiting, interrupted Not processed and completed No longer found. Missing rows after
+a worker launch failure remain failed; incomplete discovery leaves results unknown,
+rather than claiming the sources disappeared. Natural order
 uses display folder/name with native-path tie-breaking; selection remains native.
 Report lock contention preserves the previous projection instead of emptying it.
 

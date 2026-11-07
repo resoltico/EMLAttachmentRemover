@@ -91,7 +91,7 @@ impl DesktopController {
         let weak = Rc::downgrade(self);
         self.about.on_licenses(move || {
             if let Some(c) = weak.upgrade() {
-                c.show_licenses(c.ui.get_ui_size());
+                c.show_licenses(c.about.get_ui_size());
             }
         });
         let weak = Rc::downgrade(self);

@@ -1,3 +1,5 @@
+// Copyright 2026 Ervins Strauhmanis
+// SPDX-License-Identifier: MPL-2.0
 import { VerticalBox, HorizontalBox, ListView, ScrollView, ProgressIndicator } from "std-widgets.slint";
 import { Theme } from "theme.slint";
 import { EmailRow, EmailDetail, BatchView, AppWords } from "models.slint";
@@ -46,7 +48,7 @@ export component BatchPane inherits Rectangle {
                 }
                 if root.view.banner != "": Label { text: "⚠ " + root.view.banner; color: Theme.warn; wrap: word-wrap; }
                 if root.view.notice != "": HorizontalBox { padding: 0px; spacing: 8px;
-                    Label { text: root.view.notice; color: Theme.warn; wrap: word-wrap; horizontal-stretch: 1; accessible-live-region: polite; }
+                    Label { text: root.view.notice; color: Theme.warn; overflow: elide; horizontal-stretch: 1; accessible-live-region: polite; }
                     if root.view.can-reveal-report: TextButton { text: root.words.show-report; clicked => { root.reveal-report(); } }
                 }
             }
@@ -99,10 +101,16 @@ export component BatchPane inherits Rectangle {
                             Rectangle { horizontal-stretch: 1; }
                         }
                         }
-                        if root.wide: Label { text: row.size-text; width: 145px; overflow: elide; }
+                        if root.wide: Rectangle { width: 145px; accessible-role: text; accessible-label: row.size-text;
+                            if row.size-reduction-known: Rectangle {
+                                before := Label { x: 0px; width: min(self.preferred-width,max(0px,parent.width - after.preferred-width)); height: parent.height; text: row.source-size + " → "; color: Theme.muted; overflow: elide; accessible-role: none; }
+                                after := Label { x: before.width; width: min(self.preferred-width,max(0px,parent.width - before.width)); height: parent.height; text: row.copy-size; color: Theme.text; overflow: elide; accessible-role: none; }
+                            }
+                            if !row.size-reduction-known: Label { text: row.size-text; width: parent.width; height: parent.height; overflow: elide; accessible-role: none; }
+                        }
                         HorizontalBox { width: 175px; padding: 0px; spacing: 8px;
                             VerticalBox { width: 8px; padding: 0px; spacing: 0px; alignment: center; ToneDot { tone: row.tone == 1 ? Theme.accent : row.tone == 2 ? Theme.ok : row.tone == 3 ? Theme.warn : row.tone == 4 ? Theme.bad : Theme.idle; } }
-                            Label { text: row.status; color: row.tone == 4 ? Theme.bad : row.tone == 3 ? Theme.warn : row.tone == 2 ? Theme.ok : Theme.text; overflow: elide; horizontal-stretch: 1; }
+                            Label { text: row.status; color: row.tone == 4 ? Theme.bad : row.tone == 3 ? Theme.warn : row.tone == 2 ? Theme.ok : row.tone == 0 ? Theme.muted : Theme.text; overflow: elide; horizontal-stretch: 1; }
                         }
                     }
                 }
@@ -112,20 +120,26 @@ export component BatchPane inherits Rectangle {
         }
         if root.detail.visible: Rectangle {
             background: Theme.raised; border-width: 1px; border-color: Theme.border;
-            height: min(root.height * 0.4, detail-content.preferred-height + 64px);
+            accessible-role: groupbox; accessible-label: root.words.details-label;
+            preferred-height: min(root.height * 0.4, detail-content.preferred-height + 64px);
+            max-height: self.preferred-height; min-height: detail-actions.preferred-height + 24px + root.ui-size * 1.4; vertical-stretch: 0;
             VerticalBox { x: root.column-x; width: root.column-width; height: parent.height; padding: 8px; spacing: 6px;
-                ScrollView { vertical-stretch: 1; content-width: self.visible-width; content-height: detail-content.preferred-height;
+                ScrollView { vertical-stretch: 1; min-height: 0px; content-width: self.visible-width; content-height: detail-content.preferred-height;
                     detail-content := VerticalBox { width: parent.visible-width - UiMetrics.overlay-scrollbar-width * 2; x: UiMetrics.overlay-scrollbar-width; padding: 4px; spacing: 6px;
                         Label { text: root.detail.name; font-weight: 650; overflow: elide; }
                         Label { text: root.detail.sentence; wrap: word-wrap; }
-                        for part in root.detail.parts: Label { text: part; font-size: 12px; overflow: elide; }
+                        for part in root.detail.parts: HorizontalBox { padding: 0px; spacing: 8px;
+                            Label { text: part.name; font-size: 12px; overflow: elide; horizontal-stretch: 1; }
+                            Label { text: part.kind; width: 130px; font-size: 12px; color: Theme.muted; overflow: elide; }
+                            Label { text: part.size; width: 75px; font-size: 12px; color: Theme.muted; horizontal-alignment: right; overflow: elide; }
+                        }
                         Rectangle { min-height: 18px; vertical-stretch: 0; accessible-role: text; accessible-label: root.detail.path;
                             path-prefix := Label { x: 0px; width: min(self.preferred-width,max(0px,parent.width - path-suffix.preferred-width)); height: parent.height; text: root.detail.path-prefix; font-size: 11.5px; font-family: "monospace"; color: Theme.muted; overflow: elide; accessible-role: none; }
                             path-suffix := Label { x: path-prefix.width; width: min(self.preferred-width,max(0px,parent.width - path-prefix.width)); height: parent.height; text: root.detail.path-suffix; font-size: 11.5px; font-family: "monospace"; color: Theme.muted; overflow: elide; accessible-role: none; }
                         }
                     }
                 }
-                HorizontalBox { padding: 0px; spacing: 8px; alignment: end;
+                detail-actions := HorizontalBox { padding: 0px; spacing: 8px; alignment: end;
                     if root.detail.can-show-copy: ActionButton { text: root.words.show-copy; enabled: root.view.can-copy; clicked => { root.show-copy(); } }
                     ActionButton { text: root.words.show-original; enabled: root.view.can-copy; clicked => { root.show-original(); } }
                     TextButton { text: root.words.copy-details; enabled: root.view.can-copy; clicked => { root.copy-details(); } }

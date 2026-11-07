@@ -35,6 +35,7 @@ impl DesktopController {
             return None;
         }
         let source = ReportExport {
+            epoch: self.panel_epoch(),
             jsonl: self.settled_bytes()?,
             token: Rc::new(()),
         };
@@ -42,7 +43,7 @@ impl DesktopController {
         self.refresh();
         Some(source)
     }
-    pub(super) fn export_is_current(&self, source: &ReportExport) -> bool {
+    pub(super) fn owns_export_panel(&self, source: &ReportExport) -> bool {
         self.pending_save
             .borrow()
             .as_ref()
@@ -50,7 +51,7 @@ impl DesktopController {
     }
     /// Cancellation cannot invalidate a newer save panel.
     pub fn cancel_export(&self, source: &ReportExport) {
-        if self.export_is_current(source) {
+        if self.owns_export_panel(source) {
             self.pending_save.borrow_mut().take();
             self.refresh();
         }
@@ -63,10 +64,10 @@ impl DesktopController {
     }
     /// Write only the current native panel's captured report.
     pub fn start_captured_export(&self, source: ReportExport, path: PathBuf) {
-        if !self.export_is_current(&source) {
+        if !self.owns_export_panel(&source) {
             return;
         }
-        if self.locked() {
+        if self.locked() || source.epoch != self.panel_epoch() {
             self.cancel_export(&source);
             return;
         }

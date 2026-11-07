@@ -94,7 +94,7 @@ pub fn install_native(
                 let dialog = rfd::AsyncFileDialog::new().set_parent(parent.as_ref());
                 let paths = if kind == 0 {
                     dialog
-                        .add_filter("EML messages", &["eml"])
+                        .add_filter(crate::wording::EML_FILTER, &["eml"])
                         .pick_files()
                         .await
                         .map(|files| {
@@ -151,7 +151,7 @@ pub fn install_native(
                 .set_parent(parent.as_ref())
                 .set_directory(c.report_directory())
                 .set_file_name(source.suggested_name())
-                .add_filter("JSON Lines report", &["jsonl"])
+                .add_filter(crate::wording::REPORT_FILTER, &["jsonl"])
                 .save_file()
                 .await;
             if let Some(file) = file {
@@ -207,7 +207,7 @@ pub fn install_native(
             } {
                 c.open_advisory(
                     crate::OpenTarget::Main,
-                    "Couldn’t show the email. Check that it still exists.",
+                    crate::wording::SHOW_EMAIL_FAILED,
                     move || opener::reveal(path).map_err(|e| e.to_string()),
                 );
             }
@@ -226,7 +226,7 @@ pub fn install_native(
         {
             c.open_advisory(
                 crate::OpenTarget::Main,
-                "Couldn’t open the save folder.",
+                crate::wording::SHOW_OUTPUT_FAILED,
                 move || opener::open(path).map_err(|e| e.to_string()),
             );
         }
@@ -239,7 +239,7 @@ pub fn install_native(
         {
             c.open_advisory(
                 crate::OpenTarget::Main,
-                "Couldn’t show the saved report.",
+                crate::wording::SHOW_REPORT_FAILED,
                 move || opener::reveal(path).map_err(|e| e.to_string()),
             );
         }
@@ -249,7 +249,7 @@ pub fn install_native(
         if let Some(c) = weak.upgrade() {
             c.open_advisory(
                 crate::OpenTarget::Main,
-                "Couldn’t open the project website.",
+                crate::wording::WEBSITE_FAILED,
                 || opener::open(eml_core::product::WEBSITE).map_err(|e| e.to_string()),
             );
         }
@@ -259,7 +259,7 @@ pub fn install_native(
         if let Some(c) = weak.upgrade() {
             c.open_advisory(
                 crate::OpenTarget::About,
-                "Couldn’t open the project website.",
+                crate::wording::WEBSITE_FAILED,
                 || opener::open(eml_core::product::WEBSITE).map_err(|e| e.to_string()),
             );
         }
@@ -275,7 +275,7 @@ pub fn install_native(
             let path = notices.clone();
             c.open_advisory(
                 crate::OpenTarget::Licenses,
-                "Couldn’t open bundled third-party notices.",
+                crate::wording::LICENSES_FAILED,
                 move || opener::open(path).map_err(|e| e.to_string()),
             );
         }
