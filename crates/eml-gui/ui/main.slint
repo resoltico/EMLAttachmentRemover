@@ -4,9 +4,9 @@ import { VerticalBox, HorizontalBox, Palette, ListView } from "std-widgets.slint
 import { Theme } from "theme.slint";
 import { EmptyBatch } from "empty.slint";
 import { BatchPane } from "batch.slint";
-import { EmailRow, EmailDetail, BatchView, AppWords, AttachmentView } from "models.slint";
+import { BatchState, Tone, EmailRow, EmailDetail, BatchView, AppWords, AttachmentView } from "models.slint";
 import { Label, ActionButton, TextButton } from "controls.slint";
-export { EmailRow, EmailDetail, BatchView, AppWords, AttachmentView } from "models.slint";
+export { BatchState, Tone, EmailRow, EmailDetail, BatchView, AppWords, AttachmentView } from "models.slint";
 export component MainWindow inherits Window {
     in property <string> product-name;
     in property <length> ui-size: 13px;
@@ -52,10 +52,10 @@ export component MainWindow inherits Window {
     }
     callback show-output();
     show-output => { if root.view.can-output { if root.output-roots.length == 1 { root.reveal-output(0); } else if root.output-roots.length > 1 { outputs.show(); } } }
-    if root.view.state == 0: EmptyBatch { words: root.words; notice: root.view.notice; can-reveal-report: root.view.can-reveal-report; reveal-report => { root.reveal-report(); } enabled: root.view.can-add; hovered: root.drop-hovered;
+    if root.view.state == BatchState.empty: EmptyBatch { words: root.words; notice: root.view.notice; can-reveal-report: root.view.can-reveal-report; reveal-report => { root.reveal-report(); } enabled: root.view.can-add; hovered: root.drop-hovered;
         add-files => { root.choose-files(); } add-folder => { root.choose-folder(); }
     }
-    if root.view.state != 0: BatchPane { words: root.words; view: root.view; rows: root.rows; detail: root.detail; ui-size: root.ui-size; hovered: root.drop-hovered;
+    if root.view.state != BatchState.empty: BatchPane { words: root.words; view: root.view; rows: root.rows; detail: root.detail; ui-size: root.ui-size; hovered: root.drop-hovered;
         add-files => { root.choose-files(); } add-folder => { root.choose-folder(); } reset => { root.start-over(); }
         start => { root.start-selection(); } stop => { root.stop(); } filter => { root.toggle-problems(); }
         select(key) => { root.select-email(key); } navigate(delta,edge) => { root.navigate-email(delta,edge); } clear-selected => { root.clear-selected(); }

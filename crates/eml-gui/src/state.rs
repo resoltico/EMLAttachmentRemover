@@ -15,6 +15,18 @@ pub(super) enum State {
     Stopped,
     Done,
 }
+impl From<State> for crate::BatchState {
+    fn from(state: State) -> Self {
+        match state {
+            State::Empty => Self::Empty,
+            State::Checking => Self::Checking,
+            State::Ready => Self::Ready,
+            State::Removing => Self::Removing,
+            State::Stopped => Self::Stopped,
+            State::Done => Self::Done,
+        }
+    }
+}
 pub(super) struct Slot {
     pub generation: u64,
     pub report: Option<ReportHandle>,

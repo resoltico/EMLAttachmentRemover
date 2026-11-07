@@ -1,6 +1,6 @@
 //! Behavioral contracts over the production controller and supervised stub CLI.
 use super::*;
-use eml_gui::{MainWindow, Palette};
+use eml_gui::{BatchState, MainWindow, Palette};
 use i_slint_backend_testing::{ElementHandle, ElementRoot};
 use serde_json::{Value, json};
 use slint::Model;
@@ -413,7 +413,7 @@ fn s8_stop_continue_reuses_exact_request_and_existing_copy_wording() {
     c.stop();
     assert!(!c.window().get_view().can_stop);
     pump(&c, || !c.is_busy());
-    assert_eq!(c.window().get_view().state, 4);
+    assert_eq!(c.window().get_view().state, BatchState::Stopped);
     assert_eq!(
         c.window().get_view().summary,
         "0 copies saved · 1 not processed"
@@ -726,7 +726,7 @@ fn s16_exports_exact_settled_bytes_and_keeps_an_explicit_capture_after_reset() {
     c.start_captured_export(old, pinned.clone());
     pump(&c, || !c.is_busy());
     assert_eq!(fs::read(pinned).unwrap(), check.as_bytes());
-    assert_eq!(c.window().get_view().state, 0);
+    assert_eq!(c.window().get_view().state, BatchState::Empty);
     assert!(c.window().get_view().can_reveal_report);
     assert!(
         ElementHandle::find_by_accessible_label(&c.window(), "Show")
@@ -918,8 +918,12 @@ fn s5_streamed_insertion_retains_native_selection_and_the_visible_selected_row()
 fn s5_missing_unprocessed_waiting_and_preview_statuses_are_distinct() {
     init_no_event_loop();
     for (scenario, expected, state) in [
-        ("created", "No longer found", 5),
-        ("started-preedge-cancellation", "Not processed", 4),
+        ("created", "No longer found", BatchState::Done),
+        (
+            "started-preedge-cancellation",
+            "Not processed",
+            BatchState::Stopped,
+        ),
     ] {
         let root = tempfile::tempdir().unwrap();
         let cli = dual(
@@ -1047,12 +1051,12 @@ fn s17_menu_shortcuts_obey_the_same_predicates_as_buttons() {
     assert_eq!(saved.get(), 1);
     shortcut(&ui, slint::platform::Key::Return);
     pump(&c, || !c.is_busy());
-    assert_eq!(ui.get_view().state, 5);
+    assert_eq!(ui.get_view().state, BatchState::Done);
     shortcut(&ui, "2");
     assert!(ui.get_view().filtered);
     assert_eq!(ui.get_rows().row_count(), 1);
     shortcut(&ui, slint::platform::Key::Backspace);
-    assert_eq!(ui.get_view().state, 0);
+    assert_eq!(ui.get_view().state, BatchState::Empty);
     shortcut(&ui, "s");
     assert_eq!(saved.get(), 1);
     shortcut(&ui, slint::platform::Key::Return);
@@ -1090,7 +1094,7 @@ fn s7_continue_clears_an_unavailable_problems_filter_instead_of_hiding_successes
     pump(&c, || !c.is_busy());
     c.start_selection();
     pump(&c, || !c.is_busy());
-    assert_eq!(c.window().get_view().state, 4);
+    assert_eq!(c.window().get_view().state, BatchState::Stopped);
     c.window().invoke_toggle_problems();
     assert!(c.window().get_view().filtered);
     c.start_selection();
@@ -1114,7 +1118,7 @@ fn s1_selection_admission_bounds_unique_paths_and_keeps_first_seen_duplicates() 
         )
         .is_err()
     );
-    assert_eq!(c.window().get_view().state, 0);
+    assert_eq!(c.window().get_view().state, BatchState::Empty);
     assert!(!root.path().join("requests.jsonl").exists());
     c.stage(vec![root.path().join("one.eml"); 5000]).unwrap();
     pump(&c, || !c.is_busy());

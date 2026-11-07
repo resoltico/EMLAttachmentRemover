@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MPL-2.0
 import { VerticalBox, HorizontalBox, ListView, ScrollView, ProgressIndicator } from "std-widgets.slint";
 import { Theme } from "theme.slint";
-import { EmailRow, EmailDetail, BatchView, AppWords } from "models.slint";
+import { BatchState, Tone, EmailRow, EmailDetail, BatchView, AppWords } from "models.slint";
 import { ActionButton, PrimaryButton, TextButton, Label, Chip, ToneDot, UiMetrics, AttachmentChip } from "controls.slint";
 export component BatchPane inherits Rectangle {
     in property <AppWords> words;
@@ -38,9 +38,9 @@ export component BatchPane inherits Rectangle {
             header := VerticalBox { x: root.column-x; width: root.column-width; padding-top: 18px; padding-bottom: 12px; padding-left: 0px; padding-right: 0px; spacing: 6px;
                 HorizontalBox { padding: 0px; spacing: 8px;
                     Label { text: root.view.title; font-size: 22px; font-weight: 700; horizontal-stretch: 1; overflow: elide; accessible-live-region: polite; }
-                    if root.view.state == 1 || root.view.state == 2: ActionButton { text: root.words.add-files; enabled: root.view.can-add; clicked => { root.add-files(); } }
-                    if root.view.state == 1 || root.view.state == 2: ActionButton { text: root.words.add-folder; enabled: root.view.can-add; clicked => { root.add-folder(); } }
-                    if root.view.state == 1 || root.view.state == 2: TextButton { text: root.words.start-over; enabled: root.view.can-reset; clicked => { root.reset(); } }
+                    if root.view.state == BatchState.checking || root.view.state == BatchState.ready: ActionButton { text: root.words.add-files; enabled: root.view.can-add; clicked => { root.add-files(); } }
+                    if root.view.state == BatchState.checking || root.view.state == BatchState.ready: ActionButton { text: root.words.add-folder; enabled: root.view.can-add; clicked => { root.add-folder(); } }
+                    if root.view.state == BatchState.checking || root.view.state == BatchState.ready: TextButton { text: root.words.start-over; enabled: root.view.can-reset; clicked => { root.reset(); } }
                 }
                 HorizontalBox { padding: 0px; spacing: 8px;
                     Label { text: root.view.summary; color: Theme.muted; overflow: elide; horizontal-stretch: 1; }
@@ -112,8 +112,8 @@ export component BatchPane inherits Rectangle {
                             if !row.size-reduction-known: Label { text: row.size-text; width: parent.width; height: parent.height; overflow: elide; accessible-role: none; }
                         }
                         HorizontalBox { width: 175px; padding: 0px; spacing: 8px;
-                            VerticalBox { width: 8px; padding: 0px; spacing: 0px; alignment: center; ToneDot { tone: row.tone == 1 ? Theme.accent : row.tone == 2 ? Theme.ok : row.tone == 3 ? Theme.warn : row.tone == 4 ? Theme.bad : Theme.idle; } }
-                            Label { text: row.status; color: row.tone == 4 ? Theme.bad : row.tone == 3 ? Theme.warn : row.tone == 2 ? Theme.ok : row.tone == 0 ? Theme.muted : Theme.text; overflow: elide; horizontal-stretch: 1; }
+                            VerticalBox { width: 8px; padding: 0px; spacing: 0px; alignment: center; ToneDot { tone: row.tone == Tone.accent ? Theme.accent : row.tone == Tone.ok ? Theme.ok : row.tone == Tone.warn ? Theme.warn : row.tone == Tone.bad ? Theme.bad : Theme.idle; } }
+                            Label { text: row.status; color: row.tone == Tone.bad ? Theme.bad : row.tone == Tone.warn ? Theme.warn : row.tone == Tone.ok ? Theme.ok : row.tone == Tone.muted ? Theme.muted : Theme.text; overflow: elide; horizontal-stretch: 1; }
                         }
                     }
                 }
@@ -152,16 +152,16 @@ export component BatchPane inherits Rectangle {
 
         Rectangle { height: max(60px,root.ui-size * 2 + 30px); background: Theme.raised; border-width: 1px; border-color: Theme.border;
             HorizontalBox { x: root.column-x; width: root.column-width; height: max(32px,root.ui-size * 1.4 + 10px); y: (parent.height - self.height) / 2; padding: 0px; spacing: 10px;
-                if root.view.state == 1 || root.view.state == 2: Label { text: root.words.save-copies; color: Theme.muted; }
-                if root.view.state == 1 || root.view.state == 2: ActionButton { text: root.view.destination + " ▾"; enabled: root.view.can-add; clicked => { root.destination(); } }
-                if root.view.state == 3: VerticalBox { padding: 0px; spacing: 4px; horizontal-stretch: 1;
+                if root.view.state == BatchState.checking || root.view.state == BatchState.ready: Label { text: root.words.save-copies; color: Theme.muted; }
+                if root.view.state == BatchState.checking || root.view.state == BatchState.ready: ActionButton { text: root.view.destination + " ▾"; enabled: root.view.can-add; clicked => { root.destination(); } }
+                if root.view.state == BatchState.removing: VerticalBox { padding: 0px; spacing: 4px; horizontal-stretch: 1;
                     Label { text: root.view.progress-text; }
                     ProgressIndicator { progress: root.view.progress; }
                 }
-                if root.view.state != 3: Label { text: (root.view.state == 1 || root.view.state == 2) ? (root.wide ? root.words.destination-hint : "") : root.view.footer; color: Theme.muted; horizontal-stretch: 1; overflow: elide; }
-                if root.view.state == 4 || root.view.state == 5: ActionButton { text: root.words.start-over; enabled: root.view.can-reset; clicked => { root.reset(); } }
-                if root.view.state == 3: ActionButton { text: root.view.stopping ? root.words.stopping : root.words.stop; enabled: root.view.can-stop; clicked => { root.stop(); } }
-                if root.view.state != 3: PrimaryButton { text: root.view.state == 5 ? root.words.show-output : root.view.primary; enabled: root.view.state == 5 ? root.view.can-output : root.view.can-start; clicked => { if root.view.state == 5 { root.output(); } else { root.start(); } } }
+                if root.view.state != BatchState.removing: Label { text: (root.view.state == BatchState.checking || root.view.state == BatchState.ready) ? (root.wide ? root.words.destination-hint : "") : root.view.footer; color: Theme.muted; horizontal-stretch: 1; overflow: elide; }
+                if root.view.state == BatchState.stopped || root.view.state == BatchState.done: ActionButton { text: root.words.start-over; enabled: root.view.can-reset; clicked => { root.reset(); } }
+                if root.view.state == BatchState.removing: ActionButton { text: root.view.stopping ? root.words.stopping : root.words.stop; enabled: root.view.can-stop; clicked => { root.stop(); } }
+                if root.view.state != BatchState.removing: PrimaryButton { text: root.view.state == BatchState.done ? root.words.show-output : root.view.primary; enabled: root.view.state == BatchState.done ? root.view.can-output : root.view.can-start; clicked => { if root.view.state == BatchState.done { root.output(); } else { root.start(); } } }
             }
         }
     }

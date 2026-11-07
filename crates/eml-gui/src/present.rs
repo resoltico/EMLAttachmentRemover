@@ -25,7 +25,10 @@ impl Row {
         words::label(self.status, self.code())
     }
     pub(super) fn problem(&self) -> bool {
-        words::tone(self.status) >= 3
+        matches!(
+            words::tone(self.status),
+            crate::Tone::Warn | crate::Tone::Bad
+        )
     }
     pub(super) fn size_text(&self) -> String {
         match (self.item.source_bytes.value(), self.item.copy_bytes.value()) {
@@ -422,14 +425,7 @@ impl crate::DesktopController {
                 .iter()
                 .position(|row| row.selected)
                 .map_or(-1, |i| i as i32),
-            state: match state {
-                State::Empty => 0,
-                State::Checking => 1,
-                State::Ready => 2,
-                State::Removing => 3,
-                State::Stopped => 4,
-                State::Done => 5,
-            },
+            state: state.into(),
             title: header.title.into(),
             summary: header.summary.into(),
             problems: header.problems.into(),

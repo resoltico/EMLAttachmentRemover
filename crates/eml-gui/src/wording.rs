@@ -62,13 +62,14 @@ pub(crate) fn label(status: Status, code: Option<ErrorCode>) -> &'static str {
         Status::StartFailed => failure(None).0,
     }
 }
-pub(crate) fn tone(status: Status) -> i32 {
+pub(crate) fn tone(status: Status) -> crate::Tone {
+    use crate::Tone;
     match status {
-        Status::Ready => 1,
-        Status::Saved | Status::AsIs | Status::Existing => 2,
-        Status::NeedsChecking | Status::Unknown => 3,
-        Status::Failed | Status::StartFailed => 4,
-        _ => 0,
+        Status::Ready => Tone::Accent,
+        Status::Saved | Status::AsIs | Status::Existing => Tone::Ok,
+        Status::NeedsChecking | Status::Unknown => Tone::Warn,
+        Status::Failed | Status::StartFailed => Tone::Bad,
+        _ => Tone::Muted,
     }
 }
 pub(crate) fn detail(status: Status, code: Option<ErrorCode>) -> &'static str {
@@ -202,7 +203,7 @@ pub(super) struct Header {
 pub(super) fn header(batch: &Batch, rows: &[Row], total: Option<u32>) -> Header {
     let count = |s| rows.iter().filter(|row| row.status == s).count();
     let problems = rows.iter().filter(|row| row.problem()).count();
-    let has_warn = rows.iter().any(|row| tone(row.status) == 3);
+    let has_warn = rows.iter().any(|row| tone(row.status) == crate::Tone::Warn);
     let pill = if problems == 0 {
         String::new()
     } else if has_warn {
