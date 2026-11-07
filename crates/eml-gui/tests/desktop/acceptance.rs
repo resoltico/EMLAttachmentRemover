@@ -568,6 +568,64 @@ fn inside(element: &ElementHandle, width: f32, height: f32) {
         s
     );
 }
+// The contract is two complete rows in the clipping viewport, not a skin's frame height.
+fn assert_two_complete_rows(ui: &MainWindow, font: f32) -> ElementHandle {
+    let list = ElementHandle::find_by_accessible_label(ui, "Emails")
+        .find(|element| {
+            element.accessible_role() == Some(i_slint_backend_testing::AccessibleRole::List)
+        })
+        .unwrap();
+    let viewport = list
+        .query_descendants()
+        .match_type_name("Flickable")
+        .find_first()
+        .unwrap();
+    let origin = viewport.absolute_position();
+    let size = viewport.size();
+    let mut rows: Vec<_> = list
+        .query_descendants()
+        .find_all()
+        .into_iter()
+        .filter(|element| {
+            element.accessible_role() == Some(i_slint_backend_testing::AccessibleRole::ListItem)
+        })
+        .map(|element| (element.absolute_position(), element.size()))
+        .collect();
+    rows.sort_by(|a, b| a.0.y.total_cmp(&b.0.y));
+    let complete: Vec<_> = rows
+        .iter()
+        .filter(|(position, row_size)| {
+            position.x >= origin.x - 0.1
+                && position.y >= origin.y - 0.1
+                && position.x + row_size.width <= origin.x + size.width + 0.1
+                && position.y + row_size.height <= origin.y + size.height + 0.1
+        })
+        .collect();
+    eprintln!(
+        "S13 rows: outer={:?}; viewport={origin:?} {size:?}; row bounds={rows:?}; complete={}",
+        list.size(),
+        complete.len()
+    );
+    assert!(
+        complete.len() >= 2,
+        "Two complete rows must fit: viewport={origin:?} {size:?}, rows={rows:?}"
+    );
+    let expected_height = 44.0_f32.max(font * 2.0 + 12.0);
+    for (_, row_size) in &complete {
+        assert!(
+            (row_size.height - expected_height).abs() <= 0.1,
+            "Declared fixed row height: {row_size:?}, expected {expected_height}"
+        );
+    }
+    for pair in complete.windows(2) {
+        assert!(
+            pair[0].0.y + pair[0].1.height <= pair[1].0.y + 0.1,
+            "Visible rows overlap: {pair:?}"
+        );
+    }
+    list
+}
+
 #[test]
 fn s13_geometry_retains_two_rows_and_visible_actions_at_minimum_and_fullscreen() {
     init_no_event_loop();
@@ -626,16 +684,7 @@ fn s13_geometry_retains_two_rows_and_visible_actions_at_minimum_and_fullscreen()
             ] {
                 inside(&label(&ui, text), width, height);
             }
-            let list = ElementHandle::find_by_accessible_label(&ui, "Emails")
-                .find(|e| {
-                    e.accessible_role() == Some(i_slint_backend_testing::AccessibleRole::List)
-                })
-                .unwrap();
-            assert!(
-                list.size().height >= 2.0 * (44.0_f32.max(font * 2.0 + 12.0)),
-                "two visible rows: {:?}",
-                list.size()
-            );
+            let list = assert_two_complete_rows(&ui, font);
             assert!(list.size().width <= 980.1);
             assert!(
                 label(&ui, "Email details").size().height <= height * 0.4 + 0.1,
@@ -1296,10 +1345,5 @@ fn s13_banner_and_long_notice_leave_two_rows_and_detail_actions_visible() {
     ] {
         inside(&label(&ui, text), 760.0, 520.0);
     }
-    let list = ElementHandle::find_by_accessible_label(&ui, "Emails")
-        .find(|element| {
-            element.accessible_role() == Some(i_slint_backend_testing::AccessibleRole::List)
-        })
-        .unwrap();
-    assert!(list.size().height >= 100.0);
+    assert_two_complete_rows(&ui, 18.0);
 }
