@@ -123,11 +123,20 @@ pub(super) fn rows(batch: &Batch) -> Option<Vec<Row>> {
         }
     });
     let mut rows = HashMap::new();
-    for kind in [Kind::Check, Kind::Create] {
-        let Some(slot) = batch.slot(kind) else {
-            continue;
-        };
-        let Some(handle) = &slot.report else {
+    for (kind, handle, previous) in [
+        (
+            Kind::Check,
+            batch.check.as_ref().and_then(|s| s.report.as_ref()),
+            false,
+        ),
+        (Kind::Create, batch.previous_create.as_ref(), true),
+        (
+            Kind::Create,
+            batch.create.as_ref().and_then(|s| s.report.as_ref()),
+            false,
+        ),
+    ] {
+        let Some(handle) = handle else {
             continue;
         };
         handle.with_report(|report| {
@@ -147,6 +156,9 @@ pub(super) fn rows(batch: &Batch) -> Option<Vec<Row>> {
                         item.removed.len(),
                     )
                 };
+                if previous && !matches!(batch.state(), State::Removing) {
+                    continue;
+                }
                 rows.insert(
                     key.clone(),
                     Row {
@@ -229,7 +241,22 @@ impl crate::DesktopController {
         }) {
             r.batch.select(None);
         }
-        let header = wording::header(&r.batch, &rows);
+        let progress = r
+            .batch
+            .slot(if r.batch.create.is_some() {
+                Kind::Create
+            } else {
+                Kind::Check
+            })
+            .and_then(|s| s.report.as_ref())
+            .map(|h| {
+                h.with_report(|report| (report.items().len(), report.start().map(|s| s.total)))
+            })
+            .unwrap_or(Some((0, None)));
+        let Some((done, total)) = progress else {
+            return;
+        };
+        let header = wording::header(&r.batch, &rows, total);
         let visible: Vec<_> = rows
             .iter()
             .filter(|row| !r.batch.problems_only || row.problem())
@@ -380,25 +407,11 @@ impl crate::DesktopController {
             })
             .unwrap_or_default();
         let state = r.batch.state();
-        let (done, total) = r
-            .batch
-            .slot(if r.batch.create.is_some() {
-                Kind::Create
-            } else {
-                Kind::Check
-            })
-            .and_then(|s| s.report.as_ref())
-            .and_then(|h| {
-                h.with_report(|report| {
-                    (report.items().len(), report.start().map_or(0, |s| s.total))
-                })
-            })
-            .unwrap_or((0, 0));
         let stopping = r.active.as_ref().is_some_and(|a| a.stop_at.is_some());
         let estimate = r
             .active
             .as_ref()
-            .and_then(|a| a.estimate.remaining(now_ms(), Some(total)));
+            .and_then(|a| a.estimate.remaining(now_ms(), total));
         let mut view = BatchView {
             selected_index: visible
                 .iter()
@@ -439,12 +452,17 @@ impl crate::DesktopController {
                     },
                 )
                 .into(),
-            progress: if total == 0 {
+            progress: if total.is_none_or(|n| n == 0) {
                 0.0
             } else {
-                done as f32 / total as f32
+                done as f32 / total.unwrap() as f32
             },
-            progress_text: wording::progress(done, total, estimate).into(),
+            progress_text: total
+                .map_or_else(
+                    || "Starting…".into(),
+                    |n| wording::progress(done, n, estimate),
+                )
+                .into(),
             filtered: r.batch.problems_only,
             quit: r.quit,
             quit_committed: r.quitting,
