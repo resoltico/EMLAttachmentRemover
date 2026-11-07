@@ -92,6 +92,7 @@ pub struct DesktopController {
     open_feedback_generation: Cell<u64>,
     panel_epoch: Cell<u64>,
     presentation_dirty: Cell<bool>,
+    rendered_revision: Cell<u64>,
 }
 fn now_ms() -> u64 {
     i_slint_core::animations::current_tick().as_millis()
@@ -149,6 +150,7 @@ impl DesktopController {
             open_feedback_generation: Cell::new(0),
             panel_epoch: Cell::new(0),
             presentation_dirty: Cell::new(true),
+            rendered_revision: Cell::new(0),
         });
         c.ui.set_rows(c.model.clone().into());
         c.bind();
@@ -322,10 +324,6 @@ impl DesktopController {
     }
     /// Reap and drain completed workers before dispatching pending work.
     pub fn tick(&self) {
-        let refresh_needed = {
-            let r = self.runtime.borrow();
-            r.active.is_some() || r.batch.pending.is_some() || r.export.is_some()
-        };
         let expired = self
             .notice
             .borrow()
@@ -393,7 +391,10 @@ impl DesktopController {
             platform::set_busy(runtime.active.is_some() || runtime.export.is_some());
         }
         self.start_pending();
-        if refresh_needed || self.presentation_dirty.get() {
+        if self.is_busy()
+            || self.runtime.borrow().batch.revision() != self.rendered_revision.get()
+            || self.presentation_dirty.get()
+        {
             self.refresh();
         }
     }
@@ -569,9 +570,9 @@ impl DesktopController {
             .find(|row| row_key(&row.key) == key)
             .map(|row| row.key.clone());
         if r.batch.selected == path {
-            r.batch.selected = None;
+            r.batch.select(None);
         } else {
-            r.batch.selected = path;
+            r.batch.select(path);
         }
         drop(r);
         self.refresh();
@@ -598,7 +599,7 @@ impl DesktopController {
             current.unwrap_or(if delta < 0 { visible.len() as i32 } else { -1 }) + delta
         }
         .clamp(0, visible.len() as i32 - 1);
-        r.batch.selected = Some(visible[index as usize].key.clone());
+        r.batch.select(Some(visible[index as usize].key.clone()));
         drop(r);
         drop(rows);
         self.refresh();

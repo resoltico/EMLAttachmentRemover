@@ -19,13 +19,14 @@ impl DesktopController {
         bind!(on_toggle_problems, |c: &Rc<Self>| {
             if c.can_filter() {
                 let mut r = c.runtime.borrow_mut();
-                r.batch.problems_only = !r.batch.problems_only;
+                let enabled = !r.batch.problems_only;
+                r.batch.filter(enabled);
                 drop(r);
                 c.refresh();
             }
         });
         bind!(on_clear_selected, |c: &Rc<Self>| {
-            c.runtime.borrow_mut().batch.selected = None;
+            c.runtime.borrow_mut().batch.select(None);
             c.refresh();
         });
         bind!(on_close_window, |c: &Rc<Self>| {

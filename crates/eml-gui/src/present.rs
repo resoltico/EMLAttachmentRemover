@@ -220,14 +220,14 @@ impl crate::DesktopController {
             return;
         };
         if !rows.iter().any(Row::problem) {
-            r.batch.problems_only = false;
+            r.batch.filter(false);
         }
         if r.batch.selected.as_ref().is_some_and(|key| {
             !rows
                 .iter()
                 .any(|row| &row.key == key && (!r.batch.problems_only || row.problem()))
         }) {
-            r.batch.selected = None;
+            r.batch.select(None);
         }
         let header = wording::header(&r.batch, &rows);
         let visible: Vec<_> = rows
@@ -458,6 +458,7 @@ impl crate::DesktopController {
             .iter()
             .map(|p| eml_protocol::TerminalPath::new(p).to_string())
             .collect::<Vec<_>>();
+        let revision = r.batch.revision();
         drop(r);
         *self.rows.borrow_mut() = rows;
         view.can_add = self.inputs_enabled();
@@ -481,6 +482,7 @@ impl crate::DesktopController {
         if !self.inputs_enabled() {
             self.ui.set_drop_hovered(false);
         }
+        self.rendered_revision.set(revision);
         self.presentation_dirty.set(false);
     }
 }

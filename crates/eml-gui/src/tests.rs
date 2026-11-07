@@ -250,7 +250,9 @@ fn t1_settlement_without_busy_work_is_rendered_on_next_tick() {
         let a = r.active.as_mut().unwrap();
         if let Some(completion) = a.worker.poll().unwrap() {
             let (kind, generation) = (a.kind, a.generation);
+            let before = r.batch.revision();
             r.batch.settle(kind, generation, completion, false);
+            assert!(r.batch.revision() > before);
             r.active = None;
             break;
         }
@@ -266,4 +268,18 @@ fn t1_settlement_without_busy_work_is_rendered_on_next_tick() {
         c.window().get_rows().row_data(0).unwrap().status,
         "No attachments"
     );
+}
+
+#[test]
+fn t1_batch_transitions_advance_revision() {
+    let mut b = Batch::default();
+    let mut before = b.revision();
+    b.add(vec!["/mail.eml".into()]);
+    assert!(b.revision() > before);
+    before = b.revision();
+    b.start();
+    assert!(b.revision() > before);
+    before = b.revision();
+    b.reset();
+    assert!(b.revision() > before);
 }
