@@ -42,7 +42,7 @@ fn destination_is_a_snapshot_and_wire_contains_required_null() {
     assert_eq!(&decoded, selected.request());
 }
 #[test]
-fn app_rejects_empty_relative_and_core_oversized_requests_before_queueing() {
+fn app_rejects_empty_relative_and_core_oversized_requests_before_encoding() {
     assert!(RequestSnapshot::new(vec![], None, RunMode::Create).is_err());
     assert!(
         RequestSnapshot::new(vec![PathBuf::from("relative.eml")], None, RunMode::Create).is_err()

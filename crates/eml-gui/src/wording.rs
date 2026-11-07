@@ -330,12 +330,14 @@ pub(super) fn estimate(seconds: Option<u64>) -> String {
 
 pub(super) fn controls() -> crate::AppWords {
     crate::AppWords {
+        show_report: "Show".into(), show_saved_report: "Show Saved Report".into(),
     add_files: "Add Files…".into(),
     add_folder: "Add Folder…".into(),
     start_over: "Start Over".into(),
     empty_title: "Drop emails or folders here".into(),
     empty_body: "Each .eml file gets a copy without its attachments. Message text is kept and your originals are never changed.".into(),
-    email: "Emails".into(),
+    email: "Email".into(),
+    emails: "Emails".into(),
     attachments: "Attachments".into(),
     size: "Size".into(),
     status: "Status".into(),
@@ -409,5 +411,22 @@ pub(super) fn attachment(part: &eml_protocol::records::RemovedRecord) -> String 
         "{} · {kind} · {}",
         eml_protocol::DisplayText::new(part.filename.value().unwrap_or(&part.content_type)),
         size(part.bytes)
+    )
+}
+
+pub(super) const NOTHING_ADDED: &str = "Nothing was added.";
+pub(super) const NO_ATTACHMENTS_CHIP: &str = "None";
+
+pub(super) fn request_error(_: &eml_app::RequestError) -> String {
+    "Too many items at once. Add fewer files or folders.".into()
+}
+
+pub(super) fn row_description(folder: &str, count: Option<usize>, size: &str) -> String {
+    format!(
+        "{folder}; {}; {size}",
+        count.map_or_else(
+            || "attachments unknown".into(),
+            |n| plural(n, "attachment", "attachments")
+        )
     )
 }

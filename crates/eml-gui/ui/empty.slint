@@ -5,6 +5,7 @@ import { ActionButton, Label } from "controls.slint";
 export component EmptyBatch inherits Rectangle {
     in property <AppWords> words;
     in property <bool> enabled;
+    in property <string> notice;
     in property <bool> hovered;
     callback add-files(); callback add-folder();
     background: Theme.surface;
@@ -15,6 +16,7 @@ export component EmptyBatch inherits Rectangle {
         content := VerticalBox { padding: 24px; spacing: 14px; alignment: center;
             Label { text: root.words.empty-title; font-size: 22px; font-weight: 700; horizontal-alignment: center; wrap: word-wrap; }
             Label { text: root.words.empty-body; color: Theme.muted; horizontal-alignment: center; wrap: word-wrap; }
+            if root.notice != "": Label { text: root.notice; color: Theme.warn; horizontal-alignment: center; wrap: word-wrap; accessible-live-region: polite; }
             HorizontalBox { padding: 0px; spacing: 8px; alignment: center;
                 ActionButton { text: root.words.add-files; enabled: root.enabled; clicked => { root.add-files(); } }
                 ActionButton { text: root.words.add-folder; enabled: root.enabled; clicked => { root.add-folder(); } }

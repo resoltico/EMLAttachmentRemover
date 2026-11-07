@@ -159,6 +159,45 @@ impl Batch {
 mod tests {
     use super::*;
     #[test]
+    fn stale_generation_cannot_settle_or_replace_the_current_worker() {
+        let root = tempfile::tempdir().unwrap();
+        let request = eml_app::RequestSnapshot::new(
+            vec![root.path().join("mail.eml")],
+            None,
+            eml_core::RunMode::DryRun,
+        )
+        .unwrap();
+        let mut worker = eml_app::WorkerRun::start(
+            std::path::Path::new("/usr/bin/false"),
+            &request,
+            root.path(),
+        )
+        .unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        let completion = loop {
+            if let Some(c) = worker.poll().unwrap() {
+                break c;
+            }
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::yield_now();
+        };
+        let mut batch = Batch::default();
+        batch.add(request.request().paths.clone());
+        let (kind, generation) = batch.start().unwrap();
+        batch.settle(kind, generation + 1, completion.clone(), false);
+        assert_eq!(batch.active, Some((kind, generation)));
+        assert!(!batch.check.as_ref().unwrap().settled());
+        batch.settle(kind, generation, completion.clone(), false);
+        assert_eq!(batch.state(), State::Ready);
+        batch.changed();
+        let (kind, generation) = batch.start().unwrap();
+        assert_eq!(batch.reset(), Some(Effect::InterruptCheck));
+        batch.settle(kind, generation, completion, false);
+        assert_eq!(batch.state(), State::Empty);
+        assert!(batch.check.is_none());
+        assert!(batch.pending.is_none());
+    }
+    #[test]
     fn changes_collapse_and_create_waits_for_check_settlement() {
         let mut batch = Batch::default();
         assert_eq!(batch.state(), State::Empty);

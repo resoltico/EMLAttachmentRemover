@@ -13,7 +13,7 @@ impl DesktopController {
         !self.locked()
             && matches!(
                 self.runtime.borrow().batch.state(),
-                State::Empty | State::Checking | State::Ready
+                State::Checking | State::Ready
             )
     }
     pub(super) fn can_reset(&self) -> bool {
@@ -68,10 +68,9 @@ impl DesktopController {
         let r = self.runtime.borrow();
         r.quit
             && r.quitting
-            && r.active.as_ref().is_some_and(|a| {
-                a.stop_at
-                    .is_some_and(|at| now_ms().saturating_sub(at) >= 5000)
-            })
+            && r.active.as_ref().is_some_and(|a| a.kind == Kind::Create)
+            && r.quit_at
+                .is_some_and(|at| now_ms().saturating_sub(at) >= 5000)
     }
     /// Reveal actions require an earlier verified create receipt.
     pub fn can_show_copy(&self) -> bool {
@@ -96,5 +95,24 @@ impl DesktopController {
             && self.pending_save.borrow().is_none()
             && self.runtime.borrow().export.is_none()
             && self.settled_bytes().is_some()
+    }
+}
+
+impl DesktopController {
+    pub(super) fn can_show_report(&self) -> bool {
+        !self.locked()
+            && self.saved_report.borrow().is_some()
+            && self.notice.borrow().as_ref().is_some_and(|(text, at)| {
+                text == wording::REPORT_SAVED && now_ms().saturating_sub(*at) < 6000
+            })
+    }
+}
+
+impl DesktopController {
+    pub(super) fn can_filter(&self) -> bool {
+        !self.locked() && self.rows.borrow().iter().any(present::Row::problem)
+    }
+    pub(super) fn can_copy_details(&self) -> bool {
+        !self.locked() && self.selected_original().is_some()
     }
 }

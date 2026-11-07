@@ -68,7 +68,7 @@ impl Preferences {
                 )
             })
     }
-    /// Destination applied to later requests in this session.
+    /// Destination used for the next preview or create.
     pub fn destination(&self) -> Option<&Path> {
         self.settings.last_destination.as_deref()
     }

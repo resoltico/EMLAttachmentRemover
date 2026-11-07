@@ -116,7 +116,7 @@ pub fn install_native(
                     if kind == 2 {
                         c.set_destination(paths.into_iter().next());
                     } else if let Err(e) = c.stage(paths) {
-                        c.message(&e.to_string());
+                        c.message(&crate::wording::request_error(&e));
                     }
                 }
             });
@@ -228,6 +228,19 @@ pub fn install_native(
                 crate::OpenTarget::Main,
                 "Couldn’t open the save folder.",
                 move || opener::open(path).map_err(|e| e.to_string()),
+            );
+        }
+    });
+    let weak = Rc::downgrade(controller);
+    ui.on_reveal_report(move || {
+        if let Some(c) = weak.upgrade()
+            && c.can_show_report()
+            && let Some(path) = c.saved_report_path()
+        {
+            c.open_advisory(
+                crate::OpenTarget::Main,
+                "Couldn’t show the saved report.",
+                move || opener::reveal(path).map_err(|e| e.to_string()),
             );
         }
     });
