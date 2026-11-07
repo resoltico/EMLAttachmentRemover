@@ -62,33 +62,47 @@ and reported cleanup failures before retrying. Recognizable staging files use
 
 ## Desktop app
 
-Add email files or folders with **Add Files…**, **Add Folder…**, a window drop, or
-launch arguments. Choose **Create copies** or **Check only** and a destination. Nothing runs until
-**Create Copies**, **Start Check**, or **Add to Queue** is pressed. Folder counts
-are discovered after Start. Each run keeps its captured inputs and settings.
+Add `.eml` files or folders with **Add Files…**, **Add Folder…**, a window drop,
+launch arguments, Finder **Open With**, or a drop on the Dock icon. Folder contents
+are discovered immediately by a read-only check. Nothing is written until
+**Remove Attachments**. Changing the inputs or save folder refreshes the preview;
+you can press Remove Attachments while the check is still running.
 
-The session sidebar appears after the first run. Up to eight requests wait behind
-one active run; the session holds up to 20 runs and 2.5 GiB of stored report bytes.
-Reports are stored automatically in private unnamed files and disappear on close
-or exit. There is no persistent history. Storage failure keeps the report in
-memory; close finished results if asked for space. **Close Result** removes only session information. **Review Request…** restores the captured draft; a finished
-Check offers **Create Copies…**. Replacing a non-empty draft requires confirmation.
+One batch stays in one naturally ordered list. Rows preview attachment names and
+source/copy sizes, then show the result in place. The problems pill filters to
+emails needing attention. Select a row for its explanation and attachment details;
+**Show Copy** requires a verified copy receipt, **Show Original** reveals its source,
+and **Copy Details** copies native paths and diagnostic facts. File-manager actions
+are advisory and do not reverify a file's current identity.
 
-Results show progress, outcome filters, naturally sorted messages and an inspector.
-Explicitly interrupted messages count as **Not processed** in the GUI and human CLI summary. Genuine processing failures still count as failures. JSON reports retain raw started-failure accounting. Unknown results stay
-unknown. **Technical Details** exposes paths and processor diagnostics. **Show Copy**
-and output-folder actions require earlier verified copy receipts; opening a file
-manager is advisory. **Copy Path** copies the native original path when representable.
-**Stop** requests a cooperative stop; **Force Stop…** appears after five seconds and
-requires confirmation. Busy Quit offers cancellation or waits for owned work to settle.
+Copies go **Next to originals** or to a chosen folder. They use the
+`.no-attachments.eml` suffix and never overwrite existing entries. Emails with
+nothing to remove are still copied, labelled **Copied as is**. Plain-text and HTML
+message bodies are kept; HTML is not sanitized or rewritten. Attachments, inline
+images, calendar parts and other non-body content are removed. Copies may therefore
+have missing inline images. Signed or encrypted structures that cannot be changed
+safely are refused; see the processing limits below.
 
-**Save Report…** uses a native save panel, including its Replace confirmation, and
-saves the exact captured JSONL stream, including partial reports. Failed writes leave
-no partial target. The brief success banner offers **Show** for the saved report.
-The app remembers three destination folders and the last report folder. Unreadable,
-old-format or corrupt settings are preserved; defaults and **Settings unavailable**
-are shown. About and Licenses are available in the menus. Dock drops, Finder Services
-and Finder Open With are unsupported; file and folder panels are parented to the app.
+**Stop** cooperatively interrupts copying. **Continue** repeats the same batch,
+verifying and skipping identical copies already saved. Adding more while copying
+is refused. After Done or Stopped, adding files starts a new batch immediately;
+**Start Over** clears the list. There is no batch history or waiting queue.
+
+**Save Report…** in File saves the exact latest settled JSONL stream: the create
+stream when available, otherwise the check stream, including incomplete reports.
+The native panel owns Replace approval; failed writes preserve prior targets.
+The brief success notice offers **Show**. Reports stay in memory until the batch
+changes or the app exits; an outstanding save keeps its captured bytes until it
+settles. Save a report before starting another batch if you need it later.
+
+Quit while copying offers **Cancel** or **Stop and Quit**. After five seconds of
+waiting, **Quit Now** can force the worker; quitting still waits for child reaping
+and report exports. Read-only checks are cancelled automatically, without a dialog.
+The app remembers three recent save folders, the last destination and the last
+report folder. Invalid or unreadable settings silently use defaults and are
+replaced on the next successful save. About and Licenses are in the menus.
+Finder Services remain unsupported. Open With uses rank Alternate, keeping the
+existing default mail application.
 
 ## Limits and filesystem behavior
 

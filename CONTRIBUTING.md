@@ -69,6 +69,10 @@ backend, with no OS UI automation. CLI tests cross the real subprocess boundary.
 a Cargo-built launcher and per-test script data; distribution selects only the
 public product binaries.
 
+The desktop uses one batch with automatic read-only previews. See the
+[desktop guide](README.md#desktop-app) and [review captures](docs/gui-screenshots/README.md).
+Native Finder/Dock, file panels and appearance are manual checks.
+
 Merge CI restores caches on every producer and saves them only on main. The
 [CI workflow](.github/workflows/ci.yml) and `cargo xtask ci` own the commands;
 [project rules](docs/project-rules.md) define the verification budget. The budget

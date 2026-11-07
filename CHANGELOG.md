@@ -2,39 +2,25 @@
 
 `Unreleased` summarizes implemented changes intended for the next release, including relevant uncommitted work, cumulatively against the preceding published non-prerelease version; the first release describes implemented scope. Verify actual publication rather than inferring it from headings, tags or workflow status; public prereleases do not reset this baseline. Check claims and material omissions against implementation, contracts, tests and documentation; commits and plans are leads. Describe consequences for users, operators, integrators or contributors, preserving material compatibility effects, limitations and required action, including for prerelease users. Exclude development chronology, superseded changes and verification logs.
 
-Use concise bullets without category labels or subheadings, grouping related changes and putting breaking changes and required actions first. Each bullet occupies one physical line, at most 200 characters including Markdown but excluding its `- ` marker: a ceiling, not a target. Shorten or split without losing material consequences. Use technical names when helpful; link to existing relevant documentation, without assuming paths or creating documents merely to satisfy this rule. Keep `## [Unreleased]` above dated `## [version] - YYYY-MM-DD` headings, newest first; retain existing release-note links. This file is authoritative for release summaries and their writing rules; derive published summaries from it and leave unrelated history unchanged. Review accuracy, completeness, duplication, compatibility and format; report unresolved evidence gaps outside this file and run applicable existing checks. Versioning, dating and publication require release authorization.
+Use concise bullets without category labels or subheadings, grouping related changes and putting breaking changes and required actions first. Each bullet occupies one physical line, at most 200 characters including Markdown but excluding its `- ` marker: a ceiling, not a target. Shorten or split without losing material consequences. Use technical names when helpful; link to existing relevant documentation, without assuming paths or creating documents merely to satisfy this rule. Keep `## [Unreleased]
 
-## [Unreleased]
-
+- Replace desktop run history and its queue with one batch and one list; adding emails after completion starts a new batch immediately.
+- Preview files and folders automatically without writing. Remove Attachments saves copies and updates the same list; the CLI keeps --dry-run.
+- Show attachment names, before/after sizes and plain-language results, with one problems filter and a scrolling detail pane. Copy Details includes native paths and diagnostics.
+- Use Stop and Continue for interrupted batches. Force is limited to Quit Now after five seconds of Stop and Quit; exiting waits for the worker and report exports.
+- Restore Finder Open With and Dock drops for emails and folders, keeping existing default handlers. Finder Services remain unsupported.
+- Keep batch reports in memory; Save Report exports exact settled bytes through the native save panel, preserving approved replacement and prior targets on failure.
+- Silently use defaults for unreadable or invalid desktop preferences and replace them on the next save; keep three recent destinations and the last report folder.
+- Center desktop content, keep detail actions visible at minimum size and support enlarged text, keyboard navigation, and light/dark appearance.
+- Keep native open/reveal work off the UI thread and reject stale native-panel submissions after a Quit decision.
 - Reject headerless message roots as MALFORMED without creating copies; minimal header-bearing exports and headerless MIME body parts remain supported.
-
-- Keep enlarged text clear of overlay scrollbars and move result actions onto a separate row when the header is narrow.
-- Prevent blank input-row clicks from removing selections; align field controls, segmented captions and result headings, and bound icon action targets.
-- Anchor destination and session menus to their controls; retain destination names and full-path tooltips, and clarify failure recovery and zero-removal outcomes.
-
-- Explain body-only copies and inline-resource loss before Start and in the ordinary inspector; add an inline policy disclosure, including retained HTML limitations.
-- Close About and Licenses with Command-W; use singular wording when confirming replacement of a one-item draft.
-- Reclaim the Folder column for complete single-folder results when native paths and sort keys establish that it is redundant; keep uncertain and multi-folder runs conservative.
-
-- Start with defaults when desktop preferences use an old or unreadable format; preserve the file and show Settings unavailable. Remember three destination folders and the last report folder.
-- Add a persistent session sidebar, focused request draft, progress estimates, outcome filters, natural sorting and a responsive message inspector.
-- Retain reports automatically in private unnamed files, capped at 20 session runs, eight waiting requests and 2.5 GiB of stored bytes. Storage failures preserve reports in bounded memory.
-- Review Request restores captured inputs, mode and destination; finished Checks can prepare Create requests. Replacing a non-empty draft requires confirmation and every request requires Start.
 - Group explicitly interrupted items as Not processed in the GUI and human CLI summary; preserve raw JSON counts, unknown outcomes, publication qualifications and cleanup warnings.
-- Save exact captured reports through native save panels, honoring approved replacement atomically. Failed writes preserve prior targets; the success banner offers Show.
-- Share menu and button action predicates, support text-context Copy/Select All and pane navigation, and offer Force Stop only after five seconds of cooperative stopping.
-- Preserve run-local message selection, filters and sort order across completion and navigation; background completion marks an unseen result without stealing the current view.
 - Resolve build commands from the invoking Cargo workspace, so a shared target cache cannot silently package a different worktree.
-- Correct native-open feedback after retries, keep launcher work off the GUI thread, and support safe keyboard cancellation of Stop/Quit decisions.
 - Preserve literal punctuation in packaged plaintext license notices.
-- Ignore destination-dialog results after Quit is committed, preserving saved settings during shutdown.
-- Bound selection deduplication before request admission; repeated paths still coalesce in their first-seen order.
-
 - Replace the manual build counter with one release version and optional source revision; CLI/GUI --version shows the full hash and About shows 12 characters. Protocol version fields remain unchanged.
 - Derive the macOS bundle build from semver; increase semver before distributing changed binaries. See [release identity](docs/release.md).
 - Match Auditory Lab’s About focus, scaled buttons and license-view reset behavior while retaining EML content and licenses.
 - Optimize distribution builds with Thin LTO and stripped symbols, and honor Cargo-configured artifact directories.
-
 - Remove unmaintained pin-utils from Slint’s dependency graph using standard Rust pinning in a small, tested spin_on source patch.
 - Update runtime and developer dependencies, including encoding_rs, rustix, mail-parser, TOML, ZIP and cargo-about.
 - Restore nightly AddressSanitizer fuzzing on GNU Linux, include retained MIME seeds, save crash artifacts and fix its build cache.
