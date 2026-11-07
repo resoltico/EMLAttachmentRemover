@@ -1402,3 +1402,31 @@ fn t2_continue_retains_saved_rows_until_current_results_arrive() {
     c.window().invoke_start_over();
     assert_eq!(c.window().get_rows().row_count(), 0);
 }
+
+#[test]
+fn t3_deep_folder_keeps_its_end_and_full_accessible_label() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let deep = root
+        .path()
+        .join("one/two/three/four/five/six/seven/eight/nine/ten/eleven/Inbox");
+    let check = check_stream(&deep, &["one.eml"]);
+    let c = controller(root.path(), dual(root.path(), &check, ""));
+    c.stage(vec![deep.clone()]).unwrap();
+    pump(&c, || !c.is_busy());
+    c.window()
+        .window()
+        .set_size(slint::LogicalSize::new(760.0, 520.0));
+    mock_elapsed_time(Duration::from_millis(1));
+    let row = c.window().get_rows().row_data(0).unwrap();
+    assert_eq!(row.folder_suffix, "Inbox");
+    assert_eq!(
+        format!("{}{}", row.folder_prefix, row.folder_suffix),
+        row.folder.as_str()
+    );
+    let folder = label(&c.window(), &row.folder);
+    assert!(folder.size().width > 30.0);
+    let source = include_str!("../../ui/batch.slint");
+    assert!(source.contains("text: row.folder-suffix"));
+    assert!(!source.contains("Label { text: row.folder;"));
+}
