@@ -4,6 +4,7 @@ mod export;
 mod framing;
 mod queue;
 mod report;
+pub mod request;
 mod session_report;
 mod supervisor;
 pub use export::export_report;
