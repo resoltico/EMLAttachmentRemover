@@ -2,13 +2,15 @@
 
 `Unreleased` summarizes implemented changes intended for the next release, including relevant uncommitted work, cumulatively against the preceding published non-prerelease version; the first release describes implemented scope. Verify actual publication rather than inferring it from headings, tags or workflow status; public prereleases do not reset this baseline. Check claims and material omissions against implementation, contracts, tests and documentation; commits and plans are leads. Describe consequences for users, operators, integrators or contributors, preserving material compatibility effects, limitations and required action, including for prerelease users. Exclude development chronology, superseded changes and verification logs.
 
-Use concise bullets without category labels or subheadings, grouping related changes and putting breaking changes and required actions first. Each bullet occupies one physical line, at most 200 characters including Markdown but excluding its `- ` marker: a ceiling, not a target. Shorten or split without losing material consequences. Use technical names when helpful; link to existing relevant documentation, without assuming paths or creating documents merely to satisfy this rule. Keep `## [Unreleased]
+Use concise bullets without category labels or subheadings, grouping related changes and putting breaking changes and required actions first. Each bullet occupies one physical line, at most 200 characters including Markdown but excluding its `- ` marker: a ceiling, not a target. Shorten or split without losing material consequences. Use technical names when helpful; link to existing relevant documentation, without assuming paths or creating documents merely to satisfy this rule.
+## [Unreleased]
 
 - Replace desktop run history and its queue with one batch and one list; adding emails after completion starts a new batch immediately.
 - Preview files and folders automatically without writing. Remove Attachments saves copies and updates the same list; the CLI keeps --dry-run.
 - Show attachment names, before/after sizes and plain-language results, with one problems filter and a scrolling detail pane. Copy Details includes native paths and diagnostics.
+- Keep saved results visible through Continue and refresh completed checks delivered through Open With.
 - Use Stop and Continue for interrupted batches. Force is limited to Quit Now after five seconds of Stop and Quit; exiting waits for the worker and report exports.
-- Restore Finder Open With and Dock drops for emails and folders, keeping existing default handlers. Finder Services remain unsupported.
+- Restore Finder Open With for emails and folders; Dock-icon drops use the same handler (not verified by hand).
 - Keep batch reports in memory; Save Report exports exact settled bytes through the native save panel, preserving approved replacement and prior targets on failure.
 - Silently use defaults for unreadable or invalid desktop preferences and replace them on the next save; keep three recent destinations and the last report folder.
 - Center desktop content, keep detail actions visible at minimum size and support enlarged text, keyboard navigation, and light/dark appearance.

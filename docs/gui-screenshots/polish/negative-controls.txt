@@ -1,0 +1,188 @@
+wp0-t1.log
+
+running 1 test
+
+thread 'tests::t1_settlement_without_busy_work_is_rendered_on_next_tick' (23193697) panicked at crates/eml-gui/src/tests.rs:251:5:
+assertion `left == right` failed
+  left: "Looking for emails…"
+ right: "1 email"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test tests::t1_settlement_without_busy_work_is_rendered_on_next_tick ... FAILED
+
+failures:
+
+failures:
+    tests::t1_settlement_without_busy_work_is_rendered_on_next_tick
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 8 filtered out; finished in 2.70s
+
+error: test failed, to rerun pass `-p eml-gui --lib`
+
+wp0-t2.log
+
+running 1 test
+
+thread 'acceptance::t2_continue_retains_saved_rows_until_current_results_arrive' (23194276) panicked at crates/eml-gui/tests/desktop/acceptance.rs:1370:5:
+assertion `left == right` failed
+  left: "Waiting"
+ right: "Copy saved"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test acceptance::t2_continue_retains_saved_rows_until_current_results_arrive ... FAILED
+
+failures:
+
+failures:
+    acceptance::t2_continue_retains_saved_rows_until_current_results_arrive
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 38 filtered out; finished in 2.63s
+
+error: test failed, to rerun pass `-p eml-gui --test desktop`
+
+t1-negative.log
+
+running 2 tests
+test tests::t1_batch_transitions_advance_revision ... ok
+
+thread 'tests::t1_settlement_without_busy_work_is_rendered_on_next_tick' (23196473) panicked at crates/eml-gui/src/tests.rs:255:13:
+assertion failed: r.batch.revision() > before
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test tests::t1_settlement_without_busy_work_is_rendered_on_next_tick ... FAILED
+
+failures:
+
+failures:
+    tests::t1_settlement_without_busy_work_is_rendered_on_next_tick
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 8 filtered out; finished in 2.46s
+
+error: test failed, to rerun pass `-p eml-gui --lib`
+
+t2-negative.log
+
+running 1 test
+
+thread 'acceptance::t2_continue_retains_saved_rows_until_current_results_arrive' (23198928) panicked at crates/eml-gui/tests/desktop/acceptance.rs:1390:5:
+assertion `left == right` failed
+  left: "Waiting"
+ right: "Copy saved"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test acceptance::t2_continue_retains_saved_rows_until_current_results_arrive ... FAILED
+
+failures:
+
+failures:
+    acceptance::t2_continue_retains_saved_rows_until_current_results_arrive
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 38 filtered out; finished in 2.75s
+
+error: test failed, to rerun pass `-p eml-gui --test desktop`
+
+t3-geometry-negative.log
+
+running 1 test
+
+thread 'acceptance::t3_deep_folder_keeps_its_end_and_full_accessible_label' (23292006) panicked at crates/eml-gui/tests/desktop/acceptance.rs:162:28:
+Missing element: Inbox; ["File", "Edit", "Batch", "Window", "Help", "1 email", "Add Files…", "Add Folder…", "Start Over", "1 attachment · 515 B will be removed", "Email", "Attachments", "Status", "Emails", "one.eml, Ready", "one", ".eml", "~/one/two/three/four/five/six/seven/eight/nine/ten/eleven/Inbox", "report.pdf", "Ready", "Save copies", "Next to originals ▾", "", "Remove Attachments"]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test acceptance::t3_deep_folder_keeps_its_end_and_full_accessible_label ... FAILED
+
+failures:
+
+failures:
+    acceptance::t3_deep_folder_keeps_its_end_and_full_accessible_label
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 43 filtered out; finished in 2.55s
+
+error: test failed, to rerun pass `-p eml-gui --test desktop`
+
+t4-negative.log
+
+running 1 test
+
+thread 'tests::polish_state::t4_states_map_to_exported_enums_without_integer_contracts' (23210172) panicked at crates/eml-gui/src/../tests/desktop/polish_state.rs:80:5:
+assertion failed: !models.contains("state: int")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test tests::polish_state::t4_states_map_to_exported_enums_without_integer_contracts ... FAILED
+
+failures:
+
+failures:
+    tests::polish_state::t4_states_map_to_exported_enums_without_integer_contracts
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p eml-gui --lib`
+
+t5_negative.log
+
+running 1 test
+
+thread 'acceptance::t5_detail_header_columns_and_footer_share_one_left_edge' (23216414) panicked at crates/eml-gui/tests/desktop/acceptance.rs:1460:13:
+left edge LogicalPosition { x: 58.0, y: 328.0 } vs 34
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test acceptance::t5_detail_header_columns_and_footer_share_one_left_edge ... FAILED
+
+failures:
+
+failures:
+    acceptance::t5_detail_header_columns_and_footer_share_one_left_edge
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 42 filtered out; finished in 2.81s
+
+error: test failed, to rerun pass `-p eml-gui --test desktop`
+
+t6_negative.log
+
+running 1 test
+
+thread 'acceptance::t6_detail_omits_generic_kind_and_preserves_inline_image_kind' (23217177) panicked at crates/eml-gui/tests/desktop/acceptance.rs:1487:5:
+assertion `left == right` failed
+  left: "Attachment"
+ right: ""
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test acceptance::t6_detail_omits_generic_kind_and_preserves_inline_image_kind ... FAILED
+
+failures:
+
+failures:
+    acceptance::t6_detail_omits_generic_kind_and_preserves_inline_image_kind
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 42 filtered out; finished in 2.71s
+
+error: test failed, to rerun pass `-p eml-gui --test desktop`
+
+t7-negative.log
+
+running 1 test
+
+thread 'acceptance::t7_failed_only_disables_button_menu_and_controller_but_checking_stays_enabled' (23222797) panicked at crates/eml-gui/tests/desktop/acceptance.rs:1538:5:
+assertion failed: !c.window().get_view().can_start
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test acceptance::t7_failed_only_disables_button_menu_and_controller_but_checking_stays_enabled ... FAILED
+
+failures:
+
+failures:
+    acceptance::t7_failed_only_disables_button_menu_and_controller_but_checking_stays_enabled
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 43 filtered out; finished in 3.20s
+
+error: test failed, to rerun pass `-p eml-gui --test desktop`
+
+t8_negative.log
+
+running 1 test
+
+thread 'acceptance::t8_filter_announces_visible_count_and_show_all' (23217925) panicked at crates/eml-gui/tests/desktop/acceptance.rs:162:28:
+Missing element: Show all; ["File", "Edit", "Batch", "Window", "Help", "36 emails", "Add Files…", "Add Folder…", "Start Over", "Showing 2 of 36 · No attachments to remove", "2 can’t be copied", "Email", "Attachments", "Size", "Status", "Emails", "bad1.eml, Not a valid email", "bad1", ".eml", "~", "", "~", "—", "—", "—", "Not a valid email", "bad2.eml, Not a valid email", "bad2", ".eml", "~", "", "~", "—", "—", "—", "Not a valid email", "Save copies", "Next to originals ▾", "as name.no-attachments.eml · never overwrites", "Remove Attachments"]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test acceptance::t8_filter_announces_visible_count_and_show_all ... FAILED
+
+failures:
+
+failures:
+    acceptance::t8_filter_announces_visible_count_and_show_all
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 42 filtered out; finished in 2.74s
+
+error: test failed, to rerun pass `-p eml-gui --test desktop`
