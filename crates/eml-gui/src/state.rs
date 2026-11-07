@@ -38,6 +38,7 @@ pub(super) struct Batch {
     pub problems_only: bool,
     pub selected: Option<PathBuf>,
     sequence: u64,
+    revision: u64,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Effect {
@@ -45,6 +46,27 @@ pub(super) enum Effect {
     BusyAdding,
 }
 impl Batch {
+    pub(super) fn revision(&self) -> u64 {
+        self.revision
+    }
+    pub(super) fn touch(&mut self) {
+        self.revision = self
+            .revision
+            .checked_add(1)
+            .expect("batch revision exhausted");
+    }
+    pub(super) fn filter(&mut self, enabled: bool) {
+        if self.problems_only != enabled {
+            self.problems_only = enabled;
+            self.touch();
+        }
+    }
+    pub(super) fn select(&mut self, path: Option<PathBuf>) {
+        if self.selected != path {
+            self.selected = path;
+            self.touch();
+        }
+    }
     pub(super) fn state(&self) -> State {
         if self.inputs.is_empty() {
             State::Empty
@@ -92,6 +114,7 @@ impl Batch {
         self.changed()
     }
     pub(super) fn changed(&mut self) -> Option<Effect> {
+        self.touch();
         self.check = None;
         self.create = None;
         self.problems_only = false;
@@ -106,6 +129,7 @@ impl Batch {
         self.changed()
     }
     pub(super) fn remove(&mut self) -> Option<Effect> {
+        self.touch();
         self.pending = Some(Kind::Create);
         self.active
             .filter(|(kind, _)| *kind == Kind::Check)
@@ -116,6 +140,7 @@ impl Batch {
             return None;
         }
         let kind = self.pending.take()?;
+        self.touch();
         self.sequence = self
             .sequence
             .checked_add(1)
@@ -145,6 +170,7 @@ impl Batch {
         if self.active != Some((kind, generation)) {
             return;
         }
+        self.touch();
         self.active = None;
         if let Some(slot) = self
             .slot_mut(kind)
