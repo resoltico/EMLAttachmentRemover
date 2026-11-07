@@ -6,9 +6,7 @@ import { WidgetMetrics } from "widget-metrics.slint";
 
 // Application relationships, rather than independent per-window magic numbers.
 export global UiMetrics {
-    out property <length> sidebar-row-height: 58px;
     out property <bool> macos: WidgetMetrics.macos;
-    out property <length> message-row-height: 34px;
     out property <length> scroll-inset: WidgetMetrics.scroll-inset;
     out property <length> overlay-scrollbar-width: WidgetMetrics.overlay-scrollbar-width;
     out property <length> gutter: 24px;
@@ -81,27 +79,6 @@ export component TextButton inherits Rectangle {
 }
 
 export component Label inherits Text { vertical-stretch: 0; min-width: 0px; vertical-alignment: center; color: Theme.text; accessible-role: text; accessible-label: self.text; }
-export enum IconKind { folder, file, remove, chevron, ellipsis, status, warning }
-export component Icon inherits Path {
-    in property <IconKind> kind;
-    width: 16px; height: 16px;
-    viewbox-width: 24; viewbox-height: 24;
-    stroke: Theme.text; stroke-width: 1.6px; fill: transparent;
-    commands: kind == IconKind.folder ? "M2 6 L9 6 L11 8 L22 8 L22 20 L2 20 Z"
-        : kind == IconKind.file ? "M5 2 L14 2 L20 8 L20 22 L5 22 Z M14 2 L14 8 L20 8"
-        : kind == IconKind.remove ? "M6 6 L18 18 M18 6 L6 18"
-        : kind == IconKind.chevron ? "M6 9 L12 15 L18 9"
-        : kind == IconKind.ellipsis ? "M4 12 L6 12 M11 12 L13 12 M18 12 L20 12"
-        : kind == IconKind.warning ? "M12 2 L23 22 L1 22 Z M12 8 L12 15 M12 18 L12 19"
-        : "M4 12 L10 18 L20 6";
-}
-export component IconButton inherits TextButton {
-    in property <IconKind> icon;
-    show-caption: false;
-    min-width: 32px; preferred-width: 32px; max-width: 32px;
-    // Label remains available to accessibility; the vector supplies the visual.
-    Icon { kind: root.icon; x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; }
-}
 export component Chip inherits TextButton {
     in property <bool> selected;
     accessible-checkable: true;
@@ -117,4 +94,12 @@ export component ToneDot inherits Rectangle {
     background: root.ring ? transparent : root.tone;
     border-width: root.ring ? 1px : 0px; border-color: root.tone;
     accessible-role: none;
+}
+
+export component AttachmentChip inherits Rectangle {
+    in property <string> text;
+    min-width: 0px; preferred-width: min(180px,caption.preferred-width + 12px); max-width: 180px; horizontal-stretch: 0;
+    preferred-height: 22px; min-height: 22px; max-height: 22px; vertical-stretch: 0;
+    background: Theme.raised; border-width: 1px; border-color: Theme.border; border-radius: 10px;
+    caption := Label { x: 6px; width: max(0px,parent.width - 12px); height: parent.height; text: root.text; font-size: 12px; overflow: elide; }
 }

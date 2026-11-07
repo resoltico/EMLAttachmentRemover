@@ -12,11 +12,14 @@ impl DesktopController {
         r.batch
             .create
             .as_ref()
-            .filter(|s| s.settled())
-            .or_else(|| r.batch.check.as_ref().filter(|s| s.settled()))?
-            .completion
-            .as_ref()
-            .map(|c| c.jsonl.clone())
+            .and_then(|slot| slot.completion.as_ref())
+            .or_else(|| {
+                r.batch
+                    .check
+                    .as_ref()
+                    .and_then(|slot| slot.completion.as_ref())
+            })
+            .map(|completion| completion.jsonl.clone())
     }
     /// Most recently selected report folder, separate from the copy location.
     pub fn report_directory(&self) -> PathBuf {

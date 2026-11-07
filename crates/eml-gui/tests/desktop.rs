@@ -65,7 +65,11 @@ fn pump(controller: &DesktopController, predicate: impl Fn() -> bool) {
         }
         assert!(
             Instant::now() < deadline,
-            "Desktop fixture did not reach its expected state"
+            "Desktop fixture did not reach its expected state: state={} title={} banner={} busy={}",
+            controller.window().get_view().state,
+            controller.window().get_view().title,
+            controller.window().get_view().banner,
+            controller.is_busy()
         );
         thread::sleep(Duration::from_millis(2));
     }
@@ -73,3 +77,6 @@ fn pump(controller: &DesktopController, predicate: impl Fn() -> bool) {
 
 #[path = "desktop/one_list.rs"]
 mod one_list;
+
+#[path = "desktop/acceptance.rs"]
+mod acceptance;

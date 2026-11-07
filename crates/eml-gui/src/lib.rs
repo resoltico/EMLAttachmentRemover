@@ -64,6 +64,7 @@ struct Runtime {
     export: Option<ExportJob>,
     quit: bool,
     quitting: bool,
+    quit_at: Option<u64>,
     should_exit: bool,
 }
 /// Immutable bytes and unique ownership token for a native Save Report panel.
@@ -89,6 +90,7 @@ pub struct DesktopController {
     open_jobs: RefCell<Vec<OpenJob>>,
     serial: Cell<u64>,
     panel_epoch: Cell<u64>,
+    presentation_dirty: Cell<bool>,
 }
 fn now_ms() -> u64 {
     i_slint_core::animations::current_tick().as_millis()
@@ -134,6 +136,7 @@ impl DesktopController {
                 export: None,
                 quit: false,
                 quitting: false,
+                quit_at: None,
                 should_exit: false,
             }),
             rows: RefCell::default(),
@@ -144,6 +147,7 @@ impl DesktopController {
             open_jobs: RefCell::default(),
             serial: Cell::new(0),
             panel_epoch: Cell::new(0),
+            presentation_dirty: Cell::new(true),
         });
         c.ui.set_rows(c.model.clone().into());
         c.bind();
@@ -164,6 +168,11 @@ impl DesktopController {
     }
     /// Admit native paths through the same boundary used by dialogs and documents.
     pub fn stage(&self, paths: Vec<PathBuf>) -> Result<(), RequestError> {
+        if paths.is_empty() {
+            self.message(wording::NOTHING_ADDED);
+            self.refresh();
+            return Ok(());
+        }
         if !self.inputs_enabled() {
             self.message(wording::BUSY_ADDING);
             return Ok(());
@@ -174,13 +183,23 @@ impl DesktopController {
         } else {
             runtime.batch.inputs.clone()
         };
-        for path in &paths {
-            if !combined.contains(path) {
-                combined.push(path.clone());
+        let mut seen: std::collections::HashSet<_> = combined.iter().cloned().collect();
+        for path in paths {
+            if seen.insert(path.clone()) {
+                combined.push(path);
+                if combined.len() > eml_core::MAX_INPUT_PATHS {
+                    return Err(RequestError::InvalidRequest(
+                        eml_core::RequestPathError::TooManyInputs,
+                    ));
+                }
             }
         }
-        RequestSnapshot::new(combined, runtime.batch.destination.clone(), RunMode::DryRun)?;
-        let effect = runtime.batch.add(paths);
+        RequestSnapshot::new(
+            combined.clone(),
+            runtime.batch.destination.clone(),
+            RunMode::DryRun,
+        )?;
+        let effect = runtime.batch.add(combined);
         drop(runtime);
         self.changed();
         self.effect(effect);
@@ -303,9 +322,22 @@ impl DesktopController {
     }
     /// Reap and drain completed workers before dispatching pending work.
     pub fn tick(&self) {
+        let refresh_needed = {
+            let r = self.runtime.borrow();
+            r.active.is_some() || r.batch.pending.is_some() || r.export.is_some()
+        };
+        let expired = self
+            .notice
+            .borrow()
+            .as_ref()
+            .is_some_and(|(_, at)| now_ms().saturating_sub(*at) >= 6000);
+        if expired {
+            self.notice.borrow_mut().take();
+            self.presentation_dirty.set(true);
+        }
         platform::refresh_menu();
         if platform::take_about() {
-            let _ = self.about.show();
+            self.show_about();
         }
         if platform::take_quit() {
             self.request_quit();
@@ -361,7 +393,9 @@ impl DesktopController {
             platform::set_busy(runtime.active.is_some() || runtime.export.is_some());
         }
         self.start_pending();
-        self.refresh();
+        if refresh_needed || self.presentation_dirty.get() {
+            self.refresh();
+        }
     }
     /// Whether an owned worker, pending worker or report writer remains active.
     pub fn is_busy(&self) -> bool {
@@ -380,6 +414,10 @@ impl DesktopController {
         if r.active.as_ref().is_some_and(|a| a.kind == Kind::Create) || r.export.is_some() {
             r.quit = true;
             drop(r);
+            let _ = self.about.hide();
+            let _ = self.licenses.hide();
+            let _ = self.ui.show();
+            self.ui.window().set_minimized(false);
             self.refresh();
             false
         } else {
@@ -413,6 +451,7 @@ impl DesktopController {
                 return;
             }
             r.quitting = true;
+            r.quit_at = Some(now_ms());
             r.batch.pending = None;
         }
         self.interrupt();
@@ -438,6 +477,7 @@ impl DesktopController {
     }
     /// Transient user feedback, outside report facts.
     pub fn message(&self, text: &str) {
+        self.presentation_dirty.set(true);
         *self.notice.borrow_mut() =
             Some((eml_protocol::DisplayText::new(text).to_string(), now_ms()));
     }
@@ -448,7 +488,7 @@ impl DesktopController {
     /// Native document events share the drop and panel admission rules.
     pub fn open_documents(&self, paths: Vec<PathBuf>) {
         if let Err(error) = self.stage(paths) {
-            self.message(&error.to_string());
+            self.message(&wording::request_error(&error));
         }
     }
     /// Native drop hover shares admission with all other sources.
@@ -469,7 +509,7 @@ impl DesktopController {
                     if let Some(paths) = paths
                         && let Err(e) = c.stage(paths)
                     {
-                        c.message(&e.to_string());
+                        c.message(&wording::request_error(&e));
                     }
                     c.hover_drop(false);
                 }
@@ -653,5 +693,39 @@ mod tests {
             c.notice.borrow().as_ref().unwrap().0,
             "current batch notice"
         );
+    }
+    #[test]
+    fn quit_waits_for_owned_report_writer_and_invalidates_late_panels() {
+        i_slint_backend_testing::init_no_event_loop();
+        let root = tempfile::tempdir().unwrap();
+        let c = DesktopController::new(
+            root.path().join("absent"),
+            root.path().to_owned(),
+            preferences::Preferences::load(root.path().join("settings")),
+        )
+        .unwrap();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let task = std::thread::spawn(move || {
+            rx.recv().unwrap();
+            Ok(())
+        });
+        c.runtime.borrow_mut().export = Some(ExportJob {
+            path: root.path().join("report"),
+            task,
+        });
+        let epoch = c.panel_epoch();
+        assert!(!c.request_quit());
+        assert_ne!(epoch, c.panel_epoch());
+        c.stop_and_quit();
+        c.tick();
+        assert!(!c.should_exit());
+        tx.send(()).unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while !c.should_exit() {
+            c.tick();
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::yield_now();
+        }
+        assert!(!c.is_busy());
     }
 }

@@ -25,7 +25,7 @@ impl std::fmt::Display for RequestError {
     }
 }
 impl std::error::Error for RequestError {}
-/// An admitted request with a destination captured at selection/enqueue time.
+/// An admitted request with a destination captured when the request is constructed.
 #[derive(Clone, Debug)]
 pub struct RequestSnapshot {
     request: RunRequest,

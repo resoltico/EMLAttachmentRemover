@@ -30,10 +30,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     platform::install()?;
     ingress::install_native(&controller)?;
     let paths = ingress::launch_paths(arguments, &std::env::current_dir()?)?;
-    if !paths.is_empty()
-        && let Err(error) = controller.stage(paths)
-    {
-        controller.message(&error.to_string());
+    if !paths.is_empty() {
+        controller.open_documents(paths);
     }
     let timer = slint::Timer::default();
     let weak = std::rc::Rc::downgrade(&controller);

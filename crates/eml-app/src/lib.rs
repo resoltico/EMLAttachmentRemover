@@ -1,4 +1,4 @@
-//! Bounded desktop queue, protocol reports and owned CLI supervision.
+//! Immutable requests, bounded protocol reports and owned CLI supervision.
 #![forbid(unsafe_code)]
 mod export;
 mod framing;

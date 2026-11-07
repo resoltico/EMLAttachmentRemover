@@ -17,7 +17,7 @@ impl DesktopController {
         bind!(on_stop, |c: &Rc<Self>| c.stop());
         bind!(on_beside_source, |c: &Rc<Self>| c.set_destination(None));
         bind!(on_toggle_problems, |c: &Rc<Self>| {
-            if !c.locked() && c.rows.borrow().iter().any(present::Row::problem) {
+            if c.can_filter() {
                 let mut r = c.runtime.borrow_mut();
                 r.batch.problems_only = !r.batch.problems_only;
                 drop(r);
@@ -39,10 +39,10 @@ impl DesktopController {
         bind!(on_stop_and_quit, |c: &Rc<Self>| c.stop_and_quit());
         bind!(on_quit_now, |c: &Rc<Self>| c.quit_now());
         bind!(on_about, |c: &Rc<Self>| {
-            let _ = c.about.show();
+            c.show_about();
         });
         bind!(on_licenses, |c: &Rc<Self>| {
-            let _ = c.licenses.show();
+            c.show_licenses(c.ui.get_ui_size());
         });
         let weak = Rc::downgrade(self);
         self.ui.on_select_email(move |key| {
@@ -91,7 +91,7 @@ impl DesktopController {
         let weak = Rc::downgrade(self);
         self.about.on_licenses(move || {
             if let Some(c) = weak.upgrade() {
-                let _ = c.licenses.show();
+                c.show_licenses(c.ui.get_ui_size());
             }
         });
         let weak = Rc::downgrade(self);
@@ -100,5 +100,22 @@ impl DesktopController {
                 let _ = c.licenses.hide();
             }
         });
+    }
+}
+
+impl DesktopController {
+    pub(super) fn show_about(&self) {
+        self.about.set_ui_size(self.ui.get_ui_size());
+        match self.about.show() {
+            Ok(()) => self.about.invoke_focus_website(),
+            Err(e) => self.message(&e.to_string()),
+        }
+    }
+    pub(super) fn show_licenses(&self, size: f32) {
+        self.licenses.set_ui_size(size);
+        match self.licenses.show() {
+            Ok(()) => self.licenses.invoke_focus_start(),
+            Err(e) => self.message(&e.to_string()),
+        }
     }
 }

@@ -185,6 +185,9 @@ impl crate::DesktopController {
         let Some(rows) = rows(&r.batch) else {
             return;
         };
+        if !rows.iter().any(Row::problem) {
+            r.batch.problems_only = false;
+        }
         if r.batch.selected.as_ref().is_some_and(|key| {
             !rows
                 .iter()
@@ -210,6 +213,7 @@ impl crate::DesktopController {
                     .item
                     .removed
                     .iter()
+                    .filter(|_| row.status != wording::Status::Failed)
                     .take(2)
                     .map(|p| {
                         eml_protocol::DisplayText::new(
@@ -218,15 +222,32 @@ impl crate::DesktopController {
                         .to_string()
                     })
                     .collect();
+                let folder = display.parent().map_or(String::new(), |p| {
+                    p.strip_prefix(&self.home).map_or_else(
+                        |_| p.to_string_lossy().into_owned(),
+                        |relative| {
+                            if relative.as_os_str().is_empty() {
+                                "~".into()
+                            } else {
+                                format!("~/{}", relative.to_string_lossy())
+                            }
+                        },
+                    )
+                });
+                let size_text = row.size_text();
+                let description = wording::row_description(
+                    &folder,
+                    (row.status != wording::Status::Failed).then_some(row.item.removed.len()),
+                    &size_text,
+                );
                 EmailRow {
+                    description: description.into(),
+                    has_chips: !names.is_empty(),
                     key: row_key(&row.key).into(),
                     name: name.into(),
                     prefix: prefix.into(),
                     suffix: suffix.into(),
-                    folder: display
-                        .parent()
-                        .map_or(String::new(), |p| p.to_string_lossy().into_owned())
-                        .into(),
+                    folder: folder.into(),
                     chip1: names
                         .first()
                         .cloned()
@@ -234,19 +255,19 @@ impl crate::DesktopController {
                             if row.status == wording::Status::Failed {
                                 "—"
                             } else {
-                                "None"
+                                wording::NO_ATTACHMENTS_CHIP
                             }
                             .into()
                         })
                         .into(),
                     chip2: names.get(1).cloned().unwrap_or_default().into(),
-                    more: if row.item.removed.len() > 2 {
+                    more: if row.status != wording::Status::Failed && row.item.removed.len() > 2 {
                         format!("+{}", row.item.removed.len() - 2)
                     } else {
                         String::new()
                     }
                     .into(),
-                    size_text: row.size_text().into(),
+                    size_text: size_text.into(),
                     status: row.label().into(),
                     tone: wording::tone(row.status),
                     selected: Some(&row.key) == r.batch.selected.as_ref(),
@@ -283,6 +304,21 @@ impl crate::DesktopController {
                     .into_owned()
                     .into(),
                 sentence: wording::detail(row.status, row.code()).into(),
+                path_prefix: {
+                    let path = row.copy.as_ref().unwrap_or(&row.key);
+                    path.parent().map_or(String::new(), |p| {
+                        format!("{}/", eml_protocol::TerminalPath::new(p))
+                    })
+                }
+                .into(),
+                path_suffix: row
+                    .copy
+                    .as_ref()
+                    .unwrap_or(&row.key)
+                    .file_name()
+                    .map(|n| eml_protocol::TerminalPath::new(Path::new(n)).to_string())
+                    .unwrap_or_default()
+                    .into(),
                 path: eml_protocol::TerminalPath::new(row.copy.as_ref().unwrap_or(&row.key))
                     .to_string()
                     .into(),
@@ -311,6 +347,10 @@ impl crate::DesktopController {
             .as_ref()
             .and_then(|a| a.estimate.remaining(now_ms(), Some(total)));
         let mut view = BatchView {
+            selected_index: visible
+                .iter()
+                .position(|row| row.selected)
+                .map_or(-1, |i| i as i32),
             state: match state {
                 State::Empty => 0,
                 State::Checking => 1,
@@ -354,6 +394,7 @@ impl crate::DesktopController {
             progress_text: wording::progress(done, total, estimate).into(),
             filtered: r.batch.problems_only,
             quit: r.quit,
+            quit_committed: r.quitting,
             export_running: r.export.is_some(),
             stopping,
             ..Default::default()
@@ -372,8 +413,9 @@ impl crate::DesktopController {
         view.can_reset = self.can_reset();
         view.can_export = self.can_save_report();
         view.can_output = self.can_show_output();
-        view.can_filter = !self.locked() && !view.problems.is_empty();
-        view.can_copy = !self.locked() && detail.visible;
+        view.can_filter = self.can_filter();
+        view.can_reveal_report = self.can_show_report();
+        view.can_copy = self.can_copy_details();
         view.quit_now = self.can_quit_now();
         self.ui.set_view(view);
         self.ui.set_detail(detail);
@@ -386,6 +428,7 @@ impl crate::DesktopController {
         if !self.inputs_enabled() {
             self.ui.set_drop_hovered(false);
         }
+        self.presentation_dirty.set(false);
     }
 }
 
