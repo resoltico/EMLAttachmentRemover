@@ -31,26 +31,125 @@ The capture writes lossless PPMs. Convert each to PNG with, for example,
 The [historical F3 investigation](f3-investigation.md) explains an earlier clipping
 bug. Its sidebar/inspector descriptions concern the superseded desktop design.
 
-## Native app observations — 7 November 2026
+## Native polish acceptance
 
-The fresh ad hoc signed universal app was exercised on Apple Silicon macOS 27.2.
-These raw CUA JPEGs show the final product code; window chrome is included in the
-normal captures. Both appearances were visually reviewed.
+Native acceptance was completed on 7–8 November 2026 with ad hoc signed universal
+apps (Slint 1.18.1, version unchanged). Apple Silicon observations used product
+commit `fc952d1` on macOS 27.2. The additional Intel run used `ff31272` on macOS
+15.7.9; its product sources are identical to `fc952d1`. Both universal slices,
+archive signatures and actual floor launches passed. The final WP7 commit changes
+only documentation and captures relative to that tested product tree.
+
+**N1:** A1 was first reproduced on the unmodified `97bfb2a` archive: after 3,000
+copies, Open With left an empty “Looking for emails…” window. See the
+[baseline frame](polish/a1-baseline.jpg). On the final product, each of five
+3,000-email creates reached Done before `open -a` delivered two emails. Both
+rows appeared Ready within the required two seconds:
+
+| Repetition | Observed within | Frame |
+|---|---|---|
+| 1 | 146 ms | [JPEG](polish/n1-final-1.jpg) |
+| 2 | 187 ms | [JPEG](polish/n1-final-2.jpg) |
+| 3 | 196 ms | [JPEG](polish/n1-final-3.jpg) |
+| 4 | 196 ms | [JPEG](polish/n1-final-4.jpg) |
+| 5 | 196 ms | [JPEG](polish/n1-final-5.jpg) |
+
+A driver outside the repository timed the actual native `open -a` command;
+CUA read the native accessibility tree and captured the window. In repetition
+2, the first accessibility read at 138 ms still showed the prior batch; the
+saved frame at 187 ms already shows both Ready rows. This is recorded as frame
+evidence, not as a successful first accessibility read. These runs verified
+existing copies created during baseline reproduction.
+
+The [Intel floor run](https://github.com/resoltico/EMLAttachmentRemover/actions/runs/42435560220)
+then exercised the exact universal archive on the real `macos-15-intel` runner
+(macOS 15.7.9, native `x86_64`). Each repetition checked 2,000 emails, pressed the
+native Remove Attachments button, observed Done and delivered two paths through
+`open -a`. All five met the two-second bound:
+
+| Repetition | Ready rows observed within | Before delivery | After delivery |
+|---|---|---|---|
+| 1 | 194 ms | [Done](polish/intel/intel-n1-1-done.png) | [Ready](polish/intel/intel-n1-1.png) |
+| 2 | 389 ms | [Done](polish/intel/intel-n1-2-done.png) | [Ready](polish/intel/intel-n1-2.png) |
+| 3 | 327 ms | [Done](polish/intel/intel-n1-3-done.png) | [Ready](polish/intel/intel-n1-3.png) |
+| 4 | 261 ms | [Done](polish/intel/intel-n1-4-done.png) | [Ready](polish/intel/intel-n1-4.png) |
+| 5 | 518 ms | [Done](polish/intel/intel-n1-5-done.png) | [Ready](polish/intel/intel-n1-5.png) |
+
+An omitted-delivery control remained at Done and was rejected. The
+[native transcript](polish/intel/acceptance.txt) records the timings, native
+geometry, appearance samples and source preservation. All 2,000 large-batch
+originals and both delivered sources remained byte-identical.
+
+The manual diagnostic used the app's native accessibility actions and observed
+its rendered labels, then captured its own WindowServer window. It did not replace
+the helper, modify the app bundle, inject controller hooks or use the Slint testing
+backend. Native accessibility and capture permissions were already enabled; no
+security setting was changed. A temporary extension to the existing floor script
+ran the probe through the branch-dispatched archive workflow. It was removed
+before delivery; no workflow, merge gate or permanent harness was added. The
+workflow's tag-only release-creation job was skipped.
+
+**N2:** Stop left 782 of 3,036 copies saved (25.8%). The
+[frame 464 ms after Continue](polish/n2-mixed-continue.jpg) shows those rows still
+reading “Copy saved” while the current worker begins. Continue subsequently saved
+the other 2,254 copies. The fixture mixed 3,000 small emails with 36 larger
+multipart emails, and the view was scrolled within the saved portion. Earlier
+small-file attempts reached re-verified “Copy already exists” before capture;
+they did not demonstrate the required retained-label interval. T2 separately
+gates the stub before its first new record and verifies “Starting…”, saved-label
+fallback, current-result precedence and Start Over clearing the batch.
+
+**N3: complete.** All six native captures below are current, unscaled and free
+of capture indicators. Full-screen frames were captured on Apple Silicon macOS
+27.2; normal/minimum frames came from the Intel floor run. All were visually
+reviewed. The latter were captured as native PNG window frames and converted to
+JPEG without cropping, scaling or painting out any pixels.
 
 | Native window | Light | Dark |
 |---|---|---|
 | Full screen, 1920×1080 | [JPEG](manual/full-light.jpg) | [JPEG](manual/full-dark.jpg) |
-| Normal, 1080×732 frame / 1080×700 client | [JPEG](manual/normal-light.jpg) | [JPEG](manual/normal-dark.jpg) |
-| Minimum, 760×552 frame / 760×520 client | [JPEG](manual/minimum-light.jpg) | [JPEG](manual/minimum-dark.jpg) |
+| Normal, 1080×728 frame / 1080×700 client | [JPEG](manual/normal-light.jpg) | [JPEG](manual/normal-dark.jpg) |
+| Minimum, 760×548 frame / 760×520 client | [JPEG](manual/minimum-light.jpg) | [JPEG](manual/minimum-dark.jpg) |
 
-The requested native minimum-size captures are now complete on product commit
-`86108db`: the installed Moom utility's temporary Resize action set the actual
-frame to 760×552, including the 32-pixel title bar. The resulting 760×520 client
-area shows three complete rows, the selected email's attachment details and both
-detail actions. Both appearances were visually reviewed; Size is hidden as
-required. These are raw native JPEG captures, without cropping or scaling. The
-temporary resize action was removed afterward. Earlier CUA edge-drag attempts
-had failed; the screenshots above supersede that capture gap.
+The Intel probe measured the native content group's rectangle independently of
+the outer window: macOS 15 has a 28-point title bar here, versus 32 points on the
+previous macOS 27 captures. It derived the frame size from that measurement, then
+asserted the requested client size. Appearance was checked against captured
+background pixels as well as the requested native setting. The minimum frames
+show complete rows, the selected email's detail and both detail actions.
+
+Earlier local edge-drag and Moom-shortcut attempts did not establish a native
+minimum size, and Preview display captures retained capture UI. Those failed
+attempts remain recorded privately; the Intel window captures supersede the gap.
+On resumption, Moom's settings were accessible through Finder's Open Finder item
+action, but its synthetic shortcut still did not resize this controlled window.
+The temporary action was removed. No failure was reclassified as a pass and no
+capture indicator was edited out.
+
+The nine toolkit captures above were regenerated from the final product tree and
+visually reviewed. T3 checks the actual deepest-folder label's bounds at 760×520;
+T5 checks the shared left edge and stable header geometry at text sizes 13 and 18.
+The native evidence above independently establishes the requested native sizes.
+
+The [negative-control transcript](polish/negative-controls.txt) records both WP0
+failures and the executed, restored T1–T8 mutations. The final local
+`cargo xtask ci` passed 355 tests, zero failures and one explicitly manual capture
+ignored; that capture test was run separately and passed. Budget:
+product 20,069 → 20,160 (+91); harness 10,778 → 11,083.
+The initial full-gate failure exposed separate header/footer report reads and a
+fast Continue fixture. WP2 now shares one progress snapshot; S7 uses an explicit
+fixture release before new results, preserving its filtering assertions. The
+failed run is retained outside the repository. No timing retry or longer deadline
+was introduced. Light appearance and the original app preferences were restored;
+task-created native windows were closed.
+
+## Earlier one-list native observations (historical)
+
+The following observations describe the preceding one-list implementation, not
+a new validation of the polish changes. The earlier minimum frames at
+[`97bfb2a`](https://github.com/resoltico/EMLAttachmentRemover/tree/97bfb2a/docs/gui-screenshots/manual)
+had been set through a temporary Moom Resize action and reviewed at 760×520 client
+size. The current table supersedes those images with the measured Intel captures.
 
 Observed: native file and folder panels; automatic preview; destination changes;
 seven saved small-batch copies (one as is, one malformed input refused); native

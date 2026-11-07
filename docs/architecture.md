@@ -78,13 +78,23 @@ inputs or changing destination schedules a `dry_run` automatically. Nothing is
 written until Remove Attachments. Create repeats discovery and preparation, so its
 observations supersede the preview rather than trusting stale source bytes.
 
-`state.rs` owns one batch: inputs, destination, check/create slots, generation,
+`state.rs` owns one batch: inputs, destination, check/create slots, generation and revision,
 pending work, native-path selection and the problems-only filter. State is derived
 as Empty, Checking, Ready, Removing, Stopped or Done. Changes collapse into one
 pending check. Remove Attachments during a check replaces the pending operation
 with Create. New inputs during Removing are refused; after Done or Stopped they
 replace the batch. There is no run history, waiting queue, session report storage,
 eviction or lazy reload. Continue creates a fresh request with the same operands.
+Until that create settles, the prior create report supplies row results that the
+current report has not yet replaced. A new batch drops it. Before discovery
+reports a total, create progress reads “Starting…”.
+
+Every mutating batch transition advances its revision. At the end of each tick,
+the controller refreshes if that revision differs from the last rendered one,
+work or export is active, or presentation outside the batch is dirty. This also
+renders workers started and settled inside the same native-document tick.
+Exported Slint `BatchState` and `Tone` enums carry state and row tone across the
+UI boundary; the Rust state mapping is exhaustive.
 
 `WorkerRun` owns the child and all three pipe threads. Stop sends SIGINT once.
 An obsolete read-only check is force-killed after two seconds. The controller waits
@@ -98,7 +108,8 @@ and refuse drops; committed shutdown cannot admit more work.
 
 Accepted check and create reports remain in memory. Each exact stream is bounded
 below 256 MiB by protocol framing; parsed observations have independent resource
-bounds. Only the current check and create slots remain attached to the batch.
+bounds. The check and current create slots remain attached to the batch; Continue also
+retains the previous create report until settlement.
 One outstanding export or native-save capture can retain a prior batch's stream
 in addition to those two streams. Starting another batch cannot invalidate an
 already captured save. Its panel retains the single save lifetime until submission

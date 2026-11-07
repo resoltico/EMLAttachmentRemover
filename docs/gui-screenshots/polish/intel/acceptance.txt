@@ -1,0 +1,57 @@
+Native acceptance, 8 November 2026
+Run: https://github.com/resoltico/EMLAttachmentRemover/actions/runs/42435560220
+Job: floor-smoke (macos-15-intel), 128594723923
+Native host: macOS 15.7.9 x86_64 (recorded by the unchanged archive smoke)
+Archive source: ff31272794d0f563c2ca936c3199a7a704f6afe9
+Product source tree: identical to fc952d15e0cc9bb13771ab1c42a04559e2947320
+Method: exact universal app, native AX actions/labels, WindowServer PNG capture.
+No app bundle changes, helper replacements, controller hooks or permission changes.
+Frames decoded from job-log base64; only log timestamps/BOM transport markers removed.
+
+NATIVE_CAPABILITIES ax=true capture=true display=1920x1080
+NATIVE_CHILD role=AXGroup frame=(420.0, 114.0, 1080.0, 700.0)
+NATIVE_CAPTURE intel-n1-1-done pixels=1080x728 frame=(420.0, 86.0, 1080.0, 728.0) client=(420.0, 114.0, 1080.0, 700.0)
+NATIVE_NEGATIVE omitted-delivery rejected in 2.049858965999988 seconds
+NATIVE_N1 iteration=1 rows=2 ready=true seconds=0.19381863300003488
+NATIVE_CHILD role=AXGroup frame=(420.0, 114.0, 1080.0, 700.0)
+NATIVE_CAPTURE intel-n1-1 pixels=1080x728 frame=(420.0, 86.0, 1080.0, 728.0) client=(420.0, 114.0, 1080.0, 700.0)
+NATIVE_CHILD role=AXGroup frame=(420.0, 114.0, 1080.0, 700.0)
+NATIVE_CAPTURE intel-n1-2-done pixels=1080x728 frame=(420.0, 86.0, 1080.0, 728.0) client=(420.0, 114.0, 1080.0, 700.0)
+NATIVE_N1 iteration=2 rows=2 ready=true seconds=0.38906993400001966
+NATIVE_CHILD role=AXGroup frame=(420.0, 114.0, 1080.0, 700.0)
+NATIVE_CAPTURE intel-n1-2 pixels=1080x728 frame=(420.0, 86.0, 1080.0, 728.0) client=(420.0, 114.0, 1080.0, 700.0)
+NATIVE_CHILD role=AXGroup frame=(420.0, 114.0, 1080.0, 700.0)
+NATIVE_CAPTURE intel-n1-3-done pixels=1080x728 frame=(420.0, 86.0, 1080.0, 728.0) client=(420.0, 114.0, 1080.0, 700.0)
+NATIVE_N1 iteration=3 rows=2 ready=true seconds=0.3274006740000459
+NATIVE_CHILD role=AXGroup frame=(420.0, 114.0, 1080.0, 700.0)
+NATIVE_CAPTURE intel-n1-3 pixels=1080x728 frame=(420.0, 86.0, 1080.0, 728.0) client=(420.0, 114.0, 1080.0, 700.0)
+NATIVE_CHILD role=AXGroup frame=(420.0, 114.0, 1080.0, 700.0)
+NATIVE_CAPTURE intel-n1-4-done pixels=1080x728 frame=(420.0, 86.0, 1080.0, 728.0) client=(420.0, 114.0, 1080.0, 700.0)
+NATIVE_N1 iteration=4 rows=2 ready=true seconds=0.26134080899998935
+NATIVE_CHILD role=AXGroup frame=(420.0, 114.0, 1080.0, 700.0)
+NATIVE_CAPTURE intel-n1-4 pixels=1080x728 frame=(420.0, 86.0, 1080.0, 728.0) client=(420.0, 114.0, 1080.0, 700.0)
+NATIVE_CHILD role=AXGroup frame=(420.0, 114.0, 1080.0, 700.0)
+NATIVE_CAPTURE intel-n1-5-done pixels=1080x728 frame=(420.0, 86.0, 1080.0, 728.0) client=(420.0, 114.0, 1080.0, 700.0)
+NATIVE_N1 iteration=5 rows=2 ready=true seconds=0.5175635939999665
+NATIVE_CHILD role=AXGroup frame=(420.0, 114.0, 1080.0, 700.0)
+NATIVE_CAPTURE intel-n1-5 pixels=1080x728 frame=(420.0, 86.0, 1080.0, 728.0) client=(420.0, 114.0, 1080.0, 700.0)
+NATIVE_SELECT actions=["AXPick", "AXPress"] selected=AXPick
+NATIVE_CHILD role=AXGroup frame=(420.0, 114.0, 1080.0, 700.0)
+NATIVE_CHROME height=28.0
+NATIVE_CHILD role=AXGroup frame=(100.0, 128.0, 1080.0, 700.0)
+NATIVE_CHILD role=AXGroup frame=(100.0, 128.0, 1080.0, 700.0)
+NATIVE_APPEARANCE light brightness=0.9999999602635702
+NATIVE_CAPTURE normal-light pixels=1080x728 frame=(100.0, 100.0, 1080.0, 728.0) client=(100.0, 128.0, 1080.0, 700.0)
+NATIVE_CHILD role=AXGroup frame=(100.0, 128.0, 760.0, 520.0)
+NATIVE_CHILD role=AXGroup frame=(100.0, 128.0, 760.0, 520.0)
+NATIVE_APPEARANCE light brightness=0.9999999602635702
+NATIVE_CAPTURE minimum-light pixels=760x548 frame=(100.0, 100.0, 760.0, 548.0) client=(100.0, 128.0, 760.0, 520.0)
+NATIVE_CHILD role=AXGroup frame=(100.0, 128.0, 1080.0, 700.0)
+NATIVE_CHILD role=AXGroup frame=(100.0, 128.0, 1080.0, 700.0)
+NATIVE_APPEARANCE dark brightness=0.16236489017804465
+NATIVE_CAPTURE normal-dark pixels=1080x728 frame=(100.0, 100.0, 1080.0, 728.0) client=(100.0, 128.0, 1080.0, 700.0)
+NATIVE_CHILD role=AXGroup frame=(100.0, 128.0, 760.0, 520.0)
+NATIVE_CHILD role=AXGroup frame=(100.0, 128.0, 760.0, 520.0)
+NATIVE_APPEARANCE dark brightness=0.16236489017804465
+NATIVE_CAPTURE minimum-dark pixels=760x548 frame=(100.0, 100.0, 760.0, 548.0) client=(100.0, 128.0, 760.0, 520.0)
+NATIVE_ACCEPTANCE_COMPLETE N1=5/5 sources=unchanged normal=1080x700-client minimum=760x520-client appearances=light,dark
