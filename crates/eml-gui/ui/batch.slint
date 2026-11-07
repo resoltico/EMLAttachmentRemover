@@ -1,6 +1,6 @@
 import { VerticalBox, HorizontalBox, ListView, ScrollView, ProgressIndicator } from "std-widgets.slint";
 import { Theme } from "theme.slint";
-import { EmailRow, EmailDetail, BatchView, AppWords } from "batch-models.slint";
+import { EmailRow, EmailDetail, BatchView, AppWords } from "models.slint";
 import { ActionButton, PrimaryButton, TextButton, Label, Chip, ToneDot, UiMetrics } from "controls.slint";
 export component BatchPane inherits Rectangle {
     in property <AppWords> words;
@@ -18,7 +18,7 @@ export component BatchPane inherits Rectangle {
     private property <bool> wide: root.width >= 900px;
     private property <length> scroll-y;
     VerticalBox { width: parent.width; height: parent.height; padding: 0px; spacing: 0px;
-        Rectangle { height: header.preferred-height + 30px;
+        Rectangle { height: header.preferred-height;
             header := VerticalBox { x: root.column-x; width: root.column-width; padding-top: 18px; padding-bottom: 12px; padding-left: 0px; padding-right: 0px; spacing: 6px;
                 HorizontalBox { padding: 0px; spacing: 8px;
                     Label { text: root.view.title; font-size: 22px; font-weight: 700; horizontal-stretch: 1; overflow: elide; accessible-live-region: polite; }
@@ -89,22 +89,24 @@ export component BatchPane inherits Rectangle {
         }
         if root.detail.visible: Rectangle {
             background: Theme.raised; border-width: 1px; border-color: Theme.border;
-            height: min(root.height * 0.4, detail-content.preferred-height + 24px);
-            ScrollView { x: root.column-x; width: root.column-width; height: parent.height;
-                content-width: self.visible-width; content-height: detail-content.preferred-height;
-                detail-content := VerticalBox { width: parent.visible-width - UiMetrics.overlay-scrollbar-width * 2; x: UiMetrics.overlay-scrollbar-width; padding: 12px; spacing: 6px;
-                    Label { text: root.detail.name; font-weight: 650; overflow: elide; }
-                    Label { text: root.detail.sentence; wrap: word-wrap; }
-                    for part in root.detail.parts: Label { text: part; font-size: 12px; overflow: elide; }
-                    Label { text: root.detail.path; font-size: 11.5px; font-family: "monospace"; color: Theme.muted; overflow: elide; }
-                    HorizontalBox { padding: 0px; spacing: 8px; alignment: end;
-                        if root.detail.can-show-copy: ActionButton { text: root.words.show-copy; clicked => { root.show-copy(); } }
-                        ActionButton { text: root.words.show-original; clicked => { root.show-original(); } }
-                        TextButton { text: root.words.copy-details; clicked => { root.copy-details(); } }
+            height: min(root.height * 0.4, detail-content.preferred-height + 64px);
+            VerticalBox { x: root.column-x; width: root.column-width; height: parent.height; padding: 8px; spacing: 6px;
+                ScrollView { vertical-stretch: 1; content-width: self.visible-width; content-height: detail-content.preferred-height;
+                    detail-content := VerticalBox { width: parent.visible-width - UiMetrics.overlay-scrollbar-width * 2; x: UiMetrics.overlay-scrollbar-width; padding: 4px; spacing: 6px;
+                        Label { text: root.detail.name; font-weight: 650; overflow: elide; }
+                        Label { text: root.detail.sentence; wrap: word-wrap; }
+                        for part in root.detail.parts: Label { text: part; font-size: 12px; overflow: elide; }
+                        Label { text: root.detail.path; font-size: 11.5px; font-family: "monospace"; color: Theme.muted; overflow: elide; }
                     }
+                }
+                HorizontalBox { padding: 0px; spacing: 8px; alignment: end;
+                    if root.detail.can-show-copy: ActionButton { text: root.words.show-copy; enabled: root.view.can-copy; clicked => { root.show-copy(); } }
+                    ActionButton { text: root.words.show-original; enabled: root.view.can-copy; clicked => { root.show-original(); } }
+                    TextButton { text: root.words.copy-details; enabled: root.view.can-copy; clicked => { root.copy-details(); } }
                 }
             }
         }
+
         Rectangle { height: max(60px,root.ui-size * 2 + 30px); background: Theme.raised; border-width: 1px; border-color: Theme.border;
             HorizontalBox { x: root.column-x; width: root.column-width; height: parent.height; padding: 0px; spacing: 10px;
                 if root.view.state == 1 || root.view.state == 2: Label { text: root.words.save-copies; color: Theme.muted; }

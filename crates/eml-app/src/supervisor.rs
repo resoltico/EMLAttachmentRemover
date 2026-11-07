@@ -53,37 +53,6 @@ impl ReportHandle {
     pub fn with_report<T>(&self, render: impl FnOnce(&RunReport) -> T) -> Option<T> {
         self.0.try_lock().ok().map(|report| render(&report))
     }
-    pub(crate) fn with_settled_report<T>(
-        &self,
-        render: impl FnOnce(&RunReport) -> T,
-    ) -> io::Result<T> {
-        self.0
-            .lock()
-            .map(|report| render(&report))
-            .map_err(|_| io::Error::other("The settled report is unavailable."))
-    }
-    pub(crate) fn replay(jsonl: &[u8], dry_run: bool, exit: ExitStatus) -> Self {
-        let handle = Self(Arc::new(Mutex::new(RunReport::for_native_worker(
-            eml_core::product::VERSION,
-        ))));
-        let mut framing = FrameSplitter::default();
-        for chunk in jsonl.chunks(16 * 1024) {
-            if framing
-                .append(chunk, |frame| accept_output_frame(&handle, dry_run, frame))
-                .is_err()
-            {
-                break;
-            }
-        }
-        let tail = framing.finish();
-        // This handle is private and has never crossed a thread boundary.
-        let _ = handle
-            .0
-            .lock()
-            .expect("new replay report")
-            .finish(exit.code(), tail);
-        handle
-    }
 }
 /// Settled process and pipe observations, plus the exact bounded stream for export.
 #[derive(Clone)]

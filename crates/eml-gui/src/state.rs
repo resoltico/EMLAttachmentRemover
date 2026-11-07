@@ -1,189 +1,194 @@
-//! Pure draft, queue and navigation state. No toolkit or I/O dependencies.
-use eml_app::{RequestSnapshot, RunId, RunQueue};
-use eml_core::RunMode;
+//! One batch's pure transitions. Worker ownership lives in the controller.
+use eml_app::{ReportHandle, WorkerCompletion};
 use std::path::PathBuf;
-
-pub(super) enum PendingConfirmation {
-    ForceStop(RunId),
-    Quit,
-    ReplaceDraft(RequestSnapshot),
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Kind {
+    Check,
+    Create,
 }
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(super) enum View {
-    #[default]
-    Draft,
-    Run(RunId),
-    Waiting(RunId),
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum State {
+    Empty,
+    Checking,
+    Ready,
+    Removing,
+    Stopped,
+    Done,
 }
-pub(super) struct Session {
-    pub view: View,
-    pub confirmation: Option<PendingConfirmation>,
-    pub has_started: bool,
-    pub selection: Vec<PathBuf>,
-    pub queue: RunQueue,
-    pub mode: RunMode,
+pub(super) struct Slot {
+    pub generation: u64,
+    pub report: Option<ReportHandle>,
+    pub completion: Option<WorkerCompletion>,
+    pub launch_error: bool,
+    pub stopped: bool,
 }
-impl Default for Session {
-    fn default() -> Self {
-        Self {
-            view: View::Draft,
-            confirmation: None,
-            has_started: false,
-            selection: Vec::new(),
-            queue: RunQueue::default(),
-            mode: RunMode::Create,
-        }
+impl Slot {
+    pub(super) fn settled(&self) -> bool {
+        self.completion.is_some() || self.launch_error
     }
 }
 #[derive(Default)]
-pub(super) struct RunPresentation {
-    pub unseen: bool,
-    pub filter: Filter,
-    pub sort: Sort,
-    pub selected: Option<usize>,
-    pub initialized: bool,
-    pub tally: Tally,
-    pub total: Option<u32>,
-}
-impl RunPresentation {
-    pub(super) fn settle(&mut self, visible: bool) {
-        self.unseen = !visible;
-    }
-    pub(super) fn visit(&mut self) {
-        self.unseen = false;
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Category {
-    Created,
-    Checked,
-    UpToDate,
-    Attention,
-    NotProcessed,
-}
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(super) enum Filter {
-    #[default]
-    All,
-    Created,
-    Checked,
-    UpToDate,
-    Attention,
-    NotProcessed,
-}
-impl Filter {
-    pub(super) fn from_index(index: i32) -> Option<Self> {
-        Some(match index {
-            0 => Self::All,
-            1 => Self::Created,
-            2 => Self::Checked,
-            3 => Self::UpToDate,
-            4 => Self::Attention,
-            5 => Self::NotProcessed,
-            _ => return None,
-        })
-    }
-    pub(super) fn index(self) -> i32 {
-        match self {
-            Self::All => 0,
-            Self::Created => 1,
-            Self::Checked => 2,
-            Self::UpToDate => 3,
-            Self::Attention => 4,
-            Self::NotProcessed => 5,
-        }
-    }
-    pub(super) fn includes(self, category: Category) -> bool {
-        match self {
-            Self::All => true,
-            Self::Created => category == Category::Created,
-            Self::Checked => category == Category::Checked,
-            Self::UpToDate => category == Category::UpToDate,
-            Self::Attention => category == Category::Attention,
-            Self::NotProcessed => category == Category::NotProcessed,
-        }
-    }
-}
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(super) enum Column {
-    Message,
-    #[default]
-    Folder,
-    Outcome,
+pub(super) struct Batch {
+    pub inputs: Vec<PathBuf>,
+    pub destination: Option<PathBuf>,
+    pub check: Option<Slot>,
+    pub create: Option<Slot>,
+    pub active: Option<(Kind, u64)>,
+    pub pending: Option<Kind>,
+    pub problems_only: bool,
+    pub selected: Option<PathBuf>,
+    sequence: u64,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct Sort {
-    pub column: Column,
-    pub descending: bool,
+pub(super) enum Effect {
+    InterruptCheck,
+    BusyAdding,
 }
-impl Default for Sort {
-    fn default() -> Self {
-        Self {
-            column: Column::Folder,
-            descending: false,
-        }
-    }
-}
-impl Sort {
-    pub(super) fn select(&mut self, column: Column) {
-        if self.column == column {
-            self.descending = !self.descending;
+impl Batch {
+    pub(super) fn state(&self) -> State {
+        if self.inputs.is_empty() {
+            State::Empty
+        } else if matches!(self.active, Some((Kind::Create, _))) {
+            State::Removing
+        } else if self.create.as_ref().is_some_and(Slot::settled) {
+            if self.create.as_ref().is_some_and(|slot| slot.stopped) {
+                State::Stopped
+            } else {
+                State::Done
+            }
+        } else if self.pending.is_some()
+            || matches!(self.active, Some((Kind::Check, _)))
+            || !self.check.as_ref().is_some_and(Slot::settled)
+        {
+            State::Checking
         } else {
-            self.column = column;
-            self.descending = false;
+            State::Ready
+        }
+    }
+    pub(super) fn slot(&self, kind: Kind) -> Option<&Slot> {
+        match kind {
+            Kind::Check => self.check.as_ref(),
+            Kind::Create => self.create.as_ref(),
+        }
+    }
+    pub(super) fn slot_mut(&mut self, kind: Kind) -> Option<&mut Slot> {
+        match kind {
+            Kind::Check => self.check.as_mut(),
+            Kind::Create => self.create.as_mut(),
+        }
+    }
+    pub(super) fn add(&mut self, paths: Vec<PathBuf>) -> Option<Effect> {
+        if self.state() == State::Removing {
+            return Some(Effect::BusyAdding);
+        }
+        if matches!(self.state(), State::Done | State::Stopped) {
+            self.reset();
+        }
+        for path in paths {
+            if !self.inputs.contains(&path) {
+                self.inputs.push(path);
+            }
+        }
+        self.changed()
+    }
+    pub(super) fn changed(&mut self) -> Option<Effect> {
+        self.check = None;
+        self.create = None;
+        self.problems_only = false;
+        self.selected = None;
+        self.pending = (!self.inputs.is_empty()).then_some(Kind::Check);
+        self.active
+            .filter(|(kind, _)| *kind == Kind::Check)
+            .map(|_| Effect::InterruptCheck)
+    }
+    pub(super) fn reset(&mut self) -> Option<Effect> {
+        self.inputs.clear();
+        self.changed()
+    }
+    pub(super) fn remove(&mut self) -> Option<Effect> {
+        self.pending = Some(Kind::Create);
+        self.active
+            .filter(|(kind, _)| *kind == Kind::Check)
+            .map(|_| Effect::InterruptCheck)
+    }
+    pub(super) fn start(&mut self) -> Option<(Kind, u64)> {
+        if self.active.is_some() {
+            return None;
+        }
+        let kind = self.pending.take()?;
+        self.sequence = self
+            .sequence
+            .checked_add(1)
+            .expect("worker generation exhausted");
+        let generation = self.sequence;
+        let slot = Some(Slot {
+            generation,
+            report: None,
+            completion: None,
+            launch_error: false,
+            stopped: false,
+        });
+        match kind {
+            Kind::Check => self.check = slot,
+            Kind::Create => self.create = slot,
+        }
+        self.active = Some((kind, generation));
+        self.active
+    }
+    pub(super) fn settle(
+        &mut self,
+        kind: Kind,
+        generation: u64,
+        completion: WorkerCompletion,
+        stopped: bool,
+    ) {
+        if self.active != Some((kind, generation)) {
+            return;
+        }
+        self.active = None;
+        if let Some(slot) = self
+            .slot_mut(kind)
+            .filter(|slot| slot.generation == generation)
+        {
+            slot.stopped = stopped;
+            slot.completion = Some(completion);
         }
     }
 }
-#[derive(Clone, Copy, Debug, Default)]
-pub(super) struct Tally {
-    pub all: u32,
-    pub created: u32,
-    pub checked: u32,
-    pub up_to_date: u32,
-    pub attention: u32,
-    pub not_processed: u32,
-    pub processed: u32,
-}
-impl Tally {
-    pub(super) fn observe(&mut self, category: Category) {
-        match category {
-            Category::Created => self.created += 1,
-            Category::Checked => self.checked += 1,
-            Category::UpToDate => self.up_to_date += 1,
-            Category::Attention => self.attention += 1,
-            Category::NotProcessed => self.not_processed += 1,
-        }
-        if category != Category::NotProcessed {
-            self.processed += 1;
-        }
-    }
-}
-/// GUI grouping preserves core qualification. An explicit interruption is not an error verdict.
-pub(super) fn category(
-    meaning: Option<(
-        eml_core::vocabulary::MeaningKind,
-        eml_core::vocabulary::Severity,
-    )>,
-    interrupted: bool,
-) -> Category {
-    use eml_core::vocabulary::{MeaningKind, Severity};
-    if interrupted {
-        return Category::NotProcessed;
-    }
-    match meaning {
-        Some((_, Severity::Attention)) | None => Category::Attention,
-        Some((MeaningKind::Created, _)) => Category::Created,
-        Some((MeaningKind::Prepared | MeaningKind::Comparison, _)) => Category::Checked,
-        Some((MeaningKind::ExistingVerified, _)) => Category::UpToDate,
-        Some((
-            MeaningKind::PublishedIncomplete
-            | MeaningKind::ExistingMatched
-            | MeaningKind::PublicationUncertain
-            | MeaningKind::NotPublished
-            | MeaningKind::Unestablished,
-            _,
-        )) => Category::Attention,
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn changes_collapse_and_create_waits_for_check_settlement() {
+        let mut batch = Batch::default();
+        assert_eq!(batch.state(), State::Empty);
+        batch.add(vec!["/a.eml".into()]);
+        batch.add(vec!["/b.eml".into(), "/a.eml".into()]);
+        batch.add(vec!["/c.eml".into()]);
+        assert_eq!(batch.inputs.len(), 3);
+        assert_eq!(batch.pending, Some(Kind::Check));
+        assert_eq!(batch.start(), Some((Kind::Check, 1)));
+        assert_eq!(batch.state(), State::Checking);
+        assert_eq!(batch.remove(), Some(Effect::InterruptCheck));
+        assert_eq!(batch.start(), None);
+        batch.active = None;
+        assert_eq!(batch.start(), Some((Kind::Create, 2)));
+        assert_eq!(batch.state(), State::Removing);
+        assert_eq!(
+            batch.add(vec!["/refused.eml".into()]),
+            Some(Effect::BusyAdding)
+        );
+        assert_eq!(batch.inputs.len(), 3);
+        batch.active = None;
+        batch.create.as_mut().unwrap().launch_error = true;
+        assert_eq!(batch.state(), State::Done);
+        batch.create.as_mut().unwrap().stopped = true;
+        assert_eq!(batch.state(), State::Stopped);
+        batch.add(vec!["/replacement.eml".into()]);
+        assert_eq!(batch.inputs, vec![PathBuf::from("/replacement.eml")]);
+        assert!(batch.create.is_none());
+        batch.reset();
+        assert_eq!(batch.state(), State::Empty);
     }
 }
 
@@ -260,122 +265,4 @@ impl ProgressEstimate {
         self.rate
             .map(|rate| (f64::from(total.saturating_sub(self.completed)) / rate).ceil() as u64)
     }
-}
-
-#[cfg(test)]
-mod contracts {
-    use super::*;
-    #[test]
-    fn s6_natural_comparison_handles_long_digit_runs_zeroes_and_non_utf8() {
-        use std::{
-            cmp::Ordering,
-            ffi::{OsStr, OsString},
-            os::unix::ffi::OsStringExt,
-        };
-        for (a, b) in [
-            ("n1", "n2"),
-            ("n2", "n10"),
-            ("n0", "n000"),
-            ("n02z", "n10a"),
-            ("x999999999999999999999999", "x1000000000000000000000000"),
-        ] {
-            assert_eq!(natural_cmp(OsStr::new(a), OsStr::new(b)), Ordering::Less);
-            assert_eq!(natural_cmp(OsStr::new(b), OsStr::new(a)), Ordering::Greater);
-        }
-        let a = OsString::from_vec(b"a\xff2".to_vec());
-        let b = OsString::from_vec(b"a\xff10".to_vec());
-        assert_eq!(natural_cmp(&a, &b), Ordering::Less);
-    }
-    #[test]
-    fn s4_interruption_is_not_attention_and_unqualified_copies_still_are() {
-        use eml_core::vocabulary::{MeaningKind, Severity};
-        assert_eq!(
-            category(Some((MeaningKind::NotPublished, Severity::Attention)), true),
-            Category::NotProcessed
-        );
-        assert_eq!(
-            category(
-                Some((MeaningKind::ExistingMatched, Severity::Attention)),
-                false
-            ),
-            Category::Attention
-        );
-        let mut tally = Tally::default();
-        tally.observe(Category::NotProcessed);
-        assert_eq!(
-            (tally.processed, tally.attention, tally.not_processed),
-            (0, 0, 1)
-        );
-    }
-    #[test]
-    fn estimate_requires_ten_results_three_seconds_and_a_known_total() {
-        let mut estimate = ProgressEstimate::start(0);
-        estimate.observe(1000, 10);
-        assert_eq!(estimate.remaining(2999, Some(100)), None);
-        assert_eq!(estimate.remaining(3000, None), None);
-        assert_eq!(estimate.remaining(3000, Some(100)), Some(9));
-        estimate.observe(4000, 11);
-        assert!(estimate.remaining(4000, Some(100)).unwrap() > 9);
-    }
-}
-
-#[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
-pub(super) enum Stop {
-    #[default]
-    Running,
-    Requested {
-        at: u64,
-    },
-    Forced,
-}
-impl Stop {
-    pub(super) fn can_force(self, now: u64) -> bool {
-        matches!(self,Self::Requested{at} if now.saturating_sub(at)>=5000)
-    }
-}
-impl RunPresentation {
-    pub(super) fn reconcile(&mut self, categories: &[Category], settled: bool) {
-        if settled && !self.initialized {
-            self.filter = if categories.contains(&Category::Attention) {
-                Filter::Attention
-            } else {
-                Filter::All
-            };
-            self.selected = None;
-            self.initialized = true;
-        }
-        if self.selected.is_none_or(|index| {
-            categories
-                .get(index)
-                .is_none_or(|category| !self.filter.includes(*category))
-        }) {
-            self.selected = categories
-                .iter()
-                .position(|category| self.filter.includes(*category));
-        }
-    }
-}
-
-/// Transient feedback, separate from immutable processing observations.
-#[derive(Default)]
-pub(super) enum Feedback {
-    #[default]
-    None,
-    Message {
-        label: String,
-        text: String,
-        details: String,
-        tone: FeedbackTone,
-    },
-    SavedReport {
-        run: eml_app::RunId,
-        path: std::path::PathBuf,
-        at: u64,
-    },
-}
-#[derive(Clone, Copy)]
-pub(super) enum FeedbackTone {
-    Info,
-    Success,
-    Attention,
 }
