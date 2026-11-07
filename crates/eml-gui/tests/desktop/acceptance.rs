@@ -1347,3 +1347,58 @@ fn s13_banner_and_long_notice_leave_two_rows_and_detail_actions_visible() {
     }
     assert_two_complete_rows(&ui, 18.0);
 }
+
+#[test]
+fn t2_continue_retains_saved_rows_until_current_results_arrive() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let names = ["one.eml", "two.eml", "three.eml"];
+    let check = check_stream(root.path(), &names);
+    let created = stream(
+        root.path(),
+        &[
+            ("one.eml", "created-attachment"),
+            ("two.eml", "created-attachment"),
+            ("three.eml", "created-attachment"),
+        ],
+        false,
+    );
+    let prefix = created
+        .lines()
+        .take(2)
+        .map(|l| format!("{l}\n"))
+        .collect::<String>();
+    let interrupted = "{\"type\":\"summary\",\"counts\":{\"created\":1,\"up_to_date\":0,\"planned\":0,\"failed\":0,\"not_processed\":2},\"interrupted\":true,\"collection_complete\":true,\"run_error\":null,\"exit_code\":130}\n";
+    let continued = stream(root.path(), &names.map(|n| (n, "up-to-date")), false);
+    let body = format!(
+        "request=$(cat)\ncase \"$request\" in *'\"dry_run\":true'*) {};; *) if [ -f continued ]; then while [ ! -f release ]; do :; done; {}else touch continued; trap {} INT; {}while :; do :; done; fi;; esac",
+        emit(&check),
+        emit(&continued),
+        quote(&(print(interrupted) + "exit 130")),
+        print(&prefix)
+    );
+    let c = controller(root.path(), script(root.path(), &body));
+    c.stage(vec![root.path().join("inputs")]).unwrap();
+    pump(&c, || !c.is_busy());
+    c.start_selection();
+    pump(&c, || {
+        c.window().get_rows().row_data(0).unwrap().status == "Copy saved"
+    });
+    c.stop();
+    pump(&c, || !c.is_busy());
+    c.start_selection();
+    assert_eq!(
+        c.window().get_rows().row_data(0).unwrap().status,
+        "Copy saved"
+    );
+    assert_eq!(c.window().get_rows().row_data(1).unwrap().status, "Waiting");
+    assert_eq!(c.window().get_view().progress_text, "Starting…");
+    fs::write(root.path().join("release"), "").unwrap();
+    pump(&c, || !c.is_busy());
+    assert_eq!(
+        c.window().get_rows().row_data(0).unwrap().status,
+        "Copy already exists"
+    );
+    c.window().invoke_start_over();
+    assert_eq!(c.window().get_rows().row_count(), 0);
+}

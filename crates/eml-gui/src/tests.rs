@@ -219,3 +219,51 @@ fn attachment_labels_preserve_resource_kind_and_unnamed_media_type() {
         assert_eq!(view.size, "100 B");
     }
 }
+
+#[test]
+fn t1_settlement_without_busy_work_is_rendered_on_next_tick() {
+    use std::{
+        os::unix::fs::PermissionsExt,
+        time::{Duration, Instant},
+    };
+    i_slint_backend_testing::init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let cli = root.path().join("check.sh");
+    let records = include_str!("../../../tests/contract/protocol/planned-create-unix.jsonl")
+        .replace("@VERSION@", eml_core::product::VERSION);
+    std::fs::write(
+        &cli,
+        format!("#!/bin/sh\ncat >/dev/null\ncat <<'RECORDS'\n{records}\nRECORDS\n"),
+    )
+    .unwrap();
+    std::fs::set_permissions(&cli, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let c = DesktopController::new(
+        cli,
+        root.path().into(),
+        preferences::Preferences::load(root.path().join("settings")),
+    )
+    .unwrap();
+    c.stage(vec![root.path().join("mail.eml")]).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let mut r = c.runtime.borrow_mut();
+        let a = r.active.as_mut().unwrap();
+        if let Some(completion) = a.worker.poll().unwrap() {
+            let (kind, generation) = (a.kind, a.generation);
+            r.batch.settle(kind, generation, completion, false);
+            r.active = None;
+            break;
+        }
+        assert!(Instant::now() < deadline);
+        drop(r);
+        std::thread::yield_now();
+    }
+    assert!(!c.is_busy());
+    c.tick();
+    assert_eq!(c.window().get_view().title, "1 email");
+    assert_eq!(c.window().get_rows().row_count(), 1);
+    assert_eq!(
+        c.window().get_rows().row_data(0).unwrap().status,
+        "No attachments"
+    );
+}
