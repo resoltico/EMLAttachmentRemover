@@ -62,3 +62,4 @@ done
 os_version=$(sw_vers -productVersion)
 architecture=$(uname -m)
 echo "smoke ok: ${bundle_id} on ${os_version} ${architecture}"
+bash "$(dirname "$0")/smoke-macos-document-event.sh" "${app}" "${fixture}"
