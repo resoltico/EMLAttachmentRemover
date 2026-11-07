@@ -1530,3 +1530,43 @@ fn t8_filter_announces_visible_count_and_show_all() {
     assert_eq!(c.window().get_rows().row_count(), 36);
     label(&c.window(), "2 can’t be copied");
 }
+
+#[test]
+fn t7_failed_only_disables_button_menu_and_controller_but_checking_stays_enabled() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let failed = stream(root.path(), &[("bad.eml", "prepublication-failure")], true);
+    let c = controller(root.path(), dual(root.path(), &failed, ""));
+    c.stage(vec![root.path().join("inputs")]).unwrap();
+    assert!(c.window().get_view().can_start);
+    pump(&c, || !c.is_busy());
+    assert!(!c.window().get_view().can_start);
+    assert_eq!(
+        label(&c.window(), "Remove Attachments").accessible_enabled(),
+        Some(false)
+    );
+    shortcut(&c.window(), slint::platform::Key::Return);
+    c.start_selection();
+    assert_eq!(requests(root.path()).len(), 1);
+    drop(c);
+    let root = tempfile::tempdir().unwrap();
+    let mixed = stream(
+        root.path(),
+        &[
+            ("bad.eml", "prepublication-failure"),
+            ("good.eml", "planned-create-unix"),
+        ],
+        true,
+    );
+    let c = controller(root.path(), dual(root.path(), &mixed, ""));
+    c.stage(vec![root.path().join("inputs")]).unwrap();
+    pump(&c, || !c.is_busy());
+    assert!(c.window().get_view().can_start);
+    assert_eq!(
+        label(&c.window(), "Remove Attachments").accessible_enabled(),
+        Some(true)
+    );
+    shortcut(&c.window(), slint::platform::Key::Return);
+    pump(&c, || !c.is_busy());
+    assert_eq!(requests(root.path()).len(), 2);
+}

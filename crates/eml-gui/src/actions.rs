@@ -33,6 +33,9 @@ impl DesktopController {
                 r.batch.state(),
                 State::Checking | State::Ready | State::Stopped
             )
+            && (r.batch.state() == State::Checking
+                || present::rows(&r.batch)
+                    .is_some_and(|rows| rows.iter().any(|row| !wording::is_failed(row.status))))
             && !r
                 .batch
                 .check
