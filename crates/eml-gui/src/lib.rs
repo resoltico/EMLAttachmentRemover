@@ -310,6 +310,10 @@ impl DesktopController {
         if platform::take_quit() {
             self.request_quit();
         }
+        let opened = platform::take_opened();
+        if !opened.is_empty() {
+            self.open_documents(opened);
+        }
         self.poll_export();
         self.poll_open_jobs();
         {
@@ -440,6 +444,12 @@ impl DesktopController {
     /// Informational feedback from native adapters.
     pub fn success(&self, text: &str) {
         self.message(text);
+    }
+    /// Native document events share the drop and panel admission rules.
+    pub fn open_documents(&self, paths: Vec<PathBuf>) {
+        if let Err(error) = self.stage(paths) {
+            self.message(&error.to_string());
+        }
     }
     /// Native drop hover shares admission with all other sources.
     pub fn hover_drop(&self, hovered: bool) {

@@ -67,3 +67,11 @@ pub fn file_manager_label() -> &'static str {
         "Show in File Manager"
     }
 }
+
+/// Drain one batch of native file URLs delivered by macOS.
+pub fn take_opened() -> Vec<std::path::PathBuf> {
+    #[cfg(all(feature = "desktop", target_os = "macos"))]
+    return macos::take_opened();
+    #[cfg(not(all(feature = "desktop", target_os = "macos")))]
+    Vec::new()
+}
