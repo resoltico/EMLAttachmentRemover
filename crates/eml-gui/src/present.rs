@@ -10,6 +10,7 @@ use std::{collections::HashMap, ffi::OsString, os::unix::ffi::OsStringExt, path:
 pub(super) struct Row {
     pub key: PathBuf,
     pub item: ItemRecord,
+    pub kind: Kind,
     pub status: Status,
     pub copy: Option<PathBuf>,
 }
@@ -47,6 +48,10 @@ impl Row {
                 .unwrap_or_default(),
             self.label()
         );
+        text += match self.kind {
+            Kind::Check => "Metadata from: read-only check\n",
+            Kind::Create => "Metadata from: copy process\n",
+        };
         if let Some(error) = self.item.error.value() {
             text += &format!(
                 "Code: {}\nPhase: {:?}\nDetail: {}\n",
@@ -83,6 +88,40 @@ pub(super) fn native(path: &NativePathRecord) -> Option<PathBuf> {
         .flatten()
 }
 pub(super) fn rows(batch: &Batch) -> Option<Vec<Row>> {
+    let absent_create_status = batch.create.as_ref().map(|slot| {
+        if batch.state() == State::Removing {
+            return Status::Waiting;
+        }
+        if batch.state() == State::Stopped {
+            return Status::Stopped;
+        }
+        if slot.launch_error {
+            return Status::StartFailed;
+        }
+        let complete = slot
+            .completion
+            .as_ref()
+            .filter(|c| c.failure.is_none())
+            .and_then(|c| {
+                c.report.with_report(|r| {
+                    r.failure().is_none()
+                        && r.summary().is_some_and(|summary| {
+                            summary.collection_complete
+                                && !summary.interrupted
+                                && summary
+                                    .run_error
+                                    .value()
+                                    .is_none_or(|error| error.code == "NO_INPUTS")
+                        })
+                })
+            })
+            .unwrap_or(false);
+        if complete {
+            Status::Missing
+        } else {
+            Status::Unknown
+        }
+    });
     let mut rows = HashMap::new();
     for kind in [Kind::Check, Kind::Create] {
         let Some(slot) = batch.slot(kind) else {
@@ -96,14 +135,8 @@ pub(super) fn rows(batch: &Batch) -> Option<Vec<Row>> {
                 let Some(key) = native(&item.source.native) else {
                     continue;
                 };
-                let status = if kind == Kind::Check && batch.create.is_some() {
-                    if batch.state() == State::Removing {
-                        Status::Waiting
-                    } else if batch.state() == State::Stopped {
-                        Status::Stopped
-                    } else {
-                        Status::Missing
-                    }
+                let status = if let (Kind::Check, Some(status)) = (kind, absent_create_status) {
+                    status
                 } else {
                     words::status(
                         crate::view_model::meaning(item)
@@ -119,6 +152,7 @@ pub(super) fn rows(batch: &Batch) -> Option<Vec<Row>> {
                     Row {
                         key,
                         item: item.clone(),
+                        kind,
                         status,
                         copy: (kind == Kind::Create)
                             .then(|| report.reveal_path(index))
@@ -213,14 +247,9 @@ impl crate::DesktopController {
                     .item
                     .removed
                     .iter()
-                    .filter(|_| row.status != wording::Status::Failed)
+                    .filter(|_| !wording::is_failed(row.status))
                     .take(2)
-                    .map(|p| {
-                        eml_protocol::DisplayText::new(
-                            p.filename.value().unwrap_or(&p.content_type),
-                        )
-                        .to_string()
-                    })
+                    .map(wording::attachment_name)
                     .collect();
                 let folder = display.parent().map_or(String::new(), |p| {
                     p.strip_prefix(&self.home).map_or_else(
@@ -237,10 +266,27 @@ impl crate::DesktopController {
                 let size_text = row.size_text();
                 let description = wording::row_description(
                     &folder,
-                    (row.status != wording::Status::Failed).then_some(row.item.removed.len()),
+                    (!wording::is_failed(row.status)).then_some(row.item.removed.len()),
                     &size_text,
                 );
                 EmailRow {
+                    source_size: row
+                        .item
+                        .source_bytes
+                        .value()
+                        .map(|n| wording::size(*n))
+                        .unwrap_or_default()
+                        .into(),
+                    copy_size: row
+                        .item
+                        .copy_bytes
+                        .value()
+                        .map(|n| wording::size(*n))
+                        .unwrap_or_default()
+                        .into(),
+                    size_reduction_known: !row.item.removed.is_empty()
+                        && row.item.source_bytes.value().is_some()
+                        && row.item.copy_bytes.value().is_some(),
                     description: description.into(),
                     has_chips: !names.is_empty(),
                     key: row_key(&row.key).into(),
@@ -252,7 +298,7 @@ impl crate::DesktopController {
                         .first()
                         .cloned()
                         .unwrap_or_else(|| {
-                            if row.status == wording::Status::Failed {
+                            if wording::is_failed(row.status) {
                                 "—"
                             } else {
                                 wording::NO_ATTACHMENTS_CHIP
@@ -261,7 +307,7 @@ impl crate::DesktopController {
                         })
                         .into(),
                     chip2: names.get(1).cloned().unwrap_or_default().into(),
-                    more: if row.status != wording::Status::Failed && row.item.removed.len() > 2 {
+                    more: if !wording::is_failed(row.status) && row.item.removed.len() > 2 {
                         format!("+{}", row.item.removed.len() - 2)
                     } else {
                         String::new()
@@ -322,7 +368,14 @@ impl crate::DesktopController {
                 path: eml_protocol::TerminalPath::new(row.copy.as_ref().unwrap_or(&row.key))
                     .to_string()
                     .into(),
-                parts: strings(row.item.removed.iter().map(wording::attachment)),
+                parts: Rc::new(VecModel::from(
+                    row.item
+                        .removed
+                        .iter()
+                        .map(wording::attachment)
+                        .collect::<Vec<_>>(),
+                ))
+                .into(),
                 can_show_copy: row.copy.is_some(),
             })
             .unwrap_or_default();

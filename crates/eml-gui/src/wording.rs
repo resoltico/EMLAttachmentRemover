@@ -18,6 +18,7 @@ pub(crate) enum Status {
     Waiting,
     Stopped,
     Missing,
+    StartFailed,
 }
 pub(crate) fn status(kind: MeaningKind, code: Option<ErrorCode>, removed: usize) -> Status {
     use MeaningKind::*;
@@ -58,6 +59,7 @@ pub(crate) fn label(status: Status, code: Option<ErrorCode>) -> &'static str {
         Status::Stopped => "Not processed",
         Status::Missing => "No longer found",
         Status::Failed => failure(code).0,
+        Status::StartFailed => failure(None).0,
     }
 }
 pub(crate) fn tone(status: Status) -> i32 {
@@ -65,7 +67,7 @@ pub(crate) fn tone(status: Status) -> i32 {
         Status::Ready => 1,
         Status::Saved | Status::AsIs | Status::Existing => 2,
         Status::NeedsChecking | Status::Unknown => 3,
-        Status::Failed => 4,
+        Status::Failed | Status::StartFailed => 4,
         _ => 0,
     }
 }
@@ -88,6 +90,7 @@ pub(crate) fn detail(status: Status, code: Option<ErrorCode>) -> &'static str {
             "The copy was written, but the final checks didn’t complete. Check the save folder, then use Continue or try again. Existing copies are never replaced."
         }
         Status::Failed => failure(code).1,
+        Status::StartFailed => banner("launch"),
     }
 }
 fn failure(code: Option<ErrorCode>) -> (&'static str, &'static str) {
@@ -252,17 +255,21 @@ pub(super) fn header(batch: &Batch, rows: &[Row]) -> Header {
                 })
                 .unwrap_or_default(),
         ),
-        State::Ready => (
-            plural(rows.len(), "email", "emails"),
-            if attachments == 0 {
+        State::Ready => {
+            let mut parts = if attachments == 0 {
                 vec!["No attachments to remove".into()]
             } else {
                 vec![
                     plural(attachments, "attachment", "attachments"),
                     format!("{} will be removed", size(removed)),
                 ]
-            },
-        ),
+            };
+            let existing = count(Status::Comparison);
+            if existing > 0 {
+                parts.push(format!("{existing} already copied"));
+            }
+            (plural(rows.len(), "email", "emails"), parts)
+        }
         State::Removing => (
             "Removing attachments…".into(),
             vec![
@@ -338,6 +345,7 @@ pub(super) fn controls() -> crate::AppWords {
     empty_body: "Each .eml file gets a copy without its attachments. Message text is kept and your originals are never changed.".into(),
     email: "Email".into(),
     emails: "Emails".into(),
+    details_label: "Email details".into(),
     attachments: "Attachments".into(),
     size: "Size".into(),
     status: "Status".into(),
@@ -399,19 +407,29 @@ pub(super) fn footer(state: State) -> &'static str {
 pub(super) fn progress(done: usize, total: u32, remaining: Option<u64>) -> String {
     format!("{done} of {total} done · {}", estimate(remaining))
 }
-pub(super) fn attachment(part: &eml_protocol::records::RemovedRecord) -> String {
+pub(super) fn attachment(part: &eml_protocol::records::RemovedRecord) -> crate::AttachmentView {
     use eml_protocol::records::Removal;
     let kind = match part.reason {
-        Removal::RelatedResource => "Inline image",
-        Removal::NonBodyPart if part.content_type == "text/calendar" => "Calendar invite",
+        Removal::RelatedResource
+            if part
+                .content_type
+                .get(..6)
+                .is_some_and(|kind| kind.eq_ignore_ascii_case("image/")) =>
+        {
+            "Inline image"
+        }
+        Removal::RelatedResource => "Inline resource",
+        Removal::NonBodyPart if part.content_type.eq_ignore_ascii_case("text/calendar") => {
+            "Calendar invite"
+        }
         Removal::NonBodyPart => "Other content",
         Removal::Attachment => "Attachment",
     };
-    format!(
-        "{} · {kind} · {}",
-        eml_protocol::DisplayText::new(part.filename.value().unwrap_or(&part.content_type)),
-        size(part.bytes)
-    )
+    crate::AttachmentView {
+        name: attachment_name(part).into(),
+        kind: kind.into(),
+        size: size(part.bytes).into(),
+    }
 }
 
 pub(super) const NOTHING_ADDED: &str = "Nothing was added.";
@@ -430,3 +448,36 @@ pub(super) fn row_description(folder: &str, count: Option<usize>, size: &str) ->
         )
     )
 }
+
+pub(crate) fn is_failed(status: Status) -> bool {
+    matches!(status, Status::Failed | Status::StartFailed)
+}
+
+#[cfg(any(feature = "desktop", test))]
+pub(super) const OPENING: &str = "Opening…";
+pub(super) const OPEN_SENT: &str = "Open command sent.";
+pub(super) const OPEN_FAILED: &str = "The native open operation did not complete.";
+
+pub(super) fn attachment_name(part: &eml_protocol::records::RemovedRecord) -> String {
+    eml_protocol::DisplayText::new(
+        part.filename
+            .value()
+            .filter(|name| !name.is_empty())
+            .unwrap_or(&part.content_type),
+    )
+    .to_string()
+}
+#[cfg(feature = "desktop")]
+pub(super) const EML_FILTER: &str = "EML messages";
+#[cfg(feature = "desktop")]
+pub(super) const REPORT_FILTER: &str = "JSON Lines report";
+#[cfg(feature = "desktop")]
+pub(super) const SHOW_EMAIL_FAILED: &str = "Couldn’t show the email. Check that it still exists.";
+#[cfg(feature = "desktop")]
+pub(super) const SHOW_OUTPUT_FAILED: &str = "Couldn’t open the save folder.";
+#[cfg(feature = "desktop")]
+pub(super) const SHOW_REPORT_FAILED: &str = "Couldn’t show the saved report.";
+#[cfg(feature = "desktop")]
+pub(super) const WEBSITE_FAILED: &str = "Couldn’t open the project website.";
+#[cfg(feature = "desktop")]
+pub(super) const LICENSES_FAILED: &str = "Couldn’t open bundled third-party notices.";

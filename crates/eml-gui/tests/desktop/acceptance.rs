@@ -51,7 +51,7 @@ fn stream(root: &Path, cases: &[(&str, &str)], dry: bool) -> String {
     let summary = json!({"type":"summary","counts":{"created":counts[0],"up_to_date":counts[1],"planned":counts[2],"failed":counts[3],"not_processed":0},"interrupted":interrupted,"collection_complete":true,"run_error":null,"exit_code":if interrupted {130}else if counts[3]>0 {1}else {0}});
     output + &format!("{summary}\n")
 }
-fn check_stream(root: &Path, names: &[&str]) -> String {
+pub(super) fn check_stream(root: &Path, names: &[&str]) -> String {
     let mut values: Vec<Value> = stream(
         root,
         &names
@@ -77,7 +77,7 @@ fn emit(stream: &str) -> String {
     let summary: Value = serde_json::from_str(stream.lines().last().unwrap()).unwrap();
     print(stream) + &format!("exit {}\n", summary["exit_code"].as_i64().unwrap())
 }
-fn dual(root: &Path, check: &str, create: &str) -> PathBuf {
+pub(super) fn dual(root: &Path, check: &str, create: &str) -> PathBuf {
     script(
         root,
         &format!(
@@ -104,7 +104,7 @@ fn done(root: &Path, names: &[&str]) -> Rc<DesktopController> {
     pump(&c, || !c.is_busy());
     c
 }
-fn gate(root: &Path, ignore: bool) -> Rc<DesktopController> {
+pub(super) fn gate(root: &Path) -> Rc<DesktopController> {
     let check = check_stream(root, &["one.eml", "two.eml", "three.eml"]);
     let create = stream(
         root,
@@ -116,22 +116,7 @@ fn gate(root: &Path, ignore: bool) -> Rc<DesktopController> {
         false,
     );
     let (start, rest) = create.split_once('\n').unwrap();
-    let trap = if ignore {
-        "trap '' INT\n".into()
-    } else {
-        format!(
-            "trap {} INT\n",
-            quote(
-                &(print(&stream(
-                    root,
-                    &[("one.eml", "started-preedge-cancellation")],
-                    false
-                )) + "exit 130\n")
-            )
-        )
-    };
-    // Cooperative tests use their own matching-total fixture; this gate is used
-    // for create ownership and kill paths, not a fabricated successful interrupt.
+    let trap = "trap '' INT\n";
     let body = format!(
         "{trap}{}while [ ! -f release ]; do :; done\n{}",
         print(&(start.to_owned() + "\n")),
@@ -156,7 +141,7 @@ fn gate(root: &Path, ignore: bool) -> Rc<DesktopController> {
     });
     c
 }
-fn requests(root: &Path) -> Vec<Value> {
+pub(super) fn requests(root: &Path) -> Vec<Value> {
     fs::read_to_string(root.join("requests.jsonl"))
         .unwrap()
         .lines()
@@ -277,6 +262,8 @@ fn s3_remove_during_check_uses_the_identical_native_snapshot() {
     let expected =
         eml_app::RequestSnapshot::new(inputs, Some(destination), eml_core::RunMode::Create)
             .unwrap();
+    let raw = fs::read_to_string(root.path().join("requests.jsonl")).unwrap();
+    assert_eq!(raw.lines().nth(1).unwrap().as_bytes(), expected.encoded());
     assert_eq!(
         seen[1],
         serde_json::from_slice::<Value>(expected.encoded()).unwrap()
@@ -287,7 +274,7 @@ fn s3_remove_during_check_uses_the_identical_native_snapshot() {
 fn s4_s15_adds_are_refused_during_create_and_documents_start_a_new_batch_afterward() {
     init_no_event_loop();
     let root = tempfile::tempdir().unwrap();
-    let c = gate(root.path(), true);
+    let c = gate(root.path());
     let ui = c.window();
     let before = ui.get_rows().row_count();
     c.open_documents(vec![root.path().join("refused.eml")]);
@@ -360,7 +347,7 @@ fn s5_all_receipt_statuses_and_natural_stream_order_use_native_selection() {
 fn s6_s7_headers_filter_and_selection_come_from_authoritative_rows() {
     init_no_event_loop();
     let root = tempfile::tempdir().unwrap();
-    let c = gate(root.path(), true);
+    let c = gate(root.path());
     let ui = c.window();
     assert_eq!(ui.get_view().title, "Removing attachments…");
     assert_eq!(
@@ -369,12 +356,22 @@ fn s6_s7_headers_filter_and_selection_come_from_authoritative_rows() {
     );
     assert!(ui.get_view().problems.is_empty());
     assert!(!ui.get_view().can_filter);
+    assert!(
+        ElementHandle::find_by_element_type_name(&ui, "Chip")
+            .next()
+            .is_none()
+    );
     fs::write(root.path().join("release"), b"go").unwrap();
     pump(&c, || !c.is_busy());
     assert_eq!(ui.get_view().title, "2 copies saved");
     assert!(ui.get_view().summary.contains("515 B removed"));
     assert!(ui.get_view().summary.contains("1 copied as is"));
     assert_eq!(ui.get_view().problems, "1 can’t be copied");
+    assert!(
+        ElementHandle::find_by_element_type_name(&ui, "Chip")
+            .next()
+            .is_some()
+    );
     select_first(&c);
     ui.invoke_toggle_problems();
     assert_eq!(ui.get_rows().row_count(), 1);
@@ -417,12 +414,18 @@ fn s8_stop_continue_reuses_exact_request_and_existing_copy_wording() {
     assert!(!c.window().get_view().can_stop);
     pump(&c, || !c.is_busy());
     assert_eq!(c.window().get_view().state, 4);
+    assert_eq!(
+        c.window().get_view().summary,
+        "0 copies saved · 1 not processed"
+    );
     assert_eq!(c.window().get_view().primary, "Continue");
     assert_words(&c.window());
     c.start_selection();
     pump(&c, || !c.is_busy());
     let seen = requests(root.path());
     assert_eq!(seen[1], seen[2]);
+    let raw = fs::read_to_string(root.path().join("requests.jsonl")).unwrap();
+    assert_eq!(raw.lines().nth(1), raw.lines().nth(2));
     assert_eq!(
         c.window().get_rows().row_data(0).unwrap().status,
         "Copy already exists"
@@ -432,7 +435,7 @@ fn s8_stop_continue_reuses_exact_request_and_existing_copy_wording() {
 fn s9_quit_confirmation_cancel_and_delayed_force_keep_process_ownership() {
     init_no_event_loop();
     let root = tempfile::tempdir().unwrap();
-    let c = gate(root.path(), true);
+    let c = gate(root.path());
     shortcut(&c.window(), ".");
     assert!(!c.window().get_view().can_stop);
     c.stop();
@@ -500,6 +503,7 @@ fn s10_details_use_native_paths_and_failed_rows_have_no_show_copy() {
     pump(&c, || !c.is_busy());
     select_first(&c);
     let ui = c.window();
+    assert_eq!(ui.get_view().title, "No copies saved");
     assert!(ui.get_detail().visible);
     assert!(!ui.get_detail().can_show_copy);
     assert!(
@@ -519,7 +523,7 @@ fn s10_details_use_native_paths_and_failed_rows_have_no_show_copy() {
 fn s11_removed_concepts_are_absent_in_ready_removing_done_and_quit() {
     init_no_event_loop();
     let root = tempfile::tempdir().unwrap();
-    let c = gate(root.path(), true);
+    let c = gate(root.path());
     assert_words(&c.window());
     c.request_quit();
     assert_words(&c.window());
@@ -633,6 +637,10 @@ fn s13_geometry_retains_two_rows_and_visible_actions_at_minimum_and_fullscreen()
                 list.size()
             );
             assert!(list.size().width <= 980.1);
+            assert!(
+                label(&ui, "Email details").size().height <= height * 0.4 + 0.1,
+                "Detail pane exceeds its height cap"
+            );
             if width >= 900.0 {
                 let column = label(&ui, "Size");
                 let cell = label(&ui, "1.0 kB → 513 B");
@@ -651,7 +659,7 @@ fn s13_geometry_retains_two_rows_and_visible_actions_at_minimum_and_fullscreen()
     }
 }
 #[test]
-fn s16_export_is_exact_settled_bytes_and_stale_panels_are_refused() {
+fn s16_exports_exact_settled_bytes_and_keeps_an_explicit_capture_after_reset() {
     init_no_event_loop();
     let root = tempfile::tempdir().unwrap();
     let check = check_stream(root.path(), &["one.eml"]);
@@ -665,8 +673,17 @@ fn s16_export_is_exact_settled_bytes_and_stale_panels_are_refused() {
     assert_eq!(fs::read(&target).unwrap(), check.as_bytes());
     let old = c.capture_export().unwrap();
     c.start_over();
-    c.start_captured_export(old, root.path().join("stale.jsonl"));
-    assert!(!root.path().join("stale.jsonl").exists());
+    let pinned = root.path().join("captured-before-reset.jsonl");
+    c.start_captured_export(old, pinned.clone());
+    pump(&c, || !c.is_busy());
+    assert_eq!(fs::read(pinned).unwrap(), check.as_bytes());
+    assert_eq!(c.window().get_view().state, 0);
+    assert!(c.window().get_view().can_reveal_report);
+    assert!(
+        ElementHandle::find_by_accessible_label(&c.window(), "Show")
+            .next()
+            .is_some()
+    );
     c.stage(vec![root.path().join("one.eml")]).unwrap();
     pump(&c, || !c.is_busy());
     c.start_selection();
@@ -754,7 +771,7 @@ fn s20_capture_one_list_states() {
         ("dark", slint::language::ColorScheme::Dark),
     ] {
         let root = tempfile::tempdir().unwrap();
-        let c = gate(root.path(), true);
+        let c = gate(root.path());
         let ui = c.window();
         ui.window().set_size(slint::LogicalSize::new(1080.0, 700.0));
         ui.global::<Palette>().set_color_scheme(scheme);
@@ -1074,4 +1091,215 @@ fn s18_admission_notice_is_visible_in_the_empty_window_and_expires() {
     c.tick();
     assert!(c.window().get_view().notice.is_empty());
     assert!(!labels(&c.window()).iter().any(|label| label == text));
+}
+
+#[test]
+fn s13_native_resize_constraints_admit_the_declared_minimum_and_large_windows() {
+    use i_slint_core::{item_tree::ItemTreeRc, layout::Orientation, window::WindowInner};
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let cli = dual(
+        root.path(),
+        &check_stream(root.path(), &["one.eml", "two.eml", "three.eml"]),
+        &stream(root.path(), &[("one.eml", "created-attachment")], false),
+    );
+    let c = controller(root.path(), cli);
+    let ui = c.window();
+    for phase in 0..3 {
+        if phase == 1 {
+            c.stage(vec![root.path().join("inputs")]).unwrap();
+            pump(&c, || !c.is_busy());
+        } else if phase == 2 {
+            c.start_selection();
+            pump(&c, || !c.is_busy());
+        }
+        mock_elapsed_time(Duration::from_millis(1));
+        let tree = WindowInner::from_pub(ui.window()).component();
+        let component = ItemTreeRc::borrow_pin(&tree);
+        for (axis, minimum) in [
+            (Orientation::Horizontal, 760.0),
+            (Orientation::Vertical, 520.0),
+        ] {
+            let info = component.as_ref().layout_info(axis);
+            assert!(
+                info.min <= minimum && info.max >= 4000.0,
+                "phase={phase}, {axis:?}: {info:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn s6_ready_summary_counts_existing_copies_separately_from_new_removals() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let mut values: Vec<Value> = stream(
+        root.path(),
+        &[
+            ("new.eml", "planned-create-unix"),
+            ("existing.eml", "planned-existing"),
+        ],
+        true,
+    )
+    .lines()
+    .map(|l| serde_json::from_str(l).unwrap())
+    .collect();
+    values[1]["removed"] = records("created-attachment")[1]["removed"].clone();
+    values[1]["source_bytes"] = 1028.into();
+    values[1]["copy_bytes"] = 513.into();
+    let check = values.iter().map(|v| format!("{v}\n")).collect::<String>();
+    let c = controller(root.path(), dual(root.path(), &check, ""));
+    c.stage(vec![root.path().join("inputs")]).unwrap();
+    pump(&c, || !c.is_busy());
+    assert_eq!(c.window().get_view().title, "2 emails");
+    assert_eq!(
+        c.window().get_view().summary,
+        "1 attachment · 515 B will be removed · 1 already copied"
+    );
+}
+
+#[test]
+fn s16_capture_owns_one_save_lifetime_across_batch_changes() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let check = check_stream(root.path(), &["one.eml"]);
+    let replacement = check_stream(root.path(), &["replacement.eml"]);
+    let cli = script(
+        root.path(),
+        &format!(
+            "cat >/dev/null\nif [ -f checked ]; then {}else touch checked; {}fi",
+            emit(&replacement),
+            emit(&check)
+        ),
+    );
+    let c = controller(root.path(), cli);
+    c.stage(vec![root.path().join("one.eml")]).unwrap();
+    pump(&c, || !c.is_busy());
+    let old = c.capture_export().unwrap();
+    c.start_over();
+    c.stage(vec![root.path().join("replacement")]).unwrap();
+    pump(&c, || !c.is_busy());
+    assert!(
+        c.capture_export().is_none(),
+        "The open panel still owns the only capture lifetime"
+    );
+    let target = root.path().join("captured-before-reset.jsonl");
+    c.start_captured_export(old, target.clone());
+    pump(&c, || !c.is_busy());
+    assert_eq!(fs::read(target).unwrap(), check.as_bytes());
+    let old = c.capture_export().unwrap();
+    c.cancel_export(&old);
+    let current = c.capture_export().unwrap();
+    c.cancel_export(&old);
+    c.start_captured_export(old, root.path().join("stale.jsonl"));
+    assert!(!root.path().join("stale.jsonl").exists());
+    assert!(
+        c.capture_export().is_none(),
+        "Stale callbacks cannot release the newer panel"
+    );
+    c.cancel_export(&current);
+}
+#[test]
+fn s16_quit_invalidates_unsubmitted_saves_even_when_quit_is_cancelled() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let c = gate(root.path());
+    let source = c.capture_export().unwrap();
+    c.request_quit();
+    c.cancel_quit();
+    assert!(
+        c.capture_export().is_none(),
+        "The invalidated panel owns its lifetime until it settles"
+    );
+    let target = root.path().join("late.jsonl");
+    c.start_captured_export(source, target.clone());
+    assert!(!target.exists());
+    fs::write(root.path().join("release"), b"go").unwrap();
+    pump(&c, || !c.is_busy());
+    assert!(c.capture_export().is_some());
+}
+
+#[test]
+fn s5_worker_failure_does_not_claim_preview_sources_disappeared() {
+    init_no_event_loop();
+    for launch_failure in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        let check = check_stream(root.path(), &["one.eml", "two.eml"]);
+        let executable = dual(root.path(), &check, "");
+        let cli = root.path().join("owned-launcher");
+        fs::copy(executable, &cli).unwrap();
+        let c = controller(root.path(), cli.clone());
+        c.stage(vec![root.path().join("inputs")]).unwrap();
+        pump(&c, || !c.is_busy());
+        assert_eq!(c.window().get_rows().row_count(), 2);
+        if launch_failure {
+            fs::remove_file(cli).unwrap();
+        }
+        c.start_selection();
+        pump(&c, || !c.is_busy());
+        let expected = if launch_failure {
+            "Couldn’t copy"
+        } else {
+            "Result unknown"
+        };
+        assert!(
+            c.window()
+                .get_rows()
+                .iter()
+                .all(|row| row.status == expected),
+            "Absent create items after worker failure are not evidence of deleted sources"
+        );
+        assert!(!c.window().get_view().banner.is_empty());
+        assert!(c.capture_export().is_some());
+    }
+}
+
+#[test]
+fn s13_banner_and_long_notice_leave_two_rows_and_detail_actions_visible() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let mut values: Vec<Value> = check_stream(root.path(), &["one.eml", "two.eml"])
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    let part = values[1]["removed"][0].clone();
+    values[1]["removed"] = (0..40)
+        .map(|index| {
+            let mut part = part.clone();
+            part["section"] = format!("2.{index}").into();
+            part["bytes"] = 1.into();
+            part
+        })
+        .collect::<Vec<_>>()
+        .into();
+    let check = values.iter().map(|v| format!("{v}\n")).collect::<String>();
+    let c = controller(root.path(), dual(root.path(), &check, ""));
+    c.stage(vec![root.path().join("inputs")]).unwrap();
+    pump(&c, || !c.is_busy());
+    c.start_selection();
+    pump(&c, || !c.is_busy());
+    let ui = c.window();
+    ui.set_ui_size(18.0);
+    ui.window().set_size(slint::LogicalSize::new(760.0, 520.0));
+    select_first(&c);
+    c.message(&format!(
+        "Couldn’t save the report. {}",
+        "long-directory/".repeat(150)
+    ));
+    c.tick();
+    mock_elapsed_time(Duration::from_millis(1));
+    for text in [
+        "Show Original",
+        "Copy Details",
+        "Start Over",
+        eml_gui::platform::file_manager_label(),
+    ] {
+        inside(&label(&ui, text), 760.0, 520.0);
+    }
+    let list = ElementHandle::find_by_accessible_label(&ui, "Emails")
+        .find(|element| {
+            element.accessible_role() == Some(i_slint_backend_testing::AccessibleRole::List)
+        })
+        .unwrap();
+    assert!(list.size().height >= 100.0);
 }

@@ -80,3 +80,6 @@ mod one_list;
 
 #[path = "desktop/acceptance.rs"]
 mod acceptance;
+
+#[path = "desktop/safety.rs"]
+mod safety;

@@ -30,3 +30,42 @@ The capture writes lossless PPMs. Convert each to PNG with, for example,
 
 The [historical F3 investigation](f3-investigation.md) explains an earlier clipping
 bug. Its sidebar/inspector descriptions concern the superseded desktop design.
+
+## Native app observations — 7 November 2026
+
+The fresh ad hoc signed universal app was exercised on Apple Silicon macOS 27.2.
+These raw CUA JPEGs show the final product code; window chrome is included in the
+normal captures. Both appearances were visually reviewed.
+
+| Native window | Light | Dark |
+|---|---|---|
+| Full screen, 1920×1080 | [JPEG](manual/full-light.jpg) | [JPEG](manual/full-dark.jpg) |
+| Normal, 1080×732 frame / 1080×700 client | [JPEG](manual/normal-light.jpg) | [JPEG](manual/normal-dark.jpg) |
+
+The requested **native 760×520 capture is not complete**. Edge drags did not
+reliably reach that width through CUA. An earlier app build reached a 920×520
+client area; the final normal captures above are labelled with their actual size.
+Exact 760×520 is covered by the toolkit image and geometry/constraint checks,
+which is separate evidence from native OS resizing.
+
+Observed: native file and folder panels; automatic preview; destination changes;
+seven saved small-batch copies (one as is, one malformed input refused); native
+report saving; output-roots selection; Show Copy and Show in Finder. The latter
+visibly opened the folder containing all seven copies. The copies matched
+independent golden/original bytes. Eight small and 96 large exercised source
+emails remained byte-identical; the unused Dock fixture also remained unchanged.
+
+A native Stop left the large batch stopped; Continue then qualified all 96
+existing copies without new writes. Quit while Removing showed the confirmation
+at 89/96; Cancel kept the app open, and Stop and Quit exited cleanly. Forced Quit
+Now timing and reaping are covered by the headless process tests.
+
+Finder Open With on an email and cold launch-by-document reached the preview
+without a system alert; Mail remained the default. Folder delivery through
+`open -a` did the same. Finder on this host has no Open With context item for a
+folder. **An actual Dock drop is still unverified**: CUA could not acquire its
+surface. macOS 15 and physical Intel Mac document opening also remain unverified.
+Both binary slices and the archive signature were checked separately.
+
+The original app preferences and light appearance were restored after testing;
+task-created native windows and synthetic source/copy fixtures were cleaned up.
