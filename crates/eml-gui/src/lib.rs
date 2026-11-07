@@ -300,6 +300,9 @@ impl DesktopController {
                 });
             }
             Err(_) => {
+                if kind == Kind::Create {
+                    runtime.batch.previous_create = None;
+                }
                 runtime.batch.slot_mut(kind).unwrap().launch_error = true;
                 runtime.batch.active = None;
             }

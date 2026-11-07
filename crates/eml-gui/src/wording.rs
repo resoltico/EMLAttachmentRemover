@@ -1,7 +1,7 @@
 //! One-list product language; protocol diagnostics remain verbatim in exports.
 use crate::{
     present::Row,
-    state::{Batch, Kind, State},
+    state::{Batch, State},
 };
 use eml_core::{ErrorCode, vocabulary::MeaningKind};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -199,7 +199,7 @@ pub(super) struct Header {
     pub summary: String,
     pub problems: String,
 }
-pub(super) fn header(batch: &Batch, rows: &[Row]) -> Header {
+pub(super) fn header(batch: &Batch, rows: &[Row], total: Option<u32>) -> Header {
     let count = |s| rows.iter().filter(|row| row.status == s).count();
     let problems = rows.iter().filter(|row| row.problem()).count();
     let has_warn = rows.iter().any(|row| tone(row.status) == 3);
@@ -211,15 +211,6 @@ pub(super) fn header(batch: &Batch, rows: &[Row]) -> Header {
         format!("{problems} can’t be copied")
     };
     let saved = count(Status::Saved) + count(Status::AsIs);
-    let total = batch
-        .slot(if batch.create.is_some() {
-            Kind::Create
-        } else {
-            Kind::Check
-        })
-        .and_then(|slot| slot.report.as_ref())
-        .and_then(|handle| handle.with_report(|r| r.start().map(|s| s.total)))
-        .flatten();
     let attachments: usize = rows
         .iter()
         .filter(|row| matches!(row.status, Status::Ready | Status::Saved))
@@ -273,10 +264,14 @@ pub(super) fn header(batch: &Batch, rows: &[Row]) -> Header {
         State::Removing => (
             "Removing attachments…".into(),
             vec![
-                format!(
-                    "{} of {} done",
-                    rows.iter().filter(|r| r.status != Status::Waiting).count(),
-                    total.unwrap_or(0)
+                total.map_or_else(
+                    || "Starting…".into(),
+                    |n| {
+                        format!(
+                            "{} of {n} done",
+                            rows.iter().filter(|r| r.status != Status::Waiting).count()
+                        )
+                    },
                 ),
                 "your originals are not changed".into(),
             ],

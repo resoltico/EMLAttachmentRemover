@@ -33,6 +33,7 @@ pub(super) struct Batch {
     pub destination: Option<PathBuf>,
     pub check: Option<Slot>,
     pub create: Option<Slot>,
+    pub previous_create: Option<ReportHandle>,
     pub active: Option<(Kind, u64)>,
     pub pending: Option<Kind>,
     pub problems_only: bool,
@@ -117,6 +118,7 @@ impl Batch {
         self.touch();
         self.check = None;
         self.create = None;
+        self.previous_create = None;
         self.problems_only = false;
         self.selected = None;
         self.pending = (!self.inputs.is_empty()).then_some(Kind::Check);
@@ -155,7 +157,10 @@ impl Batch {
         });
         match kind {
             Kind::Check => self.check = slot,
-            Kind::Create => self.create = slot,
+            Kind::Create => {
+                self.previous_create = self.create.take().and_then(|s| s.report);
+                self.create = slot;
+            }
         }
         self.active = Some((kind, generation));
         self.active
@@ -171,6 +176,9 @@ impl Batch {
             return;
         }
         self.touch();
+        if kind == Kind::Create {
+            self.previous_create = None;
+        }
         self.active = None;
         if let Some(slot) = self
             .slot_mut(kind)
