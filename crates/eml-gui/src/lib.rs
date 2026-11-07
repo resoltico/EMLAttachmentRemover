@@ -1,6 +1,11 @@
 //! Platform-neutral Slint controller, structured views and native-path ingress.
 #![deny(unsafe_code)]
 mod actions;
+#[expect(
+    dead_code,
+    reason = "Batch transitions are staged until the WP5 controller cutover"
+)]
+mod batch;
 mod callbacks;
 mod feedback;
 pub mod ingress;
