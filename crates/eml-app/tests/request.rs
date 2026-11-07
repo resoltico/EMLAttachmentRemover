@@ -1,5 +1,5 @@
 //! Immutable request boundary checks.
-use eml_app::request::{RequestError, RequestSnapshot};
+use eml_app::{RequestError, RequestSnapshot};
 use eml_core::{OutputLocation, RunMode};
 use std::path::PathBuf;
 fn path(name: &str) -> PathBuf {

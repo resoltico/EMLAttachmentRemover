@@ -1,4 +1,3 @@
-import { PathView } from "models.slint";
 // Copyright 2026 Ervins Strauhmanis
 // SPDX-License-Identifier: MPL-2.0
 import { Button, Palette, VerticalBox, HorizontalBox } from "std-widgets.slint";
@@ -82,46 +81,6 @@ export component TextButton inherits Rectangle {
 }
 
 export component Label inherits Text { vertical-stretch: 0; min-width: 0px; vertical-alignment: center; color: Theme.text; accessible-role: text; accessible-label: self.text; }
-// Text measures its own glyphs; the suffix stays visible as the prefix elides.
-export component FileName inherits Rectangle {
-    in property <PathView> path;
-    in property <length> text-size: 14px;
-    height: max(22px, root.text-size * 1.4);
-    horizontal-stretch: 1;
-    min-width: 0px;
-    accessible-role: text;
-    accessible-label: root.path.full;
-    private property <bool> clipped-suffix: suffix-text.preferred-width > root.width;
-    prefix := Text {
-        text: root.clipped-suffix ? "…" : root.path.prefix;
-        color: Theme.text; font-size: root.text-size;
-        x: 0px; height: parent.height;
-        width: root.clipped-suffix ? min(self.preferred-width,root.width) : min(self.preferred-width,max(0px,root.width - suffix-area.width));
-        overflow: elide; vertical-alignment: center;
-        accessible-role: none;
-    }
-    suffix-area := Rectangle {
-        x: prefix.width;
-        width: min(suffix-text.preferred-width,max(0px,root.width - (root.clipped-suffix ? prefix.preferred-width : 0px)));
-        height: parent.height; clip: true;
-        accessible-role: none;
-        suffix-text := Text {
-            text: root.path.suffix; color: Theme.text; font-size: root.text-size;
-            x: min(0px,parent.width - self.preferred-width); width: self.preferred-width;
-            height: parent.height; vertical-alignment: center; overflow: clip;
-            accessible-role: none; accessible-label: "";
-        }
-    }
-    Tooltip { text: @markdown("\{root.path.full}"); }
-}
-export component PathLabel inherits VerticalBox {
-    in property <PathView> path;
-    in property <length> text-size: 14px;
-    padding: 0px; spacing: 0px; horizontal-stretch: 1; min-width: 0px;
-    FileName { path: root.path; text-size: root.text-size; }
-    Label { text: root.path.directory; font-size: max(12px, root.text-size * 0.9); opacity: 0.72; overflow: elide; min-width: 0px; Tooltip { text: @markdown("\{root.path.full}"); } }
-}
-
 export enum IconKind { folder, file, remove, chevron, ellipsis, status, warning }
 export component Icon inherits Path {
     in property <IconKind> kind;
@@ -151,19 +110,6 @@ export component Chip inherits TextButton {
     border-width: root.has-focus ? 2px : 1px;
     border-color: root.selected || root.has-focus ? Theme.accent : Theme.border;
 }
-export component DestinationButton inherits TextButton {
-    in property <PathView> path;
-    in property <length> text-size: 13px;
-    show-caption: false;
-    text: root.path.full;
-    min-width: 120px; preferred-width: 220px; horizontal-stretch: 1;
-    trailing-inset: 22px;
-    background: Theme.raised; border-width: 1px; border-radius: 6px;
-    border-color: root.has-focus ? Theme.accent : Theme.border;
-    Icon { kind: IconKind.chevron; x: parent.width - 22px; y: (parent.height - self.height) / 2; }
-    FileName { path: root.path; x: root.horizontal-inset; width: max(0px,parent.width - root.horizontal-inset * 2 - root.trailing-inset); height: parent.height; text-size: root.text-size; }
-    accessible-expandable: true;
-}
 export component ToneDot inherits Rectangle {
     in property <color> tone;
     in property <bool> ring;
@@ -171,24 +117,4 @@ export component ToneDot inherits Rectangle {
     background: root.ring ? transparent : root.tone;
     border-width: root.ring ? 1px : 0px; border-color: root.tone;
     accessible-role: none;
-}
-export component Segmented inherits Rectangle {
-    in property <bool> check-only;
-    in property <bool> enabled: true;
-    callback changed(bool);
-    min-height: segments.min-height;
-    border-radius: 8px; background: Theme.raised; border-width: 1px; border-color: Theme.border;
-    accessible-role: tab-list; accessible-label: "Action";
-    segments := HorizontalBox { width: parent.width; height: parent.height; padding: 2px; spacing: 2px;
-        TextButton { text-alignment: center; text: "Create copies"; enabled: root.enabled; min-width: 0px; horizontal-stretch: 1;
-            background: !root.check-only ? Theme.surface : transparent; border-radius: 6px;
-            accessible-role: tab; accessible-item-selected: !root.check-only; accessible-checkable: true; accessible-checked: !root.check-only;
-            clicked => { root.changed(false); }
-        }
-        TextButton { text-alignment: center; text: "Check only"; enabled: root.enabled; min-width: 0px; horizontal-stretch: 1;
-            background: root.check-only ? Theme.surface : transparent; border-radius: 6px;
-            accessible-role: tab; accessible-item-selected: root.check-only; accessible-checkable: true; accessible-checked: root.check-only;
-            clicked => { root.changed(true); }
-        }
-    }
 }

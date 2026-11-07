@@ -1,149 +1,100 @@
-//! One enablement predicate per action, shared by view projection and action boundaries.
+//! Single action predicates shared by menus, buttons and controller boundaries.
 use super::*;
 impl DesktopController {
+    pub(super) fn locked(&self) -> bool {
+        let r = self.runtime.borrow();
+        r.quit || r.quitting
+    }
+    /// All input sources use this predicate again when committing paths.
+    pub fn inputs_enabled(&self) -> bool {
+        !self.locked() && self.runtime.borrow().batch.state() != State::Removing
+    }
+    pub(super) fn can_destination(&self) -> bool {
+        !self.locked()
+            && matches!(
+                self.runtime.borrow().batch.state(),
+                State::Empty | State::Checking | State::Ready
+            )
+    }
+    pub(super) fn can_reset(&self) -> bool {
+        !self.locked()
+            && !matches!(
+                self.runtime.borrow().batch.state(),
+                State::Empty | State::Removing
+            )
+    }
     pub(super) fn can_start(&self) -> bool {
-        let s = self.session.borrow();
-        !s.state.selection.is_empty() && s.admission_error().is_none()
+        if self.locked() {
+            return false;
+        }
+        let r = self.runtime.borrow();
+        !r.batch.inputs.is_empty()
+            && matches!(
+                r.batch.state(),
+                State::Checking | State::Ready | State::Stopped
+            )
+            && !r
+                .batch
+                .check
+                .as_ref()
+                .filter(|s| s.settled())
+                .and_then(|s| s.report.as_ref())
+                .and_then(|h| {
+                    h.with_report(|report| {
+                        report
+                            .summary()
+                            .and_then(|s| s.run_error.value())
+                            .is_some_and(|e| {
+                                matches!(
+                                    e.code.as_str(),
+                                    "NO_INPUTS" | "INPUT_LIMIT_EXCEEDED" | "OUTPUT_OVERLAP"
+                                ) || (e.code == "INPUT_ADMISSION_FAILED"
+                                    && report.items().is_empty())
+                            })
+                    })
+                })
+                .unwrap_or(false)
     }
     pub(super) fn can_stop(&self) -> bool {
-        self.inputs_enabled()
+        !self.locked()
             && self
-                .session
+                .runtime
                 .borrow()
                 .active
                 .as_ref()
-                .is_some_and(|active| active.stop == state::Stop::Running)
+                .is_some_and(|a| a.kind == Kind::Create && a.stop_at.is_none())
     }
-    pub(super) fn can_force(&self) -> bool {
-        self.inputs_enabled()
-            && self
-                .session
-                .borrow()
-                .active
-                .as_ref()
-                .is_some_and(|active| active.stop.can_force(now_ms()))
-    }
-    pub(super) fn can_review(&self) -> bool {
-        self.inputs_enabled()
-            && self.session.borrow().selected_entry().is_some_and(|entry| {
-                completion_state(entry).is_some() || entry.launch_error.is_some()
+    pub(super) fn can_quit_now(&self) -> bool {
+        let r = self.runtime.borrow();
+        r.quit
+            && r.quitting
+            && r.active.as_ref().is_some_and(|a| {
+                a.stop_at
+                    .is_some_and(|at| now_ms().saturating_sub(at) >= 5000)
             })
     }
-    pub(super) fn can_convert_check(&self) -> bool {
-        self.can_review()
-            && self
-                .session
-                .borrow()
-                .selected_entry()
-                .is_some_and(can_create)
+    /// Reveal actions require an earlier verified create receipt.
+    pub fn can_show_copy(&self) -> bool {
+        !self.locked() && self.selected_copy().is_some()
     }
-    pub(super) fn can_save_report(&self) -> bool {
-        self.inputs_enabled() && self.pending_save.borrow().is_none() && {
-            let s = self.session.borrow();
-            s.export.is_none()
-                && s.selected_entry()
-                    .and_then(|entry| entry.completion.as_ref())
-                    .is_some_and(|completion| !completion.jsonl.is_empty())
-        }
+    /// Originals use the selected native operand without publication qualification.
+    pub fn can_show_original(&self) -> bool {
+        !self.locked() && self.selected_original().is_some()
     }
-    pub(super) fn can_filter(&self) -> bool {
-        self.inputs_enabled()
-            && self
-                .session
-                .borrow()
-                .selected_entry()
-                .is_some_and(|entry| entry.report.is_some())
+    /// Output roots are available only for settled creates.
+    pub fn can_show_output(&self) -> bool {
+        !self.locked()
+            && matches!(
+                self.runtime.borrow().batch.state(),
+                State::Done | State::Stopped
+            )
+            && !self.output_roots().is_empty()
     }
-    pub(super) fn can_details(&self) -> bool {
-        self.inputs_enabled()
-            && self
-                .session
-                .borrow()
-                .selected_entry()
-                .is_some_and(|entry| entry.presentation.selected.is_some())
-    }
-    pub(super) fn can_sort(&self) -> bool {
-        self.inputs_enabled()
-            && self
-                .session
-                .borrow()
-                .selected_entry()
-                .is_some_and(|entry| entry.report.is_some())
-    }
-    fn main_open_pending(&self) -> bool {
-        self.open_jobs
-            .borrow()
-            .iter()
-            .any(|job| job.target == OpenTarget::Main)
-    }
-    pub(super) fn can_show_output(&self) -> bool {
-        self.inputs_enabled() && !self.main_open_pending() && !self.output_roots().is_empty()
-    }
-    pub(super) fn can_show_copy(&self) -> bool {
-        self.inputs_enabled() && !self.main_open_pending() && self.selected_copy().is_some()
-    }
-    pub(super) fn can_show_original(&self) -> bool {
-        self.inputs_enabled() && !self.main_open_pending() && self.selected_original().is_some()
-    }
-    pub(super) fn can_copy_path(&self, destination: bool) -> bool {
-        self.inputs_enabled()
-            && self
-                .selected_path(destination)
-                .is_some_and(|path| path.to_str().is_some())
-    }
-    /// Native clipboard text is never reconstructed from escaped display wording.
-    pub fn clipboard_text(&self, destination: bool) -> Option<String> {
-        if !self.can_copy_path(destination) {
-            return None;
-        }
-        self.selected_path(destination)?
-            .into_os_string()
-            .into_string()
-            .ok()
-    }
-    pub(super) fn can_show_report(&self) -> bool {
-        self.inputs_enabled() && !self.main_open_pending() && self.saved_report_path().is_some()
-    }
-    fn focused_text(&self) -> Option<i_slint_core::item_tree::ItemRc> {
-        let item = i_slint_core::window::WindowInner::from_pub(self.ui.window())
-            .focus_item
-            .borrow()
-            .upgrade()?;
-        item.downcast::<i_slint_core::items::TextInput>()
-            .map(|_| item)
-    }
-    pub(super) fn update_text_actions(&self) {
-        let text = self.focused_text().is_some() && self.inputs_enabled();
-        self.ui.set_can_select_all(text);
-        self.ui
-            .set_can_copy_menu(self.inputs_enabled() && (text || self.can_copy_path(false)));
-    }
-    pub(super) fn copy_context(&self) {
-        if !self.inputs_enabled() {
-            return;
-        }
-        if let Some(item) = self.focused_text() {
-            if let Some(text) = item.downcast::<i_slint_core::items::TextInput>() {
-                text.as_pin_ref().copy(
-                    &i_slint_core::window::WindowInner::from_pub(self.ui.window()).window_adapter(),
-                    &item,
-                );
-            }
-        } else if self.can_copy_path(false) {
-            self.ui.invoke_copy_source_path();
-        }
-    }
-    pub(super) fn select_all_text(&self) {
-        if !self.inputs_enabled() {
-            return;
-        }
-        if let Some(item) = self.focused_text()
-            && let Some(text) = item.downcast::<i_slint_core::items::TextInput>()
-        {
-            text.as_pin_ref().select_all(
-                &i_slint_core::window::WindowInner::from_pub(self.ui.window()).window_adapter(),
-                &item,
-            );
-        }
+    /// Only settled streams can be captured, with one pending save lifetime.
+    pub fn can_save_report(&self) -> bool {
+        !self.locked()
+            && self.pending_save.borrow().is_none()
+            && self.runtime.borrow().export.is_none()
+            && self.settled_bytes().is_some()
     }
 }

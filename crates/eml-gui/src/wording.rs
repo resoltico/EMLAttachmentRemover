@@ -1,477 +1,317 @@
-//! GUI-owned wording for typed outcomes. CLI vocabulary is used only in technical details.
-#[expect(
-    dead_code,
-    reason = "One-list wording is staged until the WP5 controller cutover"
-)]
-pub(crate) mod batch;
-use crate::state::Tally;
-use eml_core::{
-    ErrorCode, RunMode,
-    vocabulary::{MeaningKind, RunStatus},
+//! One-list product language; protocol diagnostics remain verbatim in exports.
+use crate::{
+    present::Row,
+    state::{Batch, Kind, State},
 };
-
-#[derive(Clone, Copy)]
-pub(super) struct Words {
-    pub verdict: &'static str,
-    pub headline: &'static str,
-    pub guidance: &'static str,
+use eml_core::{ErrorCode, vocabulary::MeaningKind};
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Status {
+    Ready,
+    None,
+    Comparison,
+    Saved,
+    AsIs,
+    Existing,
+    NeedsChecking,
+    Unknown,
+    Failed,
+    Waiting,
+    Stopped,
+    Missing,
 }
-const fn words(verdict: &'static str, headline: &'static str, guidance: &'static str) -> Words {
-    // Byte length is a conservative compile-time bound on character length.
-    assert!(!verdict.is_empty() && verdict.len() <= 28);
-    assert!(!headline.is_empty());
-    Words {
-        verdict,
-        headline,
-        guidance,
+pub(crate) fn status(kind: MeaningKind, code: Option<ErrorCode>, removed: usize) -> Status {
+    use MeaningKind::*;
+    match kind {
+        Prepared => {
+            if removed > 0 {
+                Status::Ready
+            } else {
+                Status::None
+            }
+        }
+        Comparison => Status::Comparison,
+        Created => {
+            if removed > 0 {
+                Status::Saved
+            } else {
+                Status::AsIs
+            }
+        }
+        ExistingVerified => Status::Existing,
+        PublishedIncomplete | ExistingMatched => Status::NeedsChecking,
+        PublicationUncertain | Unestablished => Status::Unknown,
+        NotPublished if code == Some(ErrorCode::Interrupted) => Status::Stopped,
+        NotPublished => Status::Failed,
     }
 }
-pub(super) fn failure(code: ErrorCode) -> Words {
+pub(crate) fn label(status: Status, code: Option<ErrorCode>) -> &'static str {
+    match status {
+        Status::Ready => "Ready",
+        Status::None => "No attachments",
+        Status::Comparison => "Copy exists, will verify",
+        Status::Saved => "Copy saved",
+        Status::AsIs => "Copied as is",
+        Status::Existing => "Copy already exists",
+        Status::NeedsChecking => "Saved, needs checking",
+        Status::Unknown => "Result unknown",
+        Status::Waiting => "Waiting",
+        Status::Stopped => "Not processed",
+        Status::Missing => "No longer found",
+        Status::Failed => failure(code).0,
+    }
+}
+pub(crate) fn tone(status: Status) -> i32 {
+    match status {
+        Status::Ready => 1,
+        Status::Saved | Status::AsIs | Status::Existing => 2,
+        Status::NeedsChecking | Status::Unknown => 3,
+        Status::Failed => 4,
+        _ => 0,
+    }
+}
+pub(crate) fn detail(status: Status, code: Option<ErrorCode>) -> &'static str {
+    match status {
+        Status::Ready => "These will be removed from the copy:",
+        Status::None | Status::AsIs => "Nothing to remove. The copy keeps the whole message.",
+        Status::Comparison => {
+            "A copy with this name already exists. It will be checked, never replaced."
+        }
+        Status::Saved => "Copy saved. Removed:",
+        Status::Existing => "An identical copy already exists. Nothing was written.",
+        Status::Waiting => "Waiting to be copied.",
+        Status::Stopped => "Not copied because the batch was stopped. Continue to finish it.",
+        Status::Missing => "This file was no longer there when the copies were made.",
+        Status::Unknown => {
+            "The app couldn’t confirm whether a copy was written. Check the save folder, then try again. Existing copies are never replaced."
+        }
+        Status::NeedsChecking => {
+            "The copy was written, but the final checks didn’t complete. Check the save folder, then use Continue or try again. Existing copies are never replaced."
+        }
+        Status::Failed => failure(code).1,
+    }
+}
+fn failure(code: Option<ErrorCode>) -> (&'static str, &'static str) {
     use ErrorCode::*;
     match code {
-        ReadFailed => {
-            const {
-                words(
-                    "Can't read file",
-                    "A file or folder could not be read",
-                    "Check that it still exists and that you have permission to read it.",
-                )
-            }
-        }
-        SourceNotRegular => {
-            const {
-                words(
-                    "Not a file",
-                    "This is not a regular file",
-                    "Add the email file itself.",
-                )
-            }
-        }
-        SourceChanged => {
-            const {
-                words(
-                    "Changed during run",
-                    "The source file changed during the run",
-                    "Run again when nothing else is writing to it.",
-                )
-            }
-        }
-        Malformed => {
-            const {
-                words(
-                    "Damaged message",
-                    "The message is not valid email",
-                    "Export it again from your mail app.",
-                )
-            }
-        }
-        LimitExceeded => {
-            const {
-                words(
-                    "Too large or complex",
-                    "The message exceeds the supported size or structure",
-                    "Export a smaller or simpler message. Messages above 256 MiB cannot be processed.",
-                )
-            }
-        }
-        Protected => {
-            const {
-                words(
-                    "Signed or encrypted",
-                    "Not copied — signed or encrypted message",
-                    "Export an unsigned, decrypted copy from your mail app, then add it again.",
-                )
-            }
-        }
-        UnsupportedMime => {
-            const {
-                words(
-                    "Unsupported format",
-                    "This format cannot be safely reduced",
-                    "The original is unchanged.",
-                )
-            }
-        }
-        NoBody => {
-            const {
-                words(
-                    "No message text",
-                    "There is no supported message text to keep",
-                    "Add an email containing a plain-text or HTML body.",
-                )
-            }
-        }
-        Internal => {
-            const {
-                words(
-                    "Verification failed",
-                    "The copy did not pass verification, so it was not kept",
-                    "Please report this with the saved report.",
-                )
-            }
-        }
-        InputAdmissionFailed => {
-            const {
-                words(
-                    "Can't open",
-                    "A selected file or folder could not be opened",
-                    "Check that it still exists and that you have permission to read it.",
-                )
-            }
-        }
-        InputLimitExceeded => {
-            const {
-                words(
-                    "Too many files",
-                    "The search reached the supported limit",
-                    "Split the folders into smaller requests, with at most 4,096 messages each.",
-                )
-            }
-        }
-        NoInputs => const { words("No emails found", "No .eml files were found", "") },
-        OutputOverlap => {
-            const {
-                words(
-                    "Folders overlap",
-                    "The source and destination folders overlap",
-                    "Choose a separate destination that neither contains nor sits inside a selected folder.",
-                )
-            }
-        }
-        DestinationCollision => {
-            const {
-                words(
-                    "Name conflict",
-                    "Copies would share the same destination name",
-                    "Process the messages into separate destination folders.",
-                )
-            }
-        }
-        DestinationExists => {
-            const {
-                words(
-                    "Name conflict",
-                    "A different file already uses the copy's name",
-                    "Rename or move that file, or choose another destination, then run again.",
-                )
-            }
-        }
-        SourceDestinationAlias => {
-            const {
-                words(
-                    "Same file",
-                    "The copy would be written over an original",
-                    "Choose another destination.",
-                )
-            }
-        }
-        DestinationUnsupported => {
-            const {
-                words(
-                    "Can't write there",
-                    "The destination does not support safe copies",
-                    "Choose another folder.",
-                )
-            }
-        }
-        BindFailed => {
-            const {
-                words(
-                    "Folder unavailable",
-                    "A required file or folder became unavailable",
-                    "Check the source and destination folders, reconnect any removed disk, then run again.",
-                )
-            }
-        }
-        StageFailed | WriteFailed => {
-            const {
-                words(
-                    "Couldn't write",
-                    "The copy could not be written",
-                    "Check free space and permissions, or choose another folder.",
-                )
-            }
-        }
-        FileSyncFailed | NamespaceSyncFailed => {
-            const {
-                words(
-                    "Couldn't save to disk",
-                    "The copy could not be confirmed on disk",
-                    "Check the disk, then run again.",
-                )
-            }
-        }
-        AddressChanged => {
-            const {
-                words(
-                    "Folder changed",
-                    "The destination changed during the run",
-                    "Check the destination, then run again.",
-                )
-            }
-        }
-        AddressUnverified => {
-            const {
-                words(
-                    "Folder unverified",
-                    "The destination could not be confirmed",
-                    "Check the destination, then run again.",
-                )
-            }
-        }
-        CleanupFailed => {
-            const {
-                words(
-                    "Leftover temporary file",
-                    "A temporary file could not be removed",
-                    "After all runs have finished or stopped, inspect the file named in Technical Details before removing it.",
-                )
-            }
-        }
-        ExistingSyncFailed => {
-            const {
-                words(
-                    "Existing copy unverified",
-                    "An existing copy could not be confirmed on disk",
-                    "Check the disk, then run again.",
-                )
-            }
-        }
-        Interrupted => {
-            const {
-                words(
-                    "Stopped",
-                    "Stopped before this message finished",
-                    "Use Continue… to process the remaining messages.",
-                )
-            }
-        }
-        OutputFailed => {
-            const {
-                words(
-                    "Report problem",
-                    "Some results could not be delivered",
-                    "Save Report keeps what was received. Check the destination before running again.",
-                )
-            }
-        }
-    }
-}
-pub(super) fn meaning(kind: MeaningKind) -> Words {
-    match kind {
-        MeaningKind::Created => const { words("Created", "Copy created", "") },
-        MeaningKind::ExistingVerified => {
-            const {
-                words(
-                    "Already up to date",
-                    "An identical copy already exists",
-                    "Nothing was written.",
-                )
-            }
-        }
-        // Matching bytes alone do not establish address/durability qualification.
-        MeaningKind::ExistingMatched => {
-            const {
-                words(
-                    "Copy needs verification",
-                    "A matching copy could not be fully verified",
-                    "Check the destination, then run again to verify the copy. Existing copies are never replaced.",
-                )
-            }
-        }
-        MeaningKind::Prepared => {
-            const {
-                words(
-                    "Ready to copy",
-                    "Can be copied",
-                    "Start Create Copies to write it.",
-                )
-            }
-        }
-        MeaningKind::Comparison => {
-            const {
-                words(
-                    "Copy exists — will verify",
-                    "A copy with this name already exists",
-                    "It will be verified when copies are created.",
-                )
-            }
-        }
-        MeaningKind::PublishedIncomplete => {
-            const {
-                words(
-                    "Created — check folder",
-                    "Copy created, but final checks did not finish",
-                    "The copy is complete. Check that it exists in the destination, then run again to verify it.",
-                )
-            }
-        }
-        MeaningKind::PublicationUncertain | MeaningKind::Unestablished => {
-            const {
-                words(
-                    "Unknown result",
-                    "Could not confirm whether a copy was written",
-                    "Check the destination, then run again. Existing copies are verified, never replaced.",
-                )
-            }
-        }
-        MeaningKind::NotPublished => {
-            const {
-                words(
-                    "Not copied",
-                    "No copy was written",
-                    "See Technical Details and save the report if you need help.",
-                )
-            }
-        }
-    }
-}
-pub(super) struct ItemWords {
-    pub verdict: String,
-    pub headline: &'static str,
-    pub guidance: &'static str,
-}
-pub(super) fn outcome(kind: MeaningKind, error: Option<ErrorCode>, removed: usize) -> ItemWords {
-    let mut value = meaning(kind);
-    if kind == MeaningKind::NotPublished
-        && let Some(error) = error
-    {
-        value = failure(error);
-    }
-    if kind == MeaningKind::PublishedIncomplete
-        && let Some(error) = error
-    {
-        value.guidance = failure(error).guidance;
-    }
-    if kind == MeaningKind::ExistingMatched && error == Some(ErrorCode::Interrupted) {
-        value = failure(ErrorCode::Interrupted);
-    }
-    let verdict = match kind {
-        MeaningKind::Created => format!("Created · {removed} removed"),
-        MeaningKind::Prepared => format!("Ready · {removed} to remove"),
-        MeaningKind::Comparison
-        | MeaningKind::ExistingVerified
-        | MeaningKind::ExistingMatched
-        | MeaningKind::PublishedIncomplete
-        | MeaningKind::PublicationUncertain
-        | MeaningKind::NotPublished
-        | MeaningKind::Unestablished => value.verdict.into(),
-    };
-    ItemWords {
-        verdict,
-        headline: value.headline,
-        guidance: value.guidance,
-    }
-}
-pub(super) fn phase(status: RunStatus) -> &'static str {
-    match status {
-        RunStatus::Queued => "Waiting",
-        RunStatus::Checking => "Checking",
-        RunStatus::Creating => "Creating copies",
-        RunStatus::Completed => "Done",
-        RunStatus::CompletedWithFailures => "Finished",
-        RunStatus::Stopped => "Stopped",
-        RunStatus::StoppedBeforeStart => "Stopped before start",
-        RunStatus::ForceStopped => "Force stopped",
-        RunStatus::RequestRefused | RunStatus::IdentityFailure | RunStatus::StartFailed => {
-            "Couldn’t start"
-        }
-        RunStatus::Incomplete => "Couldn’t finish",
-        RunStatus::StopRequested | RunStatus::ForceStopRequested => "Stopping…",
-    }
-}
-pub(super) fn run_title(
-    id: impl std::fmt::Display,
-    status: RunStatus,
-    mode: RunMode,
-    tally: Tally,
-    total: Option<u32>,
-) -> String {
-    let verdict = match status {
-        RunStatus::Queued => "Waiting".into(),
-        RunStatus::Checking => "Checking…".into(),
-        RunStatus::Creating => "Creating copies…".into(),
-        RunStatus::Completed if mode == RunMode::DryRun => format!(
-            "Done — {} {} checked, no problems",
-            tally.checked,
-            if tally.checked == 1 {
-                "message"
-            } else {
-                "messages"
-            }
+        Some(Malformed) => (
+            "Not a valid email",
+            "This file isn’t a valid email, so no copy can be made. Export it again from your mail app and add the new file.",
         ),
-        RunStatus::Completed if tally.created > 0 => format!(
-            "Done — {} {} created",
-            tally.created,
-            if tally.created == 1 { "copy" } else { "copies" }
+        Some(NoBody) => (
+            "No text to keep",
+            "This email has no plain-text or HTML body, so a copy would be empty.",
         ),
-        RunStatus::Completed => format!("Done — {} already up to date", tally.up_to_date),
-        RunStatus::CompletedWithFailures if tally.attention > 0 => {
-            format!("Finished — {}", attention_count(tally.attention))
-        }
-        RunStatus::CompletedWithFailures => "Couldn’t finish".into(),
-        RunStatus::Stopped | RunStatus::StoppedBeforeStart => total.map_or_else(
-            || "Stopped before messages were found".into(),
-            |total| format!("Stopped — {} of {total} processed", tally.processed),
+        Some(Protected) => (
+            "Protected content",
+            "This email contains signed or encrypted content that can’t be changed safely.",
         ),
-        RunStatus::ForceStopped => "Force stopped — report may be incomplete".into(),
-        RunStatus::RequestRefused | RunStatus::StartFailed | RunStatus::IdentityFailure => {
-            "Couldn’t start".into()
-        }
-        RunStatus::Incomplete => "Couldn’t finish".into(),
-        RunStatus::StopRequested | RunStatus::ForceStopRequested => "Stopping…".into(),
-    };
-    format!("Run {id} · {verdict}")
+        Some(UnsupportedMime) => (
+            "Unsupported format",
+            "This email uses a structure the app doesn’t support.",
+        ),
+        Some(LimitExceeded) => (
+            "Too large or complex",
+            "This email is larger or more deeply nested than the app supports (256 MB maximum).",
+        ),
+        Some(ReadFailed | BindFailed) => (
+            "Can’t be read",
+            "The file couldn’t be read. Check that it still exists and that you have permission to open it.",
+        ),
+        Some(SourceNotRegular) => (
+            "Not a file",
+            "This isn’t a regular file. Add the email file itself.",
+        ),
+        Some(SourceChanged) => (
+            "Changed while reading",
+            "The file changed while it was being read. Try again when nothing else is using it.",
+        ),
+        Some(DestinationExists) => (
+            "Name already taken",
+            "A different file already has the copy’s name. Move it or choose another save folder.",
+        ),
+        Some(DestinationCollision) => (
+            "Duplicate copy name",
+            "Two emails would get the same copy name. Choose a save folder, or keep copies next to the originals.",
+        ),
+        Some(SourceDestinationAlias) => (
+            "Would overwrite original",
+            "The copy would replace an original, so it was skipped.",
+        ),
+        Some(DestinationUnsupported) => (
+            "Folder not supported",
+            "The save folder doesn’t support safe copying. Choose another folder.",
+        ),
+        Some(StageFailed | WriteFailed) => (
+            "Couldn’t save copy",
+            "The copy couldn’t be written. Check free space and permissions in the save folder.",
+        ),
+        Some(Internal) => (
+            "Couldn’t copy",
+            "An internal check failed, so no copy was made. Save Report… and send it with a bug report.",
+        ),
+        _ => (
+            "Couldn’t copy",
+            "No copy was made. Use Copy Details for more information.",
+        ),
+    }
 }
-fn attention_count(count: u32) -> String {
-    format!(
-        "{count} {} attention",
-        if count == 1 { "needs" } else { "need" }
-    )
+pub(crate) fn size(bytes: u64) -> String {
+    if bytes < 1000 {
+        return format!("{bytes} B");
+    }
+    for (scale, unit) in [(1_000_000_000, "GB"), (1_000_000, "MB"), (1000, "kB")] {
+        if bytes >= scale {
+            return format!("{:.1} {unit}", bytes as f64 / scale as f64);
+        }
+    }
+    unreachable!()
+}
+pub(crate) fn plural(n: usize, one: &str, many: &str) -> String {
+    format!("{n} {}", if n == 1 { one } else { many })
+}
+pub(crate) fn banner(code: &str) -> &'static str {
+    match code {
+        "NO_INPUTS" => "No .eml files were found in what you added. Add other files or folders.",
+        "INPUT_LIMIT_EXCEEDED" => {
+            "Too many files. Up to 4,096 emails can be processed at once. Add fewer folders."
+        }
+        "OUTPUT_OVERLAP" => {
+            "The save folder is inside a folder you added. Choose a different save folder."
+        }
+        "INPUT_ADMISSION_FAILED" => {
+            "Some items you added can’t be opened. Check that they still exist, then Start Over."
+        }
+        "OUTPUT_FAILED" => {
+            "The copy process stopped while reporting results. Save Report… and try again."
+        }
+        "launch" => "The copy process couldn’t start. Reinstall the app if this keeps happening.",
+        _ => {
+            "The copy process stopped unexpectedly. Results shown may be incomplete. Save Report… for details."
+        }
+    }
 }
 
-pub(super) fn sidebar(
-    status: RunStatus,
-    mode: RunMode,
-    tally: Tally,
-    total: Option<u32>,
-) -> String {
-    match status {
-        RunStatus::Queued => "Waiting".into(),
-        RunStatus::Checking | RunStatus::Creating => total.map_or_else(
-            || "Finding messages…".into(),
-            |total| format!("{} of {total}", tally.processed),
-        ),
-        RunStatus::StopRequested | RunStatus::ForceStopRequested => "Stopping…".into(),
-        RunStatus::Stopped | RunStatus::StoppedBeforeStart => total.map_or_else(
-            || "Stopped before processing".into(),
-            |total| format!("Stopped · {} of {total} processed", tally.processed),
-        ),
-        RunStatus::ForceStopped => "Force stopped · may be incomplete".into(),
-        RunStatus::RequestRefused | RunStatus::IdentityFailure | RunStatus::StartFailed => {
-            "Couldn’t start".into()
-        }
-        RunStatus::Incomplete => "Couldn’t finish".into(),
-        RunStatus::Completed | RunStatus::CompletedWithFailures => {
-            let good = if mode == RunMode::DryRun {
-                format!("{} checked", tally.checked)
-            } else if tally.created > 0 {
-                format!("{} created", tally.created)
+pub(super) struct Header {
+    pub title: String,
+    pub summary: String,
+    pub problems: String,
+}
+pub(super) fn header(batch: &Batch, rows: &[Row]) -> Header {
+    let count = |s| rows.iter().filter(|row| row.status == s).count();
+    let problems = rows.iter().filter(|row| row.problem()).count();
+    let has_warn = rows.iter().any(|row| tone(row.status) == 3);
+    let pill = if problems == 0 {
+        String::new()
+    } else if has_warn {
+        format!("{} attention", plural(problems, "needs", "need"))
+    } else {
+        format!("{problems} can’t be copied")
+    };
+    let saved = count(Status::Saved) + count(Status::AsIs);
+    let total = batch
+        .slot(if batch.create.is_some() {
+            Kind::Create
+        } else {
+            Kind::Check
+        })
+        .and_then(|slot| slot.report.as_ref())
+        .and_then(|handle| handle.with_report(|r| r.start().map(|s| s.total)))
+        .flatten();
+    let attachments: usize = rows
+        .iter()
+        .filter(|row| matches!(row.status, Status::Ready | Status::Saved))
+        .map(|row| row.item.removed.len())
+        .sum();
+    let removed: u64 = rows
+        .iter()
+        .filter(|row| matches!(row.status, Status::Ready | Status::Saved))
+        .filter_map(|row| {
+            Some(
+                row.item
+                    .source_bytes
+                    .value()?
+                    .saturating_sub(*row.item.copy_bytes.value()?),
+            )
+        })
+        .sum();
+    let (title, parts) = match batch.state() {
+        State::Empty => (String::new(), vec![]),
+        State::Checking => (
+            if total.is_none() {
+                "Looking for emails…"
             } else {
-                format!("{} up to date", tally.up_to_date)
-            };
-            if tally.attention > 0 {
-                if tally.created + tally.up_to_date + tally.checked == 0 {
-                    attention_count(tally.attention)
-                } else {
-                    format!("{good} · {}", attention_count(tally.attention))
-                }
-            } else {
-                good
+                "Checking emails…"
             }
-        }
+            .into(),
+            total
+                .map(|n| {
+                    vec![
+                        format!("{} of {n} checked", rows.len()),
+                        "nothing is written yet".into(),
+                    ]
+                })
+                .unwrap_or_default(),
+        ),
+        State::Ready => (
+            plural(rows.len(), "email", "emails"),
+            if attachments == 0 {
+                vec!["No attachments to remove".into()]
+            } else {
+                vec![
+                    plural(attachments, "attachment", "attachments"),
+                    format!("{} will be removed", size(removed)),
+                ]
+            },
+        ),
+        State::Removing => (
+            "Removing attachments…".into(),
+            vec![
+                format!(
+                    "{} of {} done",
+                    rows.iter().filter(|r| r.status != Status::Waiting).count(),
+                    total.unwrap_or(0)
+                ),
+                "your originals are not changed".into(),
+            ],
+        ),
+        State::Stopped => (
+            "Stopped".into(),
+            vec![
+                plural(saved, "copy saved", "copies saved"),
+                format!("{} not processed", count(Status::Stopped)),
+            ],
+        ),
+        State::Done => (
+            if saved == 0 && problems > 0 {
+                "No copies saved".into()
+            } else {
+                plural(saved, "copy saved", "copies saved")
+            },
+            {
+                let mut parts = Vec::new();
+                if removed > 0 {
+                    parts.push(format!("{} removed", size(removed)));
+                }
+                for (n, phrase) in [
+                    (count(Status::AsIs), "copied as is"),
+                    (count(Status::Existing), "already existed"),
+                    (count(Status::Missing), "no longer found"),
+                ] {
+                    if n > 0 {
+                        parts.push(format!("{n} {phrase}"));
+                    }
+                }
+                parts
+            },
+        ),
+    };
+    Header {
+        title,
+        summary: parts.join(" · "),
+        problems: pill,
     }
 }
+
 pub(super) fn estimate(seconds: Option<u64>) -> String {
     match seconds {
         None => "Estimating time…".into(),
@@ -488,143 +328,86 @@ pub(super) fn estimate(seconds: Option<u64>) -> String {
     }
 }
 
-pub(super) fn queue_error(error: &eml_app::QueueError) -> String {
-    use eml_app::QueueError;
-    match error {
-        QueueError::AbsoluteSelectionRequired => "Add one or more email files or folders.".into(),
-        QueueError::InvalidRequest(error) => {
-            format!("Couldn’t add these files or folders: {error}")
-        }
-        QueueError::RequestEncoding => {
-            "Too many or overly long paths. Add fewer files or folders.".into()
-        }
-        QueueError::Full => format!(
-            "{} runs are already waiting. Remove one from the queue to add another.",
-            eml_app::MAX_WAITING_REQUESTS
-        ),
-        QueueError::StoredBytesFull | QueueError::SessionFull => {
-            "Close a finished run to add more".into()
-        }
-        QueueError::MemoryReportsFull => "Waiting for space — close a finished run".into(),
-        QueueError::InactiveRun => "This run is no longer active.".into(),
-        QueueError::IdentityLimit => {
-            "Save the reports you need and restart the app to add more runs.".into()
-        }
-        QueueError::ShuttingDown => "The app is closing.".into(),
-        QueueError::DecisionPending => "Finish or cancel the current decision first.".into(),
-        QueueError::DestinationUnavailable => "Choose an existing folder to save copies".into(),
-    }
+pub(super) fn controls() -> crate::AppWords {
+    crate::AppWords {
+    add_files: "Add Files…".into(),
+    add_folder: "Add Folder…".into(),
+    start_over: "Start Over".into(),
+    empty_title: "Drop emails or folders here".into(),
+    empty_body: "Each .eml file gets a copy without its attachments. Message text is kept and your originals are never changed.".into(),
+    email: "Emails".into(),
+    attachments: "Attachments".into(),
+    size: "Size".into(),
+    status: "Status".into(),
+    show_copy: "Show Copy".into(),
+    show_original: "Show Original".into(),
+    copy_details: "Copy Details".into(),
+    save_copies: "Save copies".into(),
+    next_to: "Next to originals".into(),
+    choose_folder: "Choose Folder…".into(),
+    destination_hint: "as name.no-attachments.eml · never overwrites".into(),
+    stop: "Stop".into(),
+    stopping: "Stopping…".into(),
+    show_output: crate::platform::file_manager_label().into(),
+    file: "File".into(),
+    edit: "Edit".into(),
+    batch: "Batch".into(),
+    window: "Window".into(),
+    help: "Help".into(),
+    save_report: "Save Report…".into(),
+    close: "Close Window".into(),
+    copy: "Copy".into(),
+    problems_only: "Show Problems Only".into(),
+    minimize: "Minimize".into(),
+    website: "Project Website".into(),
+    licenses: "Licenses".into(),
+    about: "About".into(),
+    quit_title: "Stop and quit?".into(),
+    quit_body: "Copies already saved are kept. Your originals are not changed.".into(),
+    export_body: "A report is still being saved. The app quits when it finishes.".into(),
+    cancel: "Cancel".into(),
+    stop_quit: "Stop and Quit".into(),
+    quit_now: "Quit Now".into(),
+}
 }
 
-pub(super) fn force_notice(id: impl std::fmt::Display) -> String {
+pub(super) const BUSY_ADDING: &str = "Wait for this batch to finish before adding more emails.";
+pub(super) const DESTINATION_UNAVAILABLE: &str = "Choose an existing folder to save copies.";
+pub(super) const NEXT_TO: &str = "Next to originals";
+pub(super) const ABSOLUTE_REPORT: &str = "Choose an absolute report path.";
+pub(super) const REPORT_SAVED: &str = "Report saved.";
+pub(super) const EXPORT_FAILED: &str = "The report writer did not complete.";
+pub(super) fn report_failed(reason: &str) -> String {
+    format!("Couldn’t save the report. {reason}")
+}
+pub(super) fn primary(state: State) -> &'static str {
+    if state == State::Stopped {
+        "Continue"
+    } else {
+        "Remove Attachments"
+    }
+}
+pub(super) fn footer(state: State) -> &'static str {
+    match state {
+        State::Stopped => "Continue skips the copies that already exist.",
+        State::Done => "Your originals are unchanged. Drop more emails to start a new batch.",
+        _ => "",
+    }
+}
+pub(super) fn progress(done: usize, total: u32, remaining: Option<u64>) -> String {
+    format!("{done} of {total} done · {}", estimate(remaining))
+}
+pub(super) fn attachment(part: &eml_protocol::records::RemovedRecord) -> String {
+    use eml_protocol::records::Removal;
+    let kind = match part.reason {
+        Removal::RelatedResource => "Inline image",
+        Removal::NonBodyPart if part.content_type == "text/calendar" => "Calendar invite",
+        Removal::NonBodyPart => "Other content",
+        Removal::Attachment => "Attachment",
+    };
     format!(
-        "Run {id}\n\nStops this run immediately. Waiting runs continue normally. Completed copies stay in place, but some results may be unknown. Check the destination before continuing.\n\nA temporary file may remain. Inspect any such file only after all runs have finished or stopped."
+        "{} · {kind} · {}",
+        eml_protocol::DisplayText::new(part.filename.value().unwrap_or(&part.content_type)),
+        size(part.bytes)
     )
-}
-
-#[cfg(test)]
-mod contracts {
-    use super::*;
-    #[test]
-    fn s12_every_known_code_kind_and_status_has_complete_bounded_gui_wording() {
-        // Necessary displayed limit copies remain checked against their owners.
-        assert_eq!(eml_core::MAX_MESSAGE_BYTES, 256 * 1024 * 1024);
-        assert_eq!(eml_core::MAX_COLLECTED_ITEMS, 4096);
-        for code in ErrorCode::ALL {
-            let words = failure(*code);
-            assert!(
-                !words.verdict.is_empty() && words.verdict.chars().count() <= 28,
-                "{code:?}"
-            );
-            assert!(!words.headline.is_empty());
-            assert!(!words.guidance.is_empty() || *code == ErrorCode::NoInputs);
-        }
-        let kinds = [
-            MeaningKind::Created,
-            MeaningKind::ExistingVerified,
-            MeaningKind::ExistingMatched,
-            MeaningKind::Prepared,
-            MeaningKind::Comparison,
-            MeaningKind::PublishedIncomplete,
-            MeaningKind::PublicationUncertain,
-            MeaningKind::NotPublished,
-            MeaningKind::Unestablished,
-        ];
-        // A count of parts cannot exceed the bounded stream bytes that encoded them.
-        for kind in kinds {
-            for count in [
-                0,
-                1,
-                eml_core::MAX_MESSAGE_PARTS,
-                eml_protocol::MAX_RUN_BYTES,
-            ] {
-                let value = outcome(kind, None, count);
-                assert!(
-                    !value.verdict.is_empty() && value.verdict.chars().count() <= 28,
-                    "{kind:?}, {count}: {}",
-                    value.verdict
-                );
-                assert!(!value.headline.is_empty());
-                assert!(!value.guidance.is_empty() || kind == MeaningKind::Created);
-            }
-        }
-        let statuses = [
-            RunStatus::Queued,
-            RunStatus::Checking,
-            RunStatus::Creating,
-            RunStatus::Completed,
-            RunStatus::CompletedWithFailures,
-            RunStatus::Stopped,
-            RunStatus::StoppedBeforeStart,
-            RunStatus::ForceStopped,
-            RunStatus::RequestRefused,
-            RunStatus::Incomplete,
-            RunStatus::IdentityFailure,
-            RunStatus::StartFailed,
-            RunStatus::StopRequested,
-            RunStatus::ForceStopRequested,
-        ];
-        for status in statuses {
-            assert!(!phase(status).is_empty() && phase(status).chars().count() <= 28);
-            assert!(
-                run_title(3, status, RunMode::Create, Tally::default(), None)
-                    .starts_with("Run 3 · ")
-            );
-            assert!(!sidebar(status, RunMode::Create, Tally::default(), None).is_empty());
-        }
-    }
-    #[test]
-    fn matching_or_uncertain_bytes_never_claim_qualified_success_or_no_publication() {
-        assert_ne!(
-            outcome(
-                MeaningKind::ExistingMatched,
-                Some(ErrorCode::ExistingSyncFailed),
-                0
-            )
-            .verdict,
-            "Already up to date"
-        );
-        for kind in [
-            MeaningKind::PublicationUncertain,
-            MeaningKind::Unestablished,
-        ] {
-            assert_eq!(
-                outcome(kind, Some(ErrorCode::WriteFailed), 0).verdict,
-                "Unknown result"
-            );
-        }
-        assert!(
-            outcome(
-                MeaningKind::PublishedIncomplete,
-                Some(ErrorCode::NamespaceSyncFailed),
-                1
-            )
-            .headline
-            .starts_with("Copy created")
-        );
-        assert_eq!(
-            outcome(MeaningKind::NotPublished, Some(ErrorCode::Interrupted), 0).verdict,
-            "Stopped"
-        );
-    }
 }

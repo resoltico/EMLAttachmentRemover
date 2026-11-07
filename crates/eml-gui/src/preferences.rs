@@ -1,4 +1,4 @@
-//! Recent destination and report folders, preserving unavailable settings files.
+//! Recent destination and report folders, replacing invalid settings on the next save.
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
@@ -12,14 +12,13 @@ struct Settings {
     last_destination: Option<PathBuf>,
     last_report_folder: Option<PathBuf>,
 }
-/// Session destination and its backing file, which is preserved when unavailable.
+/// Recent folder choices and their atomic backing file.
 pub struct Preferences {
     path: PathBuf,
     settings: Settings,
-    unavailable: Option<String>,
 }
 impl Preferences {
-    /// Load defaults when settings cannot be read or decoded, preserving the object.
+    /// Load defaults when settings cannot be read or decoded, silently.
     pub fn load(path: PathBuf) -> Self {
         let loaded = match fs::read(&path) {
             Ok(bytes) => serde_json::from_slice::<Settings>(&bytes)
@@ -53,19 +52,9 @@ impl Preferences {
             }
             Err(error) => Err(error.to_string()),
         };
-        let (settings, unavailable) = match loaded {
-            Ok(settings) => (settings, None),
-            Err(reason) => (
-                Settings::default(),
-                Some(format!(
-                    "Could not load settings; started with the default destination (Beside originals). {reason}"
-                )),
-            ),
-        };
         Self {
             path,
-            settings,
-            unavailable,
+            settings: loaded.unwrap_or_default(),
         }
     }
     /// Platform configuration file; new installs start beside the originals.
@@ -83,14 +72,7 @@ impl Preferences {
     pub fn destination(&self) -> Option<&Path> {
         self.settings.last_destination.as_deref()
     }
-    /// Persistent recovery guidance, including the exact affected path and reason.
-    pub fn warning(&self) -> Option<String> {
-        self.unavailable.as_ref().map(|reason| format!(
-            "Settings unavailable: {}\n{}\nSettings changes apply only to this session and will not be saved. The settings object was preserved. Correct its contents, path or read permissions, or move it aside, then restart to enable saving.",
-            eml_protocol::TerminalPath::new(&self.path), eml_protocol::DisplayText::new(reason)
-        ))
-    }
-    /// Apply the destination in memory; save only while the backing settings are available.
+    /// Apply the destination in memory; save atomically.
     pub fn set_destination(&mut self, destination: Option<PathBuf>) -> io::Result<()> {
         if destination.as_ref().is_some_and(|p| !p.is_absolute()) {
             return Err(io::Error::new(
@@ -106,7 +88,7 @@ impl Preferences {
             self.settings.recent_destinations.truncate(3);
         }
         self.settings.last_destination = destination;
-        self.save_if_available()
+        self.save()
     }
     /// Recent destination folders in most-recent-first order.
     pub fn recent_destinations(&self) -> &[PathBuf] {
@@ -116,7 +98,7 @@ impl Preferences {
     pub fn last_report_folder(&self) -> Option<&Path> {
         self.settings.last_report_folder.as_deref()
     }
-    /// Remember a native report folder without rewriting unavailable settings.
+    /// Remember a native report folder for the next save panel.
     pub fn set_report_folder(&mut self, folder: PathBuf) -> io::Result<()> {
         if !folder.is_absolute() {
             return Err(io::Error::new(
@@ -125,20 +107,7 @@ impl Preferences {
             ));
         }
         self.settings.last_report_folder = Some(folder);
-        self.save_if_available()
-    }
-    fn save_if_available(&mut self) -> io::Result<()> {
-        if self.unavailable.is_some() {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "Settings apply only to this session; settings remain unavailable.",
-            ));
-        }
-        if let Err(error) = self.save() {
-            self.unavailable = Some(error.to_string());
-            return Err(error);
-        }
-        Ok(())
+        self.save()
     }
     fn save(&self) -> io::Result<()> {
         let bytes = serde_json::to_vec_pretty(&self.settings).map_err(io::Error::other)?;

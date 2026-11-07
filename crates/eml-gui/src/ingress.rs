@@ -49,7 +49,7 @@ impl DropBatch {
     }
 }
 
-/// Connect toolkit-native drops, parented rfd dialogs and advisory file-manager actions.
+/// Connect native drops and parented file panels to the same admission boundary.
 #[cfg(feature = "desktop")]
 pub fn install_native(
     controller: &std::rc::Rc<crate::DesktopController>,
@@ -62,260 +62,192 @@ pub fn install_native(
     let ui = controller.window();
     let weak = Rc::downgrade(controller);
     ui.window().on_winit_window_event(move |_, event| {
-        if let Some(controller) = weak.upgrade() {
+        if let Some(c) = weak.upgrade() {
             match event {
-                WindowEvent::HoveredFile(_) => controller.hover_drop(true),
-                WindowEvent::DroppedFile(path) => controller.deliver_drop(path.clone()),
-                WindowEvent::HoveredFileCancelled => controller.cancel_drop(),
+                WindowEvent::HoveredFile(_) => c.hover_drop(true),
+                WindowEvent::DroppedFile(path) => c.deliver_drop(path.clone()),
+                WindowEvent::HoveredFileCancelled => c.cancel_drop(),
                 _ => {}
             }
         }
         EventResult::Propagate
     });
-    let weak = Rc::downgrade(controller);
-    ui.on_choose_files(move || {
-        let Some(controller) = weak.upgrade() else {
-            return;
-        };
-        if !controller.inputs_enabled() {
-            return;
-        }
-        let ui = controller.window();
-        let _ = slint::spawn_local(async move {
-            // rfd needs both native handle traits; keep the winit owner alive.
-            let parent = match ui.window().winit_window().await {
-                Ok(parent) => parent,
-                Err(error) => {
-                    controller.message(&error.to_string());
+    for kind in 0..3 {
+        let weak = Rc::downgrade(controller);
+        let choose = move || {
+            let Some(c) = weak.upgrade() else {
+                return;
+            };
+            if !c.inputs_enabled() || (kind == 2 && !c.can_destination()) {
+                return;
+            }
+            let epoch = c.panel_epoch();
+            let ui = c.window();
+            let _ = slint::spawn_local(async move {
+                let parent = match ui.window().winit_window().await {
+                    Ok(parent) => parent,
+                    Err(e) => {
+                        c.message(&e.to_string());
+                        return;
+                    }
+                };
+                let dialog = rfd::AsyncFileDialog::new().set_parent(parent.as_ref());
+                let paths = if kind == 0 {
+                    dialog
+                        .add_filter("EML messages", &["eml"])
+                        .pick_files()
+                        .await
+                        .map(|files| {
+                            files
+                                .into_iter()
+                                .map(|f| f.path().to_owned())
+                                .collect::<Vec<_>>()
+                        })
+                } else {
+                    dialog
+                        .pick_folder()
+                        .await
+                        .map(|folder| vec![folder.path().to_owned()])
+                };
+                if epoch != c.panel_epoch() || !c.inputs_enabled() {
                     return;
                 }
-            };
-            if let Some(files) = rfd::AsyncFileDialog::new()
-                .set_parent(parent.as_ref())
-                .add_filter("EML messages", &["eml"])
-                .pick_files()
-                .await
-                && controller.inputs_enabled()
-                && let Err(error) = controller.stage(
-                    files
-                        .into_iter()
-                        .map(|file| file.path().to_owned())
-                        .collect(),
-                )
-            {
-                controller.message(&crate::wording::queue_error(&error));
-            }
-        });
-    });
-    let weak = Rc::downgrade(controller);
-    ui.on_choose_folder(move || {
-        let Some(controller) = weak.upgrade() else {
-            return;
-        };
-        if !controller.inputs_enabled() {
-            return;
-        }
-        let ui = controller.window();
-        let _ = slint::spawn_local(async move {
-            // rfd needs both native handle traits; keep the winit owner alive.
-            let parent = match ui.window().winit_window().await {
-                Ok(parent) => parent,
-                Err(error) => {
-                    controller.message(&error.to_string());
-                    return;
+                if let Some(paths) = paths {
+                    if kind == 2 {
+                        c.set_destination(paths.into_iter().next());
+                    } else if let Err(e) = c.stage(paths) {
+                        c.message(&e.to_string());
+                    }
                 }
-            };
-            if let Some(folder) = rfd::AsyncFileDialog::new()
-                .set_parent(parent.as_ref())
-                .pick_folder()
-                .await
-                && controller.inputs_enabled()
-                && let Err(error) = controller.stage(vec![folder.path().to_owned()])
-            {
-                controller.message(&crate::wording::queue_error(&error));
-            }
-        });
-    });
-    let weak = Rc::downgrade(controller);
-    ui.on_choose_destination(move || {
-        let Some(controller) = weak.upgrade() else {
-            return;
+            });
         };
-        if !controller.inputs_enabled() {
-            return;
+        match kind {
+            0 => ui.on_choose_files(choose),
+            1 => ui.on_choose_folder(choose),
+            _ => ui.on_choose_destination(choose),
         }
-        let ui = controller.window();
-        let _ = slint::spawn_local(async move {
-            // rfd needs both native handle traits; keep the winit owner alive.
-            let parent = match ui.window().winit_window().await {
-                Ok(parent) => parent,
-                Err(error) => {
-                    controller.message(&error.to_string());
-                    return;
-                }
-            };
-            if let Some(folder) = rfd::AsyncFileDialog::new()
-                .set_parent(parent.as_ref())
-                .pick_folder()
-                .await
-            {
-                controller.set_destination(Some(folder.path().to_owned()));
-            }
-        });
-    });
+    }
     let weak = Rc::downgrade(controller);
     ui.on_export_report(move || {
-        let Some(controller) = weak.upgrade() else {
+        let Some(c) = weak.upgrade() else {
             return;
         };
-        let Some(source) = controller.capture_export() else {
+        let Some(source) = c.capture_export() else {
             return;
         };
-        let on_error = controller.clone();
-        let failed_source = source.clone();
-        let ui = controller.window();
-        if let Err(error) = slint::spawn_local(async move {
+        let ui = c.window();
+        let on_error = c.clone();
+        let failed = source.clone();
+        if let Err(e) = slint::spawn_local(async move {
             let parent = match ui.window().winit_window().await {
                 Ok(parent) => parent,
-                Err(error) => {
-                    controller.cancel_export(&source);
-                    controller.failure(
-                        "Save Report",
-                        "Couldn’t open the save panel. Try again.",
-                        &error.to_string(),
-                    );
+                Err(e) => {
+                    c.cancel_export(&source);
+                    c.message(&e.to_string());
                     return;
                 }
             };
-            let target = rfd::AsyncFileDialog::new()
+            let file = rfd::AsyncFileDialog::new()
                 .set_parent(parent.as_ref())
-                .set_directory(controller.report_directory())
+                .set_directory(c.report_directory())
                 .set_file_name(source.suggested_name())
                 .add_filter("JSON Lines report", &["jsonl"])
                 .save_file()
                 .await;
-            if let Some(file) = target {
-                controller.start_captured_export(source, file.path().to_owned());
+            if let Some(file) = file {
+                c.start_captured_export(source, file.path().to_owned());
             } else {
-                controller.cancel_export(&source);
+                c.cancel_export(&source);
             }
         }) {
-            on_error.cancel_export(&failed_source);
-            on_error.failure(
-                "Save Report",
-                "Couldn’t open the save panel. Try again.",
-                &error.to_string(),
-            );
+            on_error.cancel_export(&failed);
+            on_error.message(&e.to_string());
         }
     });
-    // Keep clipboard ownership alive for backends that serve requests asynchronously.
     let clipboard = Rc::new(std::cell::RefCell::new(None::<arboard::Clipboard>));
-    for destination in [false, true] {
-        let clipboard = clipboard.clone();
+    let weak = Rc::downgrade(controller);
+    ui.on_copy_details(move || {
+        let Some(c) = weak.upgrade() else {
+            return;
+        };
+        if !c.can_show_original() {
+            return;
+        }
+        let Some(text) = c.clipboard_text() else {
+            return;
+        };
+        let result = (|| {
+            let mut context = clipboard.borrow_mut();
+            if context.is_none() {
+                *context = Some(arboard::Clipboard::new()?);
+            }
+            context.as_mut().unwrap().set_text(text)
+        })();
+        if let Err(e) = result {
+            c.message(&e.to_string());
+        }
+    });
+    for copy in [false, true] {
         let weak = Rc::downgrade(controller);
-        let copy = move || {
-            let Some(controller) = weak.upgrade() else {
+        let reveal = move || {
+            let Some(c) = weak.upgrade() else {
                 return;
             };
-            let Some(path) = controller.clipboard_text(destination) else {
+            if !(if copy {
+                c.can_show_copy()
+            } else {
+                c.can_show_original()
+            }) {
                 return;
-            };
-            let result = (|| {
-                let mut context = clipboard.borrow_mut();
-                if context.is_none() {
-                    *context = Some(arboard::Clipboard::new()?);
-                }
-                context
-                    .as_mut()
-                    .expect("clipboard initialized")
-                    .set_text(path)
-            })();
-            match result {
-                Ok(()) => controller.success(if destination {
-                    "Destination path copied."
-                } else {
-                    "Source path copied."
-                }),
-                Err(error) => controller.message(&format!("Cannot copy path: {error}")),
+            }
+            if let Some(path) = if copy {
+                c.selected_copy()
+            } else {
+                c.selected_original()
+            } {
+                c.open_advisory(
+                    crate::OpenTarget::Main,
+                    "Couldn’t show the email. Check that it still exists.",
+                    move || opener::reveal(path).map_err(|e| e.to_string()),
+                );
             }
         };
-        if destination {
-            ui.on_copy_destination_path(copy);
+        if copy {
+            ui.on_show_copy(reveal);
         } else {
-            ui.on_copy_source_path(copy);
+            ui.on_show_original(reveal);
         }
     }
     let weak = Rc::downgrade(controller);
-    ui.on_reveal(move || {
-        if let Some(controller) = weak.upgrade()
-            && controller.can_show_copy()
-            && let Some(path) = controller.selected_copy()
-        {
-            controller.open_advisory(
-                crate::OpenTarget::Main,
-                "Could not show the copy. Check that it still exists, then try again.",
-                move || opener::reveal(path).map_err(|error| error.to_string()),
-            );
-        }
-    });
-    let weak = Rc::downgrade(controller);
-    ui.on_reveal_original(move || {
-        if let Some(controller) = weak.upgrade()
-            && controller.can_show_original()
-            && let Some(path) = controller.selected_original()
-        {
-            controller.open_advisory(
-                crate::OpenTarget::Main,
-                "Could not show the original. Check that it still exists, then try again.",
-                move || opener::reveal(path).map_err(|error| error.to_string()),
-            );
-        }
-    });
-    let weak = Rc::downgrade(controller);
     ui.on_reveal_output(move |index| {
-        if let Some(controller) = weak.upgrade()
-            && controller.can_show_output()
-            && let Ok(index) = usize::try_from(index)
-            && let Some(path) = controller.output_roots().get(index).cloned()
+        if let Some(c) = weak.upgrade()
+            && c.can_show_output()
+            && let Some(path) = c.output_roots().get(index as usize).cloned()
         {
-            controller.open_advisory(
+            c.open_advisory(
                 crate::OpenTarget::Main,
-                "Could not open the output folder. Check that it still exists, then try again.",
-                move || opener::open(path).map_err(|error| error.to_string()),
-            );
-        }
-    });
-    let weak = Rc::downgrade(controller);
-    ui.on_reveal_report(move || {
-        if let Some(controller) = weak.upgrade()
-            && controller.can_show_report()
-            && let Some(path) = controller.saved_report_path()
-        {
-            controller.open_advisory(
-                crate::OpenTarget::Main,
-                "Could not show the saved report. Check that it still exists, then try again.",
-                move || opener::reveal(path).map_err(|error| error.to_string()),
+                "Couldn’t open the save folder.",
+                move || opener::open(path).map_err(|e| e.to_string()),
             );
         }
     });
     let weak = Rc::downgrade(controller);
     ui.on_website(move || {
-        if let Some(controller) = weak.upgrade() {
-            controller.open_advisory(
+        if let Some(c) = weak.upgrade() {
+            c.open_advisory(
                 crate::OpenTarget::Main,
-                "Could not open the project website. Check your browser, then try again.",
-                || opener::open(eml_core::product::WEBSITE).map_err(|error| error.to_string()),
+                "Couldn’t open the project website.",
+                || opener::open(eml_core::product::WEBSITE).map_err(|e| e.to_string()),
             );
         }
     });
-    let about = controller.about_window();
     let weak = Rc::downgrade(controller);
-    about.on_website(move || {
-        if let Some(controller) = weak.upgrade() {
-            controller.open_advisory(
+    controller.about_window().on_website(move || {
+        if let Some(c) = weak.upgrade() {
+            c.open_advisory(
                 crate::OpenTarget::About,
-                "Could not open the project website. Check your browser, then try again.",
-                || opener::open(eml_core::product::WEBSITE).map_err(|error| error.to_string()),
+                "Couldn’t open the project website.",
+                || opener::open(eml_core::product::WEBSITE).map_err(|e| e.to_string()),
             );
         }
     });
@@ -326,11 +258,13 @@ pub fn install_native(
         .join("Resources/THIRD-PARTY-NOTICES.txt");
     let weak = Rc::downgrade(controller);
     controller.license_window().on_third_party(move || {
-        if let Some(controller) = weak.upgrade() {
+        if let Some(c) = weak.upgrade() {
             let path = notices.clone();
-            controller.open_advisory(crate::OpenTarget::Licenses,
-                "Could not open bundled third-party notices. Check the app installation, then try again.",
-                move || opener::open(path).map_err(|error| error.to_string()));
+            c.open_advisory(
+                crate::OpenTarget::Licenses,
+                "Couldn’t open bundled third-party notices.",
+                move || opener::open(path).map_err(|e| e.to_string()),
+            );
         }
     });
     Ok(())
