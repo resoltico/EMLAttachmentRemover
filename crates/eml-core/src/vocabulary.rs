@@ -9,13 +9,13 @@ pub fn recovery_hint(code: &str) -> Option<&'static str> {
             "Check that the selected file or folder still exists and that you have permission to read it, then retry.",
         ),
         ErrorCode::Malformed => Some(
-            "This message's MIME structure is damaged or incomplete. Export it again from your mail app and retry with that copy.",
+            "This file isn't a valid email. It may be empty or not an email at all; if it came from your mail app, export it again.",
         ),
         ErrorCode::Protected => Some(
             "Protected content would need to change in the retained message body. Obtain an unprotected export if appropriate.",
         ),
         ErrorCode::UnsupportedMime => {
-            Some("This report cannot be converted to a body-only copy. Keep the original report.")
+            Some("This email cannot be converted to a body-only copy. Keep the original email.")
         }
         ErrorCode::NoBody => Some(
             "No supported plain-text or HTML message body would remain. Choose a message that contains a text body.",
@@ -147,6 +147,12 @@ pub enum Severity {
     Success,
     /// Read-only observation.
     Information,
+    /// No action needed.
+    Neutral,
+    /// Work awaits execution.
+    Pending,
+    /// A required operation failed.
+    Failure,
     /// Qualification or certainty is incomplete.
     Attention,
 }
@@ -538,6 +544,100 @@ mod tests {
         }
     }
     #[test]
+    fn u2_outcomes_preserve_qualified_rules_and_typed_failures() {
+        let mut f = facts();
+        assert_eq!(Outcome::from(&f, 1), Outcome::CopySaved);
+        assert_eq!(Outcome::from(&f, 0), Outcome::CopiedAsIs);
+        f.result = ResultKind::Planned;
+        f.publication = Publication::NotPublished;
+        f.file_sync = None;
+        f.namespace_sync = NamespaceObservation::unattempted();
+        f.plan = Some(PlanAction::Create);
+        assert_eq!(Outcome::from(&f, 1), Outcome::Ready);
+        assert_eq!(Outcome::from(&f, 0), Outcome::NothingToRemove);
+        let good = facts();
+        f.existing = Some(ExistingFacts {
+            identity_known: true,
+            bytes_equal: Some(true),
+            stable: true,
+            address: AddressState::Verified,
+            file_sync: good.file_sync,
+            namespace_sync: good.namespace_sync,
+        });
+        f.plan = Some(PlanAction::VerifyExisting);
+        assert_eq!(Outcome::from(&f, 1), Outcome::WillVerify);
+        f.result = ResultKind::Existing;
+        f.plan = None;
+        assert_eq!(Outcome::from(&f, 1), Outcome::AlreadyExists);
+        f.result = ResultKind::Failed;
+        f.error = Some(crate::ErrorCode::ExistingSyncFailed);
+        assert_eq!(Outcome::from(&f, 1), Outcome::NeedsChecking);
+        f.existing = None;
+        for code in crate::ErrorCode::ALL {
+            f.error = Some(*code);
+            let outcome = Outcome::from(&f, 1);
+            assert_eq!(
+                outcome,
+                if *code == crate::ErrorCode::Interrupted {
+                    Outcome::NotProcessed
+                } else {
+                    Outcome::Failed(*code)
+                }
+            );
+            assert!(!outcome.label().is_empty());
+            assert!(!outcome.explanation().is_empty());
+            assert!(!RunFailure(*code).explanation().is_empty());
+        }
+        f.publication = Publication::Unknown;
+        f.error = Some(crate::ErrorCode::WriteFailed);
+        assert_eq!(Outcome::from(&f, 1), Outcome::Unknown);
+        f.publication = Publication::Published;
+        assert_eq!(Outcome::from(&f, 1), Outcome::NeedsChecking);
+        f.result = ResultKind::Created;
+        assert_eq!(Outcome::from(&f, 1), Outcome::Unknown);
+    }
+    #[test]
+    fn u2_totals_sizes_and_unnamed_parts() {
+        for (n, expected) in [
+            (999, "999 B"),
+            (1000, "1.0 kB"),
+            (1_000_000, "1.0 MB"),
+            (1_000_000_000, "1.0 GB"),
+        ] {
+            assert_eq!(format_bytes(n), expected);
+        }
+        assert_eq!(
+            part_name(None, crate::RemovalReason::RelatedResource, "image/png"),
+            "Inline image"
+        );
+        assert_eq!(
+            part_name(
+                Some("photo.png"),
+                crate::RemovalReason::RelatedResource,
+                "image/png"
+            ),
+            "photo.png"
+        );
+        let totals = BatchTotals::from([
+            (Outcome::Ready, 2, Some((1000, 400))),
+            (Outcome::CopySaved, 3, Some((900, 200))),
+            (Outcome::Failed(crate::ErrorCode::Malformed), 0, None),
+            (Outcome::Unknown, 0, None),
+            (Outcome::AlreadyExists, 4, Some((100, 0))),
+            (Outcome::NotProcessed, 0, None),
+        ]);
+        assert_eq!(
+            (
+                totals.emails,
+                totals.attachments,
+                totals.bytes_removed,
+                totals.problems
+            ),
+            (6, 5, 1300, 2)
+        );
+        assert_eq!(totals.count(Outcome::Ready), 1);
+    }
+    #[test]
     fn explicit_stop_requires_both_failed_result_and_typed_interrupted_error() {
         let mut f = facts();
         for result in [
@@ -793,85 +893,6 @@ pub fn summary(
         if interrupted { "; interrupted" } else { "" }
     ))
 }
-/// User-facing removal category; the MIME crate owns the decision itself.
-pub const fn removal_reason(reason: crate::RemovalReason) -> &'static str {
-    match reason {
-        crate::RemovalReason::Attachment => "Attachment",
-        crate::RemovalReason::RelatedResource => "Related image or resource",
-        crate::RemovalReason::NonBodyPart => "Other non-body content",
-    }
-}
-
-/// Desktop lifecycle labels shared with CLI outcome wording.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum RunStatus {
-    /// Waiting selection.
-    Queued,
-    /// Read-only work is in flight.
-    Checking,
-    /// Copy creation is in flight.
-    Creating,
-    /// Successful terminal run.
-    Completed,
-    /// Terminal run containing failures.
-    CompletedWithFailures,
-    /// Cooperative interruption settled.
-    Stopped,
-    /// Interruption before a start record.
-    StoppedBeforeStart,
-    /// Forced termination with incomplete transport.
-    ForceStopped,
-    /// CLI admission refused the request.
-    RequestRefused,
-    /// Missing or invalid terminal observations.
-    Incomplete,
-    /// Bundled CLI identity differed.
-    IdentityFailure,
-    /// CLI could not be launched.
-    StartFailed,
-    /// A cooperative interrupt was requested.
-    StopRequested,
-    /// A forced termination was requested.
-    ForceStopRequested,
-}
-impl RunStatus {
-    /// Canonical user-facing lifecycle name.
-    pub const fn label(self) -> &'static str {
-        match self {
-            Self::Queued => "Not started",
-            Self::Checking => "Checking",
-            Self::Creating => "Creating copies",
-            Self::Completed => "Completed",
-            Self::CompletedWithFailures => "Completed with failures",
-            Self::Stopped => "Stopped",
-            Self::StoppedBeforeStart => "Stopped before start",
-            Self::ForceStopped => "Force stopped; report incomplete",
-            Self::RequestRefused => "Request refused",
-            Self::Incomplete => "Incomplete report",
-            Self::IdentityFailure => "Worker identity mismatch",
-            Self::StartFailed => "Could not start the bundled CLI",
-            Self::StopRequested => "Stop requested",
-            Self::ForceStopRequested => "Force Stop requested",
-        }
-    }
-}
-/// The public name of a processing mode.
-pub const fn mode_label(mode: crate::RunMode) -> &'static str {
-    match mode {
-        crate::RunMode::Create => "Create copies",
-        crate::RunMode::DryRun => "Check only",
-    }
-}
-/// Accessible count text, derived from the same count label as visible output.
-pub fn count_label(kind: CountKind, value: u32) -> String {
-    format!("{}: {value}", kind.label())
-}
-/// Selection snapshots are unaffected by later preference changes.
-pub const DESTINATION_SCOPE: &str = "Destination changes apply to new requests.";
-/// Incomplete reports retain accepted observations, without asserting what was not reported.
-pub const INCOMPLETE_REPORT_NOTICE: &str = "Earlier results are retained. Work without a reported result is unknown; inspect the destination before retrying.";
-/// A force-stopped process can leave recognizable staging residue.
-pub const FORCE_STOP_NOTICE: &str = "A staging file named .emlattachmentremover-<random>.tmp may remain. It is never deleted automatically.";
 /// Plain metadata count heading.
 pub const SOURCE_BYTES_LABEL: &str = "Source bytes";
 /// Prepared-byte count heading.
@@ -885,3 +906,308 @@ pub const COLLECTION_INCOMPLETE_NOTICE: &str = "Discovery is incomplete. Counts 
 /// Stderr was drained beyond the retained diagnostic bound.
 pub const STDERR_TRUNCATED_NOTICE: &str =
     "Additional CLI diagnostic output exceeded the retained limit.";
+
+/// User-level result, independent of presentation and transport.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Outcome {
+    /// A checked copy has attachments to remove.
+    Ready,
+    /// A checked message has no attachments.
+    NothingToRemove,
+    /// A qualified copy was saved with removals.
+    CopySaved,
+    /// A qualified copy was saved unchanged.
+    CopiedAsIs,
+    /// Matching existing bytes were qualified.
+    AlreadyExists,
+    /// An existing candidate awaits qualification.
+    WillVerify,
+    /// Saved or matching bytes need qualification.
+    NeedsChecking,
+    /// The result cannot be established.
+    Unknown,
+    /// Explicitly interrupted work.
+    NotProcessed,
+    /// Failure before publication, with its semantic diagnostic.
+    Failed(crate::ErrorCode),
+}
+impl Outcome {
+    /// Interpret independently qualified facts and the accepted removal count.
+    pub fn from(facts: &OutcomeFacts, removed: usize) -> Self {
+        if explicitly_interrupted(facts) {
+            return Self::NotProcessed;
+        }
+        match classify(facts).kind {
+            MeaningKind::Prepared if removed > 0 => Self::Ready,
+            MeaningKind::Prepared => Self::NothingToRemove,
+            MeaningKind::Comparison => Self::WillVerify,
+            MeaningKind::Created if removed > 0 => Self::CopySaved,
+            MeaningKind::Created => Self::CopiedAsIs,
+            MeaningKind::ExistingVerified => Self::AlreadyExists,
+            MeaningKind::PublishedIncomplete | MeaningKind::ExistingMatched => Self::NeedsChecking,
+            MeaningKind::PublicationUncertain | MeaningKind::Unestablished => Self::Unknown,
+            MeaningKind::NotPublished => {
+                Self::Failed(facts.error.unwrap_or(crate::ErrorCode::Internal))
+            }
+        }
+    }
+    /// Short wording shared by every human renderer.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Ready => "Ready",
+            Self::NothingToRemove => "No attachments",
+            Self::CopySaved => "Copy saved",
+            Self::CopiedAsIs => "Copied as is",
+            Self::AlreadyExists => "Copy already exists",
+            Self::WillVerify => "Copy exists, will verify",
+            Self::NeedsChecking => "Saved, needs checking",
+            Self::Unknown => "Result unknown",
+            Self::NotProcessed => "Not processed",
+            Self::Failed(code) => failure(code).0,
+        }
+    }
+    /// Domain prominence; frontends choose its appearance.
+    pub fn severity(self) -> Severity {
+        match self {
+            Self::Ready | Self::WillVerify => Severity::Pending,
+            Self::NothingToRemove | Self::NotProcessed => Severity::Neutral,
+            Self::CopySaved | Self::CopiedAsIs | Self::AlreadyExists => Severity::Success,
+            Self::NeedsChecking | Self::Unknown => Severity::Attention,
+            Self::Failed(_) => Severity::Failure,
+        }
+    }
+    /// Plain explanation of the observed result.
+    pub fn explanation(self) -> &'static str {
+        match self {
+            Self::Ready => "These will be removed from the copy:",
+            Self::NothingToRemove | Self::CopiedAsIs => {
+                "Nothing to remove. The copy keeps the whole message."
+            }
+            Self::WillVerify => {
+                "A copy with this name already exists. It will be checked, never replaced."
+            }
+            Self::CopySaved => "Copy saved. Removed:",
+            Self::AlreadyExists => "An identical copy already exists. Nothing was written.",
+            Self::NotProcessed => {
+                "Not copied because the batch was stopped. Continue to finish it."
+            }
+            Self::Unknown => {
+                "The result couldn’t be confirmed. Check the save folder, then try again. Existing copies are never replaced."
+            }
+            Self::NeedsChecking => {
+                "The copy was written, but the final checks didn’t complete. Check the save folder, then try again. Existing copies are never replaced."
+            }
+            Self::Failed(code) => failure(code).1,
+        }
+    }
+}
+fn failure(code: crate::ErrorCode) -> (&'static str, &'static str) {
+    use crate::ErrorCode::*;
+    match code {
+        Malformed => (
+            "Not a valid email",
+            "This file isn't a valid email. It may be empty or not an email at all; if it came from your mail app, export it again.",
+        ),
+        NoBody => (
+            "No text to keep",
+            "This email has no plain-text or HTML body, so a copy would be empty.",
+        ),
+        Protected => (
+            "Protected content",
+            "This email contains signed or encrypted content that can’t be changed safely.",
+        ),
+        UnsupportedMime => (
+            "Unsupported format",
+            "This email uses a structure the app doesn’t support.",
+        ),
+        LimitExceeded => (
+            "Too large or complex",
+            "This email is larger or more deeply nested than the app supports (256 MB maximum).",
+        ),
+        ReadFailed | BindFailed => (
+            "Can’t be read",
+            "The file couldn’t be read. Check that it still exists and that you have permission to open it.",
+        ),
+        SourceNotRegular => (
+            "Not a file",
+            "This isn’t a regular file. Add the email file itself.",
+        ),
+        SourceChanged => (
+            "Changed while reading",
+            "The file changed while it was being read. Try again when nothing else is using it.",
+        ),
+        DestinationExists => (
+            "Name already taken",
+            "A different file already has the copy’s name. Move it or choose another save folder.",
+        ),
+        DestinationCollision => (
+            "Duplicate copy name",
+            "Two emails would get the same copy name. Choose a save folder, or keep copies next to the originals.",
+        ),
+        SourceDestinationAlias => (
+            "Would overwrite original",
+            "The copy would replace an original, so it was skipped.",
+        ),
+        DestinationUnsupported => (
+            "Folder not supported",
+            "The save folder doesn’t support safe copying. Choose another folder.",
+        ),
+        StageFailed | WriteFailed => (
+            "Couldn’t save copy",
+            "The copy couldn’t be written. Check free space and permissions in the save folder.",
+        ),
+        Internal => (
+            "Couldn’t copy",
+            "An internal check failed, so no copy was made. Save Report… and send it with a bug report.",
+        ),
+        _ => (
+            "Couldn’t copy",
+            "No copy was made. Use Copy Details for more information.",
+        ),
+    }
+}
+/// Format decimal storage units consistently.
+pub fn format_bytes(bytes: u64) -> String {
+    if bytes < 1000 {
+        return format!("{bytes} B");
+    }
+    for (scale, unit) in [(1_000_000_000, "GB"), (1_000_000, "MB"), (1000, "kB")] {
+        if bytes >= scale {
+            return format!("{:.1} {unit}", bytes as f64 / scale as f64);
+        }
+    }
+    unreachable!()
+}
+
+/// Shared plain-language whole-run failure.
+#[derive(Clone, Copy, Debug)]
+pub struct RunFailure(pub crate::ErrorCode);
+impl RunFailure {
+    /// Short whole-run label.
+    pub fn label(self) -> &'static str {
+        Outcome::Failed(self.0).label()
+    }
+    /// Actionable explanation for the whole request.
+    pub fn explanation(self) -> &'static str {
+        use crate::ErrorCode::*;
+        match self.0 {
+            NoInputs => "No .eml files were found in what you added. Add other files or folders.",
+            InputLimitExceeded => {
+                "Too many files. Up to 4,096 emails can be processed at once. Add fewer folders."
+            }
+            OutputOverlap => {
+                "The save folder is inside a folder you added. Choose a different save folder."
+            }
+            InputAdmissionFailed => {
+                "Some items you added can’t be opened. Check that they still exist, then Start Over."
+            }
+            OutputFailed => {
+                "The copy process stopped while reporting results. Save the report and try again."
+            }
+            _ => Outcome::Failed(self.0).explanation(),
+        }
+    }
+}
+/// Human part kind; the MIME policy remains owned by message preparation.
+pub fn part_kind(reason: crate::RemovalReason, content_type: &str) -> &'static str {
+    match reason {
+        crate::RemovalReason::RelatedResource
+            if content_type
+                .get(..6)
+                .is_some_and(|s| s.eq_ignore_ascii_case("image/")) =>
+        {
+            "Inline image"
+        }
+        crate::RemovalReason::RelatedResource => "Inline resource",
+        crate::RemovalReason::NonBodyPart if content_type.eq_ignore_ascii_case("text/calendar") => {
+            "Calendar invite"
+        }
+        crate::RemovalReason::NonBodyPart => "Other content",
+        crate::RemovalReason::Attachment => "",
+    }
+}
+/// An unnamed part is named by its kind, never its raw MIME type.
+pub fn part_name<'a>(
+    filename: Option<&'a str>,
+    reason: crate::RemovalReason,
+    content_type: &str,
+) -> &'a str {
+    filename.unwrap_or_else(|| {
+        let kind = part_kind(reason, content_type);
+        if kind.is_empty() { "Attachment" } else { kind }
+    })
+}
+/// Aggregate of human outcomes; no report or UI dependency.
+#[derive(Clone, Debug, Default)]
+pub struct BatchTotals {
+    /// Total emails represented, including unprocessed work.
+    pub emails: usize,
+    /// Counts by the single user outcome.
+    pub counts: std::collections::BTreeMap<Outcome, usize>,
+    /// Attachments selected for removal or removed in qualified copies.
+    pub attachments: usize,
+    /// Bytes selected for removal or removed in qualified copies.
+    pub bytes_removed: u64,
+    /// Results requiring attention or reporting failure.
+    pub problems: usize,
+}
+impl BatchTotals {
+    /// Aggregate accepted outcomes and their removal metadata.
+    pub fn from(items: impl IntoIterator<Item = (Outcome, usize, Option<(u64, u64)>)>) -> Self {
+        let mut totals = Self::default();
+        for (outcome, parts, bytes) in items {
+            totals.emails += 1;
+            *totals.counts.entry(outcome).or_default() += 1;
+            if matches!(outcome.severity(), Severity::Attention | Severity::Failure) {
+                totals.problems += 1;
+            }
+            if matches!(outcome, Outcome::Ready | Outcome::CopySaved) {
+                totals.attachments += parts;
+                if let Some((source, copy)) = bytes {
+                    totals.bytes_removed += source.saturating_sub(copy);
+                }
+            }
+        }
+        totals
+    }
+    /// Number of emails with this exact outcome.
+    pub fn count(&self, outcome: Outcome) -> usize {
+        self.counts.get(&outcome).copied().unwrap_or(0)
+    }
+    /// Shared summary nouns, independent of interface layout.
+    pub fn summary(&self, checking: bool) -> String {
+        format!(
+            "{} ready · {} copies saved · {} already existed · {} can’t be copied · {} not processed · {} {}",
+            self.count(Outcome::Ready),
+            self.count(Outcome::CopySaved) + self.count(Outcome::CopiedAsIs),
+            self.count(Outcome::AlreadyExists),
+            self.problems,
+            self.count(Outcome::NotProcessed),
+            format_bytes(self.bytes_removed),
+            if checking {
+                "would be removed"
+            } else {
+                "removed"
+            }
+        )
+    }
+}
+/// Copy Details field labels shared with human diagnostic renderers.
+pub mod fields {
+    /// Original path.
+    pub const SOURCE: &str = "Source";
+    /// Copy path.
+    pub const DESTINATION: &str = "Destination";
+    /// Outcome label.
+    pub const STATUS: &str = "Status";
+    /// Original bytes.
+    pub const SOURCE_BYTES: &str = "Source bytes";
+    /// Copy bytes.
+    pub const COPY_BYTES: &str = "Copy bytes";
+    /// Technical diagnostic code.
+    pub const CODE: &str = "Code";
+    /// Technical diagnostic phase.
+    pub const PHASE: &str = "Phase";
+    /// Technical diagnostic explanation.
+    pub const DETAIL: &str = "Detail";
+}

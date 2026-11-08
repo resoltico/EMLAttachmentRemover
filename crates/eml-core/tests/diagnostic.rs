@@ -105,7 +105,7 @@ fn known_wire_guidance_does_not_invent_meanings_for_future_or_misspelled_codes()
     assert!(
         eml_core::vocabulary::recovery_hint(ErrorCode::Malformed.as_str())
             .unwrap()
-            .contains("Export")
+            .contains("export")
     );
     assert!(eml_core::vocabulary::recovery_hint(ErrorCode::Internal.as_str()).is_none());
     assert!(ErrorCode::from_wire_name("malformed").is_none());
