@@ -2730,6 +2730,12 @@ impl WindowAdapterInternal for QtWindow {
         &self,
         window_kind: WindowKind,
     ) -> Option<Rc<dyn WindowAdapter>> {
+        // This project's Linux popups stay inside their parent and use the
+        // core embedded scene, including its accessible invocation hierarchy.
+        #[cfg(target_os = "linux")]
+        if matches!(window_kind, WindowKind::Popup | WindowKind::Menu) {
+            return None;
+        }
         let child_window = QtWindow::new(self.self_weak.clone());
         let child_ptr = child_window.widget_ptr();
         let parent_ptr = self.widget_ptr();
@@ -2856,17 +2862,20 @@ impl WindowAdapterInternal for QtWindow {
 
     fn handle_focus_change(&self, _old: Option<ItemRc>, new: Option<ItemRc>) {
         let widget_ptr = self.widget_ptr();
-        if let Some(ai) = accessible_item(new) {
-            let ai_weak = ai.downgrade();
-            let item: &i_slint_core::item_tree::ItemWeak = &ai_weak;
-            cpp! {unsafe [widget_ptr as "QWidget*", item as "void*"] {
-                auto accessible = QAccessible::queryAccessibleInterface(widget_ptr);
-                if (auto slint_accessible = dynamic_cast<Slint_accessible*>(accessible)) {
-                    slint_accessible->clearFocus();
+        let ai = accessible_item(new);
+        let ai_weak = ai.as_ref().map(ItemRc::downgrade).unwrap_or_default();
+        let item: &i_slint_core::item_tree::ItemWeak = &ai_weak;
+        let has_target = ai.is_some();
+        cpp! {unsafe [widget_ptr as "QWidget*", item as "void*", has_target as "bool"] {
+            auto accessible = QAccessible::queryAccessibleInterface(widget_ptr);
+            if (auto slint_accessible = dynamic_cast<Slint_accessible*>(accessible)) {
+                slint_accessible->clearFocus();
+                if (has_target) {
                     slint_accessible->focusItem(item);
                 }
-            }};
-        }
+            }
+        }};
+        drop(ai); // Keep the strong model owner through the borrowed weak callback.
     }
 
     fn bring_to_front(&self) -> Result<(), i_slint_core::platform::PlatformError> {
