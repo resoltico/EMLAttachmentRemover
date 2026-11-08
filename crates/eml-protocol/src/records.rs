@@ -37,6 +37,11 @@ macro_rules! vocabulary {
         $(#[$doc])*
         #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
         pub enum $name { $(#[doc=$wire] #[serde(rename=$wire)] $variant),* }
+        impl std::fmt::Display for $name {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                match self { $(Self::$variant => f.write_str($wire),)* }
+            }
+        }
         impl<'de> Deserialize<'de> for $name {
             fn deserialize<D:Deserializer<'de>>(deserializer:D)->Result<Self,D::Error> {
                 let value=String::deserialize(deserializer)?;

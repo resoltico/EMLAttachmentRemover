@@ -69,6 +69,18 @@ impl Row {
             Severity::Attention | Severity::Failure
         )
     }
+    fn explanation(&self) -> String {
+        let mut lines = vec![self.status.explanation()];
+        // A waiting/missing/unconfirmed replacement must not reuse old outcome claims.
+        if self.status == RowStatus::Settled(crate::view_model::outcome(&self.item))
+            && let Some(facts) = crate::view_model::facts(&self.item)
+        {
+            let meaning = eml_core::vocabulary::classify(&facts);
+            lines.extend(meaning.consequences.iter().map(|c| c.text()));
+            lines.extend(meaning.related_notice);
+        }
+        lines.join("\n")
+    }
     pub(super) fn size_text(&self) -> String {
         match (self.item.source_bytes.value(), self.item.copy_bytes.value()) {
             (Some(a), Some(b)) if !self.item.removed.is_empty() => {
@@ -97,16 +109,37 @@ impl Row {
             Kind::Check => words::CHECK_METADATA,
             Kind::Create => words::CREATE_METADATA,
         };
+        text += &self.explanation();
+        text.push('\n');
         if let Some(error) = self.item.error.value() {
             text += &format!(
-                "{}: {}\n{}: {:?}\n{}: {}\n",
+                "{}: {}\n{}: {}\n{}: {}\n",
                 fields::CODE,
-                error.code,
+                eml_protocol::DisplayText::new(&error.code),
                 fields::PHASE,
                 error.phase,
                 fields::DETAIL,
-                error.detail
+                eml_protocol::DisplayText::new(&error.detail)
             );
+        }
+        if let Some(facts) = crate::view_model::facts(&self.item)
+            && facts.cleanup.state != eml_core::CleanupState::NotNeeded
+        {
+            text += &format!(
+                "{}: {}\n",
+                fields::CLEANUP,
+                eml_core::vocabulary::cleanup_label(facts.cleanup.state)
+            );
+            if let Some(code) = facts.cleanup.native_code {
+                text += &format!("{}: {code}\n", fields::NATIVE_CODE);
+            }
+            if let Some(name) = facts.cleanup.residual_name {
+                text += &format!(
+                    "{}: {}\n",
+                    fields::RESIDUAL_RESOURCE,
+                    eml_protocol::TerminalPath::new(std::path::Path::new(&name))
+                );
+            }
         }
         if let Some(n) = self.item.source_bytes.value() {
             text += &format!("{}: {n}\n", fields::SOURCE_BYTES);
@@ -116,10 +149,10 @@ impl Row {
         }
         for part in &self.item.removed {
             text += &format!(
-                "{}: {} ({}, {}, {:?})\n",
-                part.section,
-                part.filename.value().unwrap_or(&part.content_type),
-                part.content_type,
+                "{}: {} ({}, {}, {})\n",
+                eml_protocol::DisplayText::new(&part.section),
+                words::attachment_name(part),
+                eml_protocol::DisplayText::new(&part.content_type),
                 format_bytes(part.bytes),
                 part.reason
             );
@@ -241,6 +274,13 @@ pub(super) fn banner(batch: &Batch) -> String {
     };
     if slot.launch_error {
         return words::LAUNCH_FAILED.into();
+    }
+    if slot
+        .completion
+        .as_ref()
+        .is_some_and(|c| c.state == eml_app::WorkerState::RequestRefused)
+    {
+        return words::REQUEST_REFUSED.into();
     }
     slot.report
         .as_ref()
@@ -447,7 +487,7 @@ impl crate::DesktopController {
                 ))
                 .to_string()
                 .into(),
-                sentence: row.status.explanation().into(),
+                sentence: row.explanation().into(),
                 path_prefix: {
                     let path = row.copy.as_ref().unwrap_or(&row.key);
                     path.parent().map_or(String::new(), |p| {
@@ -493,6 +533,25 @@ impl crate::DesktopController {
             summary: header.summary.into(),
             problems: header.problems.into(),
             banner: banner(&r.batch).into(),
+            diagnostics: r
+                .batch
+                .create
+                .as_ref()
+                .or(r.batch.check.as_ref())
+                .and_then(|slot| slot.completion.as_ref())
+                .map(|completion| {
+                    let mut text = String::from_utf8_lossy(&completion.stderr)
+                        .lines()
+                        .map(|line| eml_protocol::DisplayText::new(line).to_string())
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    if completion.stderr_truncated {
+                        text.push_str(words::DIAGNOSTICS_TRUNCATED);
+                    }
+                    text
+                })
+                .unwrap_or_default()
+                .into(),
             notice: self
                 .notice
                 .borrow()

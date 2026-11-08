@@ -8,6 +8,8 @@ use std::path::PathBuf;
 pub enum RequestError {
     /// Selections must contain absolute native paths.
     AbsoluteSelectionRequired,
+    /// An explicit destination must be absolute before it is captured.
+    AbsoluteDestinationRequired,
     /// Core resource admission refused the request.
     InvalidRequest(eml_core::RequestPathError),
     /// Encoding failed or exceeded its bound.
@@ -18,6 +20,9 @@ impl std::fmt::Display for RequestError {
         match self {
             Self::AbsoluteSelectionRequired => {
                 f.write_str("Select at least one absolute file or folder path.")
+            }
+            Self::AbsoluteDestinationRequired => {
+                f.write_str("Choose an absolute save folder path.")
             }
             Self::InvalidRequest(e) => write!(f, "Cannot add this selection: {e}"),
             Self::RequestEncoding => f.write_str("Cannot encode this selection. Add fewer paths."),
@@ -38,11 +43,11 @@ impl RequestSnapshot {
         destination: Option<PathBuf>,
         mode: RunMode,
     ) -> Result<Self, RequestError> {
-        if paths.is_empty()
-            || paths.iter().any(|path| !path.is_absolute())
-            || destination.as_ref().is_some_and(|path| !path.is_absolute())
-        {
+        if paths.is_empty() || paths.iter().any(|path| !path.is_absolute()) {
             return Err(RequestError::AbsoluteSelectionRequired);
+        }
+        if destination.as_ref().is_some_and(|path| !path.is_absolute()) {
+            return Err(RequestError::AbsoluteDestinationRequired);
         }
         let working_directory = paths[0]
             .ancestors()

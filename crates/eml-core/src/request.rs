@@ -54,6 +54,15 @@ pub enum RequestPath {
     /// Captured working directory.
     WorkingDirectory,
 }
+impl std::fmt::Display for RequestPath {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Input(index) => write!(f, "Input path {}", index.saturating_add(1)),
+            Self::OutputDirectory => f.write_str("Save folder path"),
+            Self::WorkingDirectory => f.write_str("Working directory path"),
+        }
+    }
+}
 
 /// A native path violates a resource or representation requirement.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -86,11 +95,30 @@ pub enum RequestPathError {
 impl std::fmt::Display for RequestPathError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::TooManyInputs => write!(f, "Request exceeds {MAX_INPUT_PATHS} input paths"),
+            Self::TooManyInputs => write!(
+                f,
+                "Too many input paths. Add at most {MAX_INPUT_PATHS} files or folders at once."
+            ),
             Self::InputPathsTooLarge => {
-                write!(f, "Input paths exceed {MAX_INPUT_PATH_BYTES} native bytes")
+                write!(
+                    f,
+                    "Input paths exceed {MAX_INPUT_PATH_BYTES} native bytes. Add fewer files or folders."
+                )
             }
-            Self::InvalidPath { path, violation } => write!(f, "{path:?}: {violation:?}"),
+            Self::InvalidPath { path, violation } => match violation {
+                PathViolation::EmbeddedNul => write!(
+                    f,
+                    "{path} contains a NUL character. Choose a path without NUL characters."
+                ),
+                PathViolation::TooManyUnits => write!(
+                    f,
+                    "{path} exceeds {MAX_PATH_UNITS} native path units. Choose a shorter path."
+                ),
+                PathViolation::TooManyComponents => write!(
+                    f,
+                    "{path} exceeds {MAX_PATH_COMPONENTS} path components. Choose a shallower path."
+                ),
+            },
             Self::WorkingDirectoryNotAbsolute => {
                 f.write_str("Captured working directory must be absolute")
             }

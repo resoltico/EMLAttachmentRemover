@@ -966,6 +966,22 @@ pub mod fields {
     pub const PHASE: &str = "Phase";
     /// Technical diagnostic explanation.
     pub const DETAIL: &str = "Detail";
+    /// Cleanup observation, independent of the primary failure.
+    pub const CLEANUP: &str = "Cleanup";
+    /// Uninterpreted numeric native cause attached to an observation.
+    pub const NATIVE_CODE: &str = "Native code";
+    /// Owned staging basename retained after cleanup.
+    pub const RESIDUAL_RESOURCE: &str = "Residual resource";
+}
+
+/// Human cleanup state shared by technical diagnostic renderers.
+pub fn cleanup_label(state: crate::CleanupState) -> &'static str {
+    match state {
+        crate::CleanupState::NotNeeded => "Not needed",
+        crate::CleanupState::Complete => "Complete",
+        crate::CleanupState::Residual => "Residual",
+        crate::CleanupState::Unknown => "Unknown",
+    }
 }
 
 /// Shared email-count noun.

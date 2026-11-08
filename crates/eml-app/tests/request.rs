@@ -78,3 +78,15 @@ fn request_preserves_non_unicode_paths_without_using_display_text() {
         [native]
     );
 }
+
+#[test]
+fn relative_destination_is_not_reported_as_an_input_selection_failure() {
+    let error = RequestSnapshot::new(
+        vec![path("one.eml")],
+        Some("relative".into()),
+        RunMode::DryRun,
+    )
+    .unwrap_err();
+    assert!(matches!(error, RequestError::AbsoluteDestinationRequired));
+    assert_eq!(error.to_string(), "Choose an absolute save folder path.");
+}

@@ -31,6 +31,9 @@ pub const CLI_NAME: &str = "emlattachmentremover";
 
 /// Shared human product name.
 pub const DISPLAY_NAME: &str = "EML Attachment Remover";
+/// Shared description of the product's message and original-preservation capability.
+pub const PURPOSE: &str =
+    "Create body-only copies of EML messages.\nKeep original messages unchanged.";
 /// Project source and documentation.
 pub const WEBSITE: &str = "https://github.com/resoltico/EMLAttachmentRemover";
 

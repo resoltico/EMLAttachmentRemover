@@ -511,7 +511,7 @@ fn s10_details_use_native_paths_and_failed_rows_have_no_show_copy() {
     let text = c.clipboard_text().unwrap();
     assert!(text.contains(root.path().join("one.eml").to_str().unwrap()));
     assert!(text.contains("Code: MALFORMED"));
-    assert!(text.contains("Phase: Prepare"));
+    assert!(text.contains("Phase: prepare"));
     assert!(!text.contains("not-authority"));
     ui.invoke_clear_selected();
     assert!(!ui.get_detail().visible);
@@ -1136,7 +1136,7 @@ fn s18_admission_notice_is_visible_in_the_empty_window_and_expires() {
             .collect(),
     );
     c.tick();
-    let text = "Too many items at once. Add fewer files or folders.";
+    let text = "Cannot add this selection: Too many input paths. Add at most 4096 files or folders at once.";
     assert!(labels(&c.window()).iter().any(|label| label == text));
     mock_elapsed_time(Duration::from_secs(6));
     c.tick();
@@ -2352,4 +2352,228 @@ fn field_source_controls_are_escaped_without_changing_native_selection() {
     c.window().invoke_select_email(row.key);
     assert_eq!(c.selected_original(), Some(folder.join(name)));
     assert_eq!(c.window().get_detail().name, "06-evil\\n\\u{202e}fake.eml");
+}
+
+#[test]
+fn core_consequences_reach_selected_details_and_copy_details() {
+    init_no_event_loop();
+    for (scenario, expected) in [
+        (
+            "published-with-error",
+            "A complete copy was published; qualification did not complete. Inspect the destination before retrying.",
+        ),
+        (
+            "existing-sync-failure",
+            "Existing bytes matched; synchronization/address qualification did not complete.",
+        ),
+        (
+            "unknown-publication",
+            "A complete copy may exist. Inspect the destination before retrying.",
+        ),
+        (
+            "complete-cleanup-with-error",
+            "Temporary-resource cleanup could not be established. Inspect the cleanup details.",
+        ),
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        let c = controller(
+            root.path(),
+            dual(
+                root.path(),
+                &check_stream(root.path(), &["one.eml"]),
+                &stream(root.path(), &[("one.eml", scenario)], false),
+            ),
+        );
+        c.stage(vec![root.path().join("one.eml")]).unwrap();
+        pump(&c, || !c.is_busy());
+        c.start_selection();
+        pump(&c, || !c.is_busy());
+        select_first(&c);
+        assert!(
+            c.window().get_detail().sentence.contains(expected),
+            "{scenario}"
+        );
+        assert!(c.clipboard_text().unwrap().contains(expected), "{scenario}");
+    }
+}
+
+#[test]
+fn core_related_notices_distinguish_preview_created_and_existing() {
+    init_no_event_loop();
+    for (scenario, dry, expected) in [
+        (
+            "planned-create-unix",
+            true,
+            eml_core::vocabulary::PREPARED_RELATED_RESOURCE_NOTICE,
+        ),
+        (
+            "created-attachment",
+            false,
+            eml_core::vocabulary::RELATED_RESOURCE_NOTICE,
+        ),
+        (
+            "up-to-date-attachment",
+            false,
+            eml_core::vocabulary::EXISTING_RELATED_RESOURCE_NOTICE,
+        ),
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        let mut values: Vec<Value> = stream(root.path(), &[("one.eml", scenario)], dry)
+            .lines()
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect();
+        values[1]["removed"] = records("created-attachment")[1]["removed"].clone();
+        values[1]["source_bytes"] = 1028.into();
+        values[1]["copy_bytes"] = 513.into();
+        values[1]["removed"][0]["reason"] = "related_resource".into();
+        values[1]["removed"][0]["content_type"] = "image/png".into();
+        let output: String = values.iter().map(|v| format!("{v}\n")).collect();
+        let check = if dry {
+            output.clone()
+        } else {
+            check_stream(root.path(), &["one.eml"])
+        };
+        let c = controller(
+            root.path(),
+            dual(root.path(), &check, if dry { "" } else { &output }),
+        );
+        c.stage(vec![root.path().join("one.eml")]).unwrap();
+        pump(&c, || !c.is_busy());
+        if !dry {
+            c.start_selection();
+            pump(&c, || !c.is_busy());
+        }
+        select_first(&c);
+        assert!(
+            c.window().get_detail().sentence.contains(expected),
+            "{scenario}"
+        );
+        assert!(c.clipboard_text().unwrap().contains(expected), "{scenario}");
+    }
+}
+
+#[test]
+fn failed_preview_does_not_claim_attachments_are_absent() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let c = controller(
+        root.path(),
+        dual(
+            root.path(),
+            &stream(root.path(), &[("bad.eml", "prepublication-failure")], true),
+            "",
+        ),
+    );
+    c.stage(vec![root.path().join("bad.eml")]).unwrap();
+    pump(&c, || !c.is_busy());
+    assert!(!c.window().get_view().summary.contains("No attachments"));
+    assert_eq!(c.window().get_view().problems, "1 can’t be copied");
+    assert!(!c.window().get_view().can_start);
+}
+
+#[test]
+fn request_refusal_retains_diagnostic_details_without_changing_report_bytes() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let cli = script(
+        root.path(),
+        "cat >/dev/null\nprintf 'Cannot use the output folder: permission denied (OS error 13)\\n' >&2\nexit 2\n",
+    );
+    let c = controller(root.path(), cli);
+    c.stage(vec![root.path().join("one.eml")]).unwrap();
+    pump(&c, || !c.is_busy());
+    assert_eq!(
+        c.window().get_view().banner,
+        "The request was refused before processing any emails."
+    );
+    assert_eq!(c.window().get_view().title, "Emails not checked");
+    label(&c.window(), "Details…").mock_single_click(slint::platform::PointerEventButton::Left);
+    let details = label(&c.window(), "Processing details");
+    assert!(details.accessible_value().unwrap().contains("OS error 13"));
+    let capture = c.capture_export().unwrap();
+    let target = root.path().join("refused.jsonl");
+    c.start_captured_export(capture, target.clone());
+    pump(&c, || !c.is_busy());
+    assert_eq!(fs::read(target).unwrap(), b"");
+    label(&c.window(), "Hide details").mock_single_click(slint::platform::PointerEventButton::Left);
+    assert!(
+        ElementHandle::find_by_accessible_label(&c.window(), "Processing details")
+            .next()
+            .is_none()
+    );
+}
+
+#[test]
+fn residual_cleanup_detail_keeps_the_resource_and_separate_native_cause() {
+    use base64::Engine;
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let mut values: Vec<Value> = stream(root.path(), &[("one.eml", "published-with-error")], false)
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    values[1]["publication"]["cleanup"] = json!({"state":"residual","residual_name":{"encoding":"unix-bytes","base64":base64::engine::general_purpose::STANDARD.encode(".emlattachmentremover-\n\u{202e}.tmp")},"native_code":13});
+    let output: String = values.iter().map(|v| format!("{v}\n")).collect();
+    let c = controller(
+        root.path(),
+        dual(
+            root.path(),
+            &check_stream(root.path(), &["one.eml"]),
+            &output,
+        ),
+    );
+    c.stage(vec![root.path().join("one.eml")]).unwrap();
+    pump(&c, || !c.is_busy());
+    c.start_selection();
+    pump(&c, || !c.is_busy());
+    select_first(&c);
+    assert!(
+        c.window()
+            .get_detail()
+            .sentence
+            .contains("A known owned temporary resource remains. Inspect the cleanup details.")
+    );
+    let text = c.clipboard_text().unwrap();
+    assert!(text.contains("Cleanup: Residual\nNative code: 13\nResidual resource: .emlattachmentremover-\\n\\u{202e}.tmp"), "{text}");
+    assert!(!c.window().get_detail().can_show_copy);
+}
+
+#[test]
+fn unknown_create_does_not_repeat_a_stale_preview_notice() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let mut values: Vec<Value> = check_stream(root.path(), &["one.eml"])
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    values[1]["removed"][0]["reason"] = "related_resource".into();
+    let check: String = values.iter().map(|v| format!("{v}\n")).collect();
+    let c = controller(root.path(), dual(root.path(), &check, ""));
+    c.stage(vec![root.path().join("one.eml")]).unwrap();
+    pump(&c, || !c.is_busy());
+    select_first(&c);
+    assert!(
+        c.window()
+            .get_detail()
+            .sentence
+            .contains(eml_core::vocabulary::PREPARED_RELATED_RESOURCE_NOTICE)
+    );
+    c.start_selection();
+    pump(&c, || !c.is_busy());
+    assert_eq!(
+        c.window().get_detail().sentence,
+        eml_core::vocabulary::Outcome::Unknown.explanation()
+    );
+}
+
+#[test]
+fn unobserved_create_results_do_not_claim_zero_copies_were_saved() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let c = controller(root.path(), dual(root.path(), "", ""));
+    c.stage(vec![root.path().join("one.eml")]).unwrap();
+    c.start_selection();
+    pump(&c, || !c.is_busy());
+    assert_eq!(c.window().get_view().state, BatchState::Done);
+    assert_eq!(c.window().get_view().title, "Results need attention");
 }
