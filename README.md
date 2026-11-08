@@ -41,6 +41,13 @@ emlattachmentremover --output-dir copies -- mail-folder
 emlattachmentremover --format json -- message.eml
 ```
 
+Human output uses the same outcome labels as the app (JSON is unchanged):
+
+```text
+Ready                    message.eml → message.no-attachments.eml · 1 attachment · 392 B → 183 B
+1 ready · 0 copies saved · 0 already existed · 0 can’t be copied · 0 not processed · 209 B would be removed. Exit 0
+```
+
 Copies use `<stem>.no-attachments.eml`. Explicit files go directly into the chosen
 existing output folder; selected folders mirror their root names and relative
 layout. Without `--output-dir`, copies stay beside their sources. Names that exceed

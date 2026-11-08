@@ -103,11 +103,10 @@ fn known_wire_guidance_does_not_invent_meanings_for_future_or_misspelled_codes()
         Some(ErrorCode::Malformed)
     );
     assert!(
-        eml_core::vocabulary::recovery_hint(ErrorCode::Malformed.as_str())
-            .unwrap()
+        eml_core::vocabulary::Outcome::Failed(ErrorCode::Malformed)
+            .explanation()
             .contains("export")
     );
-    assert!(eml_core::vocabulary::recovery_hint(ErrorCode::Internal.as_str()).is_none());
     assert!(ErrorCode::from_wire_name("malformed").is_none());
     assert!(ErrorCode::from_wire_name("FUTURE_CODE").is_none());
 }

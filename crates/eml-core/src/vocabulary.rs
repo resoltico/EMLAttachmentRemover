@@ -1,47 +1,5 @@
 //! Human-facing explanations shared by the CLI and desktop, outside wire facts.
 
-/// Explain an observed failure and the next useful action. Unknown protocol codes
-/// keep their supplied detail; they must not acquire an invented interpretation.
-pub fn recovery_hint(code: &str) -> Option<&'static str> {
-    use crate::ErrorCode;
-    match ErrorCode::from_wire_name(code)? {
-        ErrorCode::ReadFailed => Some(
-            "Check that the selected file or folder still exists and that you have permission to read it, then retry.",
-        ),
-        ErrorCode::Malformed => Some(
-            "This file isn't a valid email. It may be empty or not an email at all; if it came from your mail app, export it again.",
-        ),
-        ErrorCode::Protected => Some(
-            "Protected content would need to change in the retained message body. Obtain an unprotected export if appropriate.",
-        ),
-        ErrorCode::UnsupportedMime => {
-            Some("This email cannot be converted to a body-only copy. Keep the original email.")
-        }
-        ErrorCode::NoBody => Some(
-            "No supported plain-text or HTML message body would remain. Choose a message that contains a text body.",
-        ),
-        ErrorCode::InputLimitExceeded => {
-            Some("Select fewer messages or a smaller folder and try again.")
-        }
-        ErrorCode::NoInputs => Some(
-            "No .eml messages were found. Select messages or another folder; hidden entries and existing .no-attachments.eml copies are skipped during folder scans.",
-        ),
-        ErrorCode::OutputOverlap => Some(
-            "The copy folder overlaps a selected source folder. Choose a destination outside the selected tree, or save copies beside the originals.",
-        ),
-        ErrorCode::DestinationCollision => Some(
-            "Split colliding messages into separate runs and destination folders so each copy has its own path.",
-        ),
-        ErrorCode::DestinationExists => Some(
-            "Choose another copy folder, or move the existing destination before retrying. Existing entries will not be overwritten.",
-        ),
-        ErrorCode::StageFailed => Some(
-            "Check destination write permissions and available disk space, or choose another copy folder.",
-        ),
-        _ => None,
-    }
-}
-
 /// Material consequence of the body-only policy; HTML references are not rewritten.
 pub const RELATED_RESOURCE_NOTICE: &str = "Inline images or other related resources were removed. They may appear missing in the copied message.";
 
@@ -145,8 +103,6 @@ pub enum MeaningKind {
 pub enum Severity {
     /// Qualified success.
     Success,
-    /// Read-only observation.
-    Information,
     /// No action needed.
     Neutral,
     /// Work awaits execution.
@@ -165,35 +121,6 @@ pub enum RemovalMode {
     Removed,
     /// Verified absent from existing matching bytes.
     Absent,
-}
-impl RemovalMode {
-    /// Compact count with the actual selected/removed/verified-absent meaning.
-    pub fn count_label(self, count: usize) -> String {
-        format!(
-            "{count} {}",
-            match self {
-                Self::Selected => "selected",
-                Self::Removed => "removed",
-                Self::Absent => "absent",
-            }
-        )
-    }
-    /// Canonical part heading.
-    pub const fn parts(self) -> &'static str {
-        match self {
-            Self::Selected => "Parts selected for removal",
-            Self::Removed => "Removed parts",
-            Self::Absent => "Parts absent from matching bytes",
-        }
-    }
-    /// Canonical stale-field heading.
-    pub const fn fields(self) -> &'static str {
-        match self {
-            Self::Selected => "Fields selected for removal",
-            Self::Removed => "Removed stale fields",
-            Self::Absent => "Fields absent from matching bytes",
-        }
-    }
 }
 /// Simultaneous consequences; one primary failure cannot erase cleanup facts.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -247,36 +174,12 @@ impl Consequence {
 pub struct OutcomeMeaning {
     /// Conservative semantic category.
     pub kind: MeaningKind,
-    /// Display prominence.
-    pub severity: Severity,
     /// Removal/stale-field heading mode.
     pub removal_mode: RemovalMode,
     /// At most eight simultaneous consequences, in stable display order.
     pub consequences: Vec<Consequence>,
     /// Related-resource notice appropriate to this exact qualification.
     pub related_notice: Option<&'static str>,
-}
-impl MeaningKind {
-    /// Canonical concise result label.
-    pub const fn label(self) -> &'static str {
-        match self {
-            MeaningKind::Prepared => "Prepared only",
-            MeaningKind::Comparison => "Existing candidate to verify",
-            MeaningKind::Created => "Created",
-            MeaningKind::ExistingVerified => "Existing copy verified",
-            MeaningKind::PublishedIncomplete => "Complete copy published; qualification incomplete",
-            MeaningKind::ExistingMatched => "Existing bytes matched",
-            MeaningKind::PublicationUncertain => "Publication uncertain",
-            MeaningKind::NotPublished => "No new copy published",
-            MeaningKind::Unestablished => "Outcome cannot be established",
-        }
-    }
-}
-impl OutcomeMeaning {
-    /// Canonical concise result label.
-    pub const fn label(&self) -> &'static str {
-        self.kind.label()
-    }
 }
 /// Related resources verified absent from an existing matching copy.
 pub const EXISTING_RELATED_RESOURCE_NOTICE: &str = "Inline images or other related resources are absent from the matching bytes. They may appear missing in the existing copy.";
@@ -389,11 +292,6 @@ pub fn classify(f: &OutcomeFacts) -> OutcomeMeaning {
     }
     OutcomeMeaning {
         kind,
-        severity: match kind {
-            MeaningKind::Created | MeaningKind::ExistingVerified => Severity::Success,
-            MeaningKind::Prepared | MeaningKind::Comparison => Severity::Information,
-            _ => Severity::Attention,
-        },
         removal_mode,
         consequences,
         related_notice: f.related_resources.then_some(match removal_mode {
@@ -662,28 +560,6 @@ mod tests {
         }
     }
     #[test]
-    fn human_summary_adjusts_only_explicit_items_and_rejects_impossible_counts() {
-        let counts = crate::Counts {
-            created: 1,
-            up_to_date: 2,
-            planned: 3,
-            failed: 2,
-            not_processed: 4,
-        };
-        assert_eq!(
-            summary(&counts, crate::ExitClass::Interrupted, true, 1).unwrap(),
-            "Created 1; Up to date 2; Planned 3; Failed 1; Not processed 5. Exit 130; interrupted"
-        );
-        assert!(summary(&counts, crate::ExitClass::Interrupted, true, 3).is_err());
-        let overflow = crate::Counts {
-            failed: 1,
-            not_processed: usize::MAX,
-            ..Default::default()
-        };
-        assert!(summary(&overflow, crate::ExitClass::Interrupted, true, 1).is_err());
-        assert_eq!(counts.failed(), 2);
-    }
-    #[test]
     fn missing_or_contradictory_success_facts_never_become_success() {
         assert_eq!(classify(&facts()).kind, MeaningKind::Created);
         for index in 0..8 {
@@ -818,85 +694,6 @@ mod tests {
         assert_eq!(classify(&f).removal_mode, RemovalMode::Selected);
     }
 }
-
-/// Labels shared by run counts and result summaries.
-#[derive(Clone, Copy, Debug)]
-pub enum CountKind {
-    /// Collected source positions known to the producer.
-    KnownItems,
-    /// Selected file or folder operands, before discovery.
-    Selections,
-    /// Original source storage length.
-    SourceBytes,
-    /// Verified candidate storage length.
-    CopyBytes,
-    /// MIME entity bytes described by removal metadata.
-    PartBytes,
-
-    /// New copies published successfully.
-    Created,
-    /// Existing matching copies verified.
-    UpToDate,
-    /// Read-only plans.
-    Planned,
-    /// Items that failed.
-    Failed,
-    /// Items that were never started.
-    NotProcessed,
-}
-impl CountKind {
-    /// User-facing count label.
-    pub const fn label(self) -> &'static str {
-        match self {
-            Self::KnownItems => "Known items",
-            Self::Selections => "Selections",
-            Self::SourceBytes => SOURCE_BYTES_LABEL,
-            Self::CopyBytes => COPY_BYTES_LABEL,
-            Self::PartBytes => "Bytes",
-
-            Self::Created => "Created",
-            Self::UpToDate => "Up to date",
-            Self::Planned => "Planned",
-            Self::Failed => "Failed",
-            Self::NotProcessed => "Not processed",
-        }
-    }
-}
-/// Complete human summary using the same labels consumed by GUI count models.
-pub fn summary(
-    counts: &crate::Counts,
-    exit: crate::ExitClass,
-    interrupted: bool,
-    interrupted_items: usize,
-) -> Result<String, &'static str> {
-    let failed = counts
-        .failed()
-        .checked_sub(interrupted_items)
-        .ok_or("Interrupted item count exceeds failed items")?;
-    let not_processed = counts
-        .not_processed()
-        .checked_add(interrupted_items)
-        .ok_or("Human not-processed count overflow")?;
-    Ok(format!(
-        "{} {}; {} {}; {} {}; {} {}; {} {}. Exit {}{}",
-        CountKind::Created.label(),
-        counts.created(),
-        CountKind::UpToDate.label(),
-        counts.up_to_date(),
-        CountKind::Planned.label(),
-        counts.planned(),
-        CountKind::Failed.label(),
-        failed,
-        CountKind::NotProcessed.label(),
-        not_processed,
-        exit.code(),
-        if interrupted { "; interrupted" } else { "" }
-    ))
-}
-/// Plain metadata count heading.
-pub const SOURCE_BYTES_LABEL: &str = "Source bytes";
-/// Prepared-byte count heading.
-pub const COPY_BYTES_LABEL: &str = "Prepared copy bytes";
 
 /// Recovery from a bundled CLI identity mismatch.
 pub const WORKER_IDENTITY_HINT: &str =
