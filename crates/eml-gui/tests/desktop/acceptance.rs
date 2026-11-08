@@ -2577,3 +2577,24 @@ fn unobserved_create_results_do_not_claim_zero_copies_were_saved() {
     assert_eq!(c.window().get_view().state, BatchState::Done);
     assert_eq!(c.window().get_view().title, "Results need attention");
 }
+
+#[test]
+fn blocked_collection_does_not_claim_that_no_emails_exist() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let mut values = records("no-inputs");
+    values[0]["dry_run"] = true.into();
+    values[0]["collection_complete"] = false.into();
+    values[1]["collection_complete"] = false.into();
+    values[1]["run_error"]["code"] = "OUTPUT_OVERLAP".into();
+    values[1]["run_error"]["phase"] = "admission".into();
+    values[1]["run_error"]["detail"] =
+        "Output directory is reachable below a selected directory".into();
+    let output: String = values.iter().map(|v| format!("{v}\n")).collect();
+    let c = controller(root.path(), dual(root.path(), &output, ""));
+    c.stage(vec![root.path().join("one.eml")]).unwrap();
+    pump(&c, || !c.is_busy());
+    assert_eq!(c.window().get_view().title, "Emails not checked");
+    assert!(c.window().get_view().banner.contains("save folder"));
+    assert!(!c.window().get_view().can_start);
+}

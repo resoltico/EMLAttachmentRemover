@@ -796,3 +796,31 @@ fn human_preview_names_the_parts_using_shared_core_vocabulary() {
     assert!(text.contains(eml_core::vocabulary::PREPARED_RELATED_RESOURCE_NOTICE));
     assert!(!root.path().join("one.no-attachments.eml").exists());
 }
+
+#[test]
+fn incomplete_collection_does_not_invent_a_read_failure() {
+    let root = root();
+    fs::write(root.path().join("one.eml"), INPUT).unwrap();
+    fs::create_dir(root.path().join("copies")).unwrap();
+    let args = ["--output-dir", "copies", "--", "."];
+    let human = invoke(root.path(), &args, None);
+    let json = invoke(
+        root.path(),
+        &["--format", "json", "--output-dir", "copies", "--", "."],
+        None,
+    );
+    assert_eq!(human.status.code(), Some(1));
+    assert_eq!(json.status.code(), Some(1));
+    let records = events(&json.stdout);
+    assert_eq!(records[1]["run_error"]["code"], "OUTPUT_OVERLAP");
+    let text = String::from_utf8(human.stdout).unwrap();
+    assert!(
+        text.lines()
+            .next()
+            .unwrap()
+            .ends_with(" · Selection checking did not complete"),
+        "{text}"
+    );
+    assert!(!text.contains("selected paths could not be read"));
+    assert_eq!(fs::read_dir(root.path().join("copies")).unwrap().count(), 0);
+}

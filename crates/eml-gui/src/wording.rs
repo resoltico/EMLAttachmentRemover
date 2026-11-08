@@ -9,9 +9,10 @@ pub(super) struct Header {
 pub(super) fn header(
     batch: &Batch,
     totals: &BatchTotals,
-    total: Option<u32>,
+    inventory: Option<(u32, bool)>,
     missing: usize,
 ) -> Header {
+    let total = inventory.map(|(total, _complete)| total);
     let problems = totals.problems;
     let pill = if problems == 0 {
         String::new()
@@ -60,7 +61,12 @@ pub(super) fn header(
                 parts.push(Outcome::WillVerify.count_label(existing));
             }
             (
-                total.map_or_else(|| "Emails not checked".into(), |n| email_count(n as usize)),
+                inventory
+                    .filter(|(n, complete)| *complete || *n > 0)
+                    .map_or_else(
+                        || "Emails not checked".into(),
+                        |(n, _)| email_count(n as usize),
+                    ),
                 parts,
             )
         }

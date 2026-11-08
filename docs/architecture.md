@@ -36,6 +36,8 @@ identity and complete file signature prove the same captured entry. Unproven or
 long-path canonicalization retains conservative spelling without a new admission
 error; final symlink entries and distinct hard-link names are not merged by inode.
 Explicit files take precedence; the deepest selected root owns a walked file.
+The reported total stays paired with collection completeness; incomplete checking
+does not by itself establish a read failure or an empty selection.
 Selected directory aliases can be followed; links encountered during a walk are
 excluded. Destination links and reparse edges are refused.
 

@@ -32,7 +32,7 @@ Not a valid email        notes.txt → notes.txt.no-attachments.eml
                  No new copy was published.
 3 can’t be copied · 0 not processed · 0 B would be removed. Exit 1
 $ -- missing.eml
-emlattachmentremover @VERSION@ — 1 email · some selected paths could not be read
+emlattachmentremover @VERSION@ — 1 email · Selection checking did not complete
 Can’t be read            missing.eml
                  The file couldn’t be read. Check that it still exists and that you have permission to open it.
                  [Code: READ_FAILED · Phase: admission · Detail: Selected path could not be inspected or opened (OS error 2)]

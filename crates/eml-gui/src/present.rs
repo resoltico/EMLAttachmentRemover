@@ -332,12 +332,18 @@ impl crate::DesktopController {
             })
             .and_then(|s| s.report.as_ref())
             .map(|h| {
-                h.with_report(|report| (report.items().len(), report.start().map(|s| s.total)))
+                h.with_report(|report| {
+                    (
+                        report.items().len(),
+                        report.start().map(|s| (s.total, s.collection_complete)),
+                    )
+                })
             })
             .unwrap_or(Some((0, None)));
-        let Some((done, total)) = progress else {
+        let Some((done, inventory)) = progress else {
             return;
         };
+        let total = inventory.map(|(total, _complete)| total);
         let totals = BatchTotals::from(rows.iter().map(|row| {
             (
                 match row.status {
@@ -355,7 +361,7 @@ impl crate::DesktopController {
         let header = wording::header(
             &r.batch,
             &totals,
-            total,
+            inventory,
             rows.iter()
                 .filter(|r| r.status == RowStatus::Missing)
                 .count(),

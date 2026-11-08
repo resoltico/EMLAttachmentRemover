@@ -142,9 +142,9 @@ fn write_human(
                 ""
             },
             if value.collection_complete {
-                ""
+                String::new()
             } else {
-                " · some selected paths could not be read"
+                format!(" · {}", eml_core::vocabulary::COLLECTION_INCOMPLETE_NOTICE)
             }
         ),
         Event::Item(value) => write_item(writer, value),

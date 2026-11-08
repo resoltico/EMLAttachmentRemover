@@ -5,6 +5,8 @@ pub const RELATED_RESOURCE_NOTICE: &str = "Inline images or other related resour
 
 /// Consequence for a prepared candidate that has not been confirmed as published.
 pub const PREPARED_RELATED_RESOURCE_NOTICE: &str = "The prepared copy omits inline images or other related resources. They may appear missing if that copy is saved.";
+/// A partial inventory does not establish an I/O failure or a complete email count.
+pub const COLLECTION_INCOMPLETE_NOTICE: &str = "Selection checking did not complete";
 
 /// Terminal result category supplied by the producer, not a capability.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
