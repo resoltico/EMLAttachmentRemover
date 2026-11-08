@@ -65,8 +65,6 @@ pub(crate) fn run(rust_only: bool) -> Result<()> {
             "-p",
             "i-slint-backend-qt",
             "--lib",
-            "--features",
-            "raw-window-handle-06",
             "--target",
             &target,
         ]))?;
