@@ -401,3 +401,154 @@ fn report_export_write_failure_leaves_no_final_file_or_owned_staging() {
         String::from_utf8_lossy(&result.stderr)
     );
 }
+
+fn edited(name: &str, change: impl FnOnce(&mut Vec<serde_json::Value>)) -> Vec<u8> {
+    let mut records: Vec<serde_json::Value> = fixture(name)
+        .split(|b| *b == b'\n')
+        .filter(|l| !l.is_empty())
+        .map(|l| serde_json::from_slice(l).unwrap())
+        .collect();
+    change(&mut records);
+    records
+        .iter()
+        .flat_map(|r| format!("{r}\n").into_bytes())
+        .collect()
+}
+#[test]
+fn successful_fallback_receipts_require_the_core_native_witness() {
+    for record in ["created-limited-sync", "up-to-date"] {
+        for location in ["file_sync", "namespace_sync"] {
+            for code in [serde_json::Value::Null, 0.into(), 5.into(), 95.into()] {
+                let bytes = edited(record, |r| {
+                    let parent = if record == "up-to-date" {
+                        "existing_observation"
+                    } else {
+                        "publication"
+                    };
+                    r[1][parent][location]["method"] = "fsync_fullfsync_unsupported".into();
+                    r[1][parent][location]["native_code"] = code;
+                });
+                assert!(
+                    matches!(
+                        decode(&bytes, 0, 0),
+                        Err(Failure::Protocol(ProtocolFailure::InvalidReceipt))
+                    ),
+                    "{record}/{location}"
+                );
+            }
+        }
+    }
+}
+#[test]
+fn success_and_plan_claims_do_not_ignore_cleanup_or_attempted_work() {
+    for record in ["up-to-date", "planned-create-unix"] {
+        let bytes = edited(record, |r| {
+            r[1]["publication"]["cleanup"]["state"] = "unknown".into()
+        });
+        assert!(
+            matches!(
+                decode(&bytes, 0, 0),
+                Err(Failure::Protocol(ProtocolFailure::InvalidReceipt))
+            ),
+            "{record}"
+        );
+    }
+}
+#[test]
+fn known_error_phases_use_the_core_registry_and_future_codes_remain_open() {
+    let bytes = edited("prepublication-failure", |r| {
+        r[1]["error"]["phase"] = "sync".into()
+    });
+    assert!(matches!(
+        decode(&bytes, 0, 1),
+        Err(Failure::Protocol(ProtocolFailure::InvalidReceipt))
+    ));
+    let bytes = edited("prepublication-failure", |r| {
+        r[1]["error"]["code"] = "FUTURE_CODE".into();
+        r[1]["error"]["phase"] = "sync".into();
+    });
+    assert!(decode(&bytes, 0, 1).is_ok());
+}
+
+fn native_paths(records: &mut [serde_json::Value]) {
+    for (field, name) in [("source", "a.eml"), ("destination", "a.no-attachments.eml")] {
+        let path = std::env::current_dir().unwrap().join(name);
+        records[1][field]["native"] =
+            serde_json::to_value(eml_protocol::NativePathValue::new(&path)).unwrap();
+    }
+}
+#[test]
+fn native_worker_refuses_relative_operational_paths() {
+    for field in ["source", "destination"] {
+        let bytes = edited("created", |r| {
+            native_paths(r);
+            r[1][field]["native"] = serde_json::to_value(eml_protocol::NativePathValue::new(
+                std::path::Path::new("relative.eml"),
+            ))
+            .unwrap();
+        });
+        let frames: Vec<_> = bytes
+            .split(|b| *b == b'\n')
+            .filter(|l| !l.is_empty())
+            .collect();
+        let mut report = RunReport::for_native_worker("test-version");
+        report.accept_frame(frames[0]).unwrap();
+        assert_eq!(
+            report.accept_frame(frames[1]),
+            Err(ProtocolFailure::IncompatibleHelper),
+            "{field}"
+        );
+    }
+}
+#[test]
+fn native_worker_refuses_foreign_cleanup_units() {
+    use base64::Engine;
+    let bytes = edited("complete-cleanup-with-error", |r| {
+        native_paths(r);
+        let (encoding, bytes) = if cfg!(windows) {
+            ("unix-bytes", b"owned-stage".to_vec())
+        } else {
+            (
+                "windows-utf16le",
+                "owned-stage"
+                    .encode_utf16()
+                    .flat_map(u16::to_le_bytes)
+                    .collect(),
+            )
+        };
+        r[1]["publication"]["cleanup"]["state"] = "residual".into();
+        r[1]["publication"]["cleanup"]["residual_name"] = serde_json::json!({"encoding":encoding,"base64":base64::engine::general_purpose::STANDARD.encode(bytes)});
+    });
+    let frames: Vec<_> = bytes
+        .split(|b| *b == b'\n')
+        .filter(|l| !l.is_empty())
+        .collect();
+    let mut report = RunReport::for_native_worker("test-version");
+    report.accept_frame(frames[0]).unwrap();
+    assert_eq!(
+        report.accept_frame(frames[1]),
+        Err(ProtocolFailure::IncompatibleHelper)
+    );
+    // General reports can retain cross-host evidence without granting navigation.
+    assert!(decode(&bytes, 0, 1).is_ok());
+}
+
+#[test]
+fn valid_darwin_fallback_witnesses_remain_qualified_across_decoding_hosts() {
+    for record in ["created-limited-sync", "up-to-date"] {
+        for location in ["file_sync", "namespace_sync"] {
+            for code in [22, 45, 102] {
+                let bytes = edited(record, |r| {
+                    let parent = if record == "up-to-date" {
+                        "existing_observation"
+                    } else {
+                        "publication"
+                    };
+                    r[1][parent][location]["method"] = "fsync_fullfsync_unsupported".into();
+                    r[1][parent][location]["native_code"] = code.into();
+                });
+                assert!(decode(&bytes, 0, 0).is_ok(), "{record}/{location}/{code}");
+            }
+        }
+    }
+}

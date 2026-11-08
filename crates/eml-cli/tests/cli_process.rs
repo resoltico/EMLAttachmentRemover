@@ -824,3 +824,26 @@ fn incomplete_collection_does_not_invent_a_read_failure() {
     assert!(!text.contains("selected paths could not be read"));
     assert_eq!(fs::read_dir(root.path().join("copies")).unwrap().count(), 0);
 }
+
+#[test]
+fn absolute_requests_emit_paths_compatible_with_native_worker_navigation() {
+    let root = root();
+    let source = root.path().join("one.eml");
+    fs::write(&source, INPUT).unwrap();
+    let request = serde_json::json!({"protocol":1,"paths":[eml_protocol::NativePathValue::new(&source)],"output_directory":null,"dry_run":true});
+    let encoded = serde_json::to_vec(&request).unwrap();
+    let result = invoke(
+        root.path(),
+        &["--format", "json", "--request", "-"],
+        Some(&encoded),
+    );
+    assert_eq!(result.status.code(), Some(0));
+    let records = events(&result.stdout);
+    assert_eq!(records[1]["status"], "planned");
+    for field in ["source", "destination"] {
+        let path: eml_protocol::records::ReportPathRecord =
+            serde_json::from_value(records[1][field].clone()).unwrap();
+        assert!(path.native_absolute_path().is_some(), "{field}");
+    }
+    assert!(!root.path().join("one.no-attachments.eml").exists());
+}

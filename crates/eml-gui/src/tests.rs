@@ -202,13 +202,26 @@ fn native_open_remains_nonblocking_scoped_and_clears_recovered_errors() {
 
 #[test]
 fn attachment_labels_name_unnamed_parts_by_kind() {
-    use eml_protocol::records::{Nullable, Removal, RemovedRecord};
+    use eml_core::RemovalReason;
+    use eml_protocol::records::{Nullable, RemovedRecord};
     for (content_type, reason, expected) in [
-        ("image/png", Removal::RelatedResource, "Inline image"),
-        ("Image/JPEG", Removal::RelatedResource, "Inline image"),
-        ("text/css", Removal::RelatedResource, "Inline resource"),
-        ("font/woff", Removal::RelatedResource, "Inline resource"),
-        ("Text/Calendar", Removal::NonBodyPart, "Calendar invite"),
+        ("image/png", RemovalReason::RelatedResource, "Inline image"),
+        ("Image/JPEG", RemovalReason::RelatedResource, "Inline image"),
+        (
+            "text/css",
+            RemovalReason::RelatedResource,
+            "Inline resource",
+        ),
+        (
+            "font/woff",
+            RemovalReason::RelatedResource,
+            "Inline resource",
+        ),
+        (
+            "Text/Calendar",
+            RemovalReason::NonBodyPart,
+            "Calendar invite",
+        ),
     ] {
         let part = RemovedRecord {
             section: "2".into(),

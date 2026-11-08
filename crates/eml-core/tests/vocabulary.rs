@@ -56,13 +56,15 @@ fn u2_outcomes_preserve_qualified_rules_and_typed_failures() {
         bytes_equal: Some(true),
         stable: true,
         address: AddressState::Verified,
-        file_sync: good.file_sync,
-        namespace_sync: good.namespace_sync,
+        file_sync: None,
+        namespace_sync: f.namespace_sync,
     });
     f.plan = Some(PlanAction::VerifyExisting);
     assert_eq!(Outcome::from(&f, 1), Outcome::WillVerify);
     f.result = ResultKind::Existing;
     f.plan = None;
+    f.existing.as_mut().unwrap().file_sync = good.file_sync;
+    f.existing.as_mut().unwrap().namespace_sync = good.namespace_sync;
     assert_eq!(Outcome::from(&f, 1), Outcome::AlreadyExists);
     f.result = ResultKind::Failed;
     f.error = Some(eml_core::ErrorCode::ExistingSyncFailed);
@@ -231,4 +233,75 @@ fn remaining_work_and_explicitly_interrupted_items_are_counted_once() {
     assert_eq!(totals.emails, 5);
     assert_eq!(totals.count(Outcome::NotProcessed), 5);
     assert_eq!(totals.problems, 0);
+}
+
+#[test]
+fn comparison_plans_require_stable_known_unattempted_observations() {
+    let no_sync = eml_core::NamespaceObservation {
+        receipt: None,
+        required_edges: 0,
+        completed_edges: 0,
+        failed_edge_index: None,
+    };
+    let mut f = facts();
+    f.result = ResultKind::Planned;
+    f.publication = Publication::NotPublished;
+    f.plan = Some(eml_core::PlanAction::VerifyExisting);
+    f.file_sync = None;
+    f.namespace_sync = no_sync;
+    f.existing = Some(ExistingFacts {
+        identity_known: true,
+        bytes_equal: Some(true),
+        stable: true,
+        address: AddressState::NotChecked,
+        file_sync: None,
+        namespace_sync: no_sync,
+    });
+    assert_eq!(classify(&f).kind, MeaningKind::Comparison);
+    for property in 0..4 {
+        let mut bad = f.clone();
+        let existing = bad.existing.as_mut().unwrap();
+        match property {
+            0 => existing.identity_known = false,
+            1 => existing.stable = false,
+            2 => existing.namespace_sync.required_edges = 1,
+            _ => existing.file_sync = facts().file_sync,
+        }
+        assert_eq!(
+            classify(&bad).kind,
+            MeaningKind::Unestablished,
+            "{property}"
+        );
+    }
+}
+
+#[test]
+fn preview_offers_and_complete_results_are_domain_decisions_not_tones() {
+    assert!(can_offer_copy([Outcome::Ready], None));
+    assert!(can_offer_copy([Outcome::Unknown], Some("FUTURE_CODE")));
+    assert!(can_offer_copy([Outcome::NotProcessed], None));
+    assert!(!can_offer_copy(
+        [Outcome::Failed(eml_core::ErrorCode::Malformed)],
+        None
+    ));
+    assert!(!can_offer_copy([], Some("INPUT_ADMISSION_FAILED")));
+    for error in ["NO_INPUTS", "INPUT_LIMIT_EXCEEDED", "OUTPUT_OVERLAP"] {
+        assert!(!can_offer_copy([Outcome::Ready], Some(error)));
+    }
+    assert!(results_cover_inventory(true, false, 0, None));
+    assert!(results_cover_inventory(true, false, 0, Some("NO_INPUTS")));
+    for (complete, interrupted, remaining, error) in [
+        (false, false, 0, None),
+        (true, true, 0, None),
+        (true, false, 1, None),
+        (true, false, 0, Some("FUTURE_CODE")),
+        (true, false, 0, Some("OUTPUT_OVERLAP")),
+    ] {
+        assert!(!results_cover_inventory(
+            complete,
+            interrupted,
+            remaining,
+            error
+        ));
+    }
 }

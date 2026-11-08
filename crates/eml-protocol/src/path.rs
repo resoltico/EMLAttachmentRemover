@@ -202,3 +202,59 @@ impl fmt::Display for DisplayText<'_> {
         Ok(())
     }
 }
+
+impl crate::records::PathEncoding {
+    /// Whether native units can be interpreted by the executing host.
+    pub fn is_native(self) -> bool {
+        self == if cfg!(windows) {
+            Self::WindowsUtf16Le
+        } else {
+            Self::UnixBytes
+        }
+    }
+}
+impl crate::records::NativePathRecord {
+    /// Decode a bounded, canonical, NUL-free native value for this host.
+    /// Relative values are permitted here for owned residual basenames.
+    pub fn native_path(&self) -> Option<PathBuf> {
+        let maximum = eml_core::MAX_COLLECTED_PATH_BYTES;
+        if !self.encoding.is_native() || self.base64.len() > maximum.div_ceil(3) * 4 {
+            return None;
+        }
+        let bytes = STANDARD.decode(&self.base64).ok()?;
+        if bytes.len() > maximum || STANDARD.encode(&bytes) != self.base64 {
+            return None;
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::ffi::OsStringExt;
+            if bytes.contains(&0) {
+                return None;
+            }
+            Some(std::ffi::OsString::from_vec(bytes).into())
+        }
+        #[cfg(windows)]
+        {
+            use std::os::windows::ffi::OsStringExt;
+            if !bytes.len().is_multiple_of(2) {
+                return None;
+            }
+            let units: Vec<_> = bytes
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .map(|p| u16::from_le_bytes(*p))
+                .collect();
+            if units.contains(&0) {
+                return None;
+            }
+            Some(std::ffi::OsString::from_wide(&units).into())
+        }
+    }
+}
+impl crate::records::ReportPathRecord {
+    /// Native navigation remains absolute and host-matching; display is never authority.
+    pub fn native_absolute_path(&self) -> Option<PathBuf> {
+        self.native.native_path().filter(|path| path.is_absolute())
+    }
+}

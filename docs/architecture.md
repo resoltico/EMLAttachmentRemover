@@ -6,8 +6,8 @@ and human outcome vocabulary. Frontends adapt inputs and render those facts.
 | Crate | Responsibility |
 |---|---|
 | `eml-message` | Pure byte-based MIME parsing, body classification, plans, independent retained-span authorization and verification |
-| `eml-core` | Native request admission, collection, destination preflight, filesystem execution, diagnostics, product identity and vocabulary |
-| `eml-protocol` | Strict protocol-1 request decoding, native path encoding, typed JSONL events and bounded checked output |
+| `eml-core` | Native request admission, collection, destination preflight, filesystem execution, receipt qualification, diagnostics, product identity and vocabulary |
+| `eml-protocol` | Strict protocol-1 request decoding, native path encoding, typed JSONL events, core-fact adaptation and bounded checked output |
 | `emlattachmentremover` | Public CLI arguments, request transport, signals and human/JSON sinks |
 | `eml-app` | Immutable request snapshots, bounded report reducer and std child-process supervision |
 | `eml-gui` | Pure batch transitions, Slint views and GUI wording, exact report export, native ingress/preferences and macOS adapters |
@@ -19,6 +19,16 @@ its independent model and verifier check retained bodies and removed parts.
 publication/cleanup consequences, related-resource notices, attachment names/kinds,
 size formatting and counts for both CLI and GUI. Both render those meanings;
 frontend controls and transport diagnostics retain their interface-specific owners.
+`eml_core::qualification` owns receipt predicates used by execution constructors,
+outcome interpretation and report consumers. Complete namespace edge accounting,
+method-specific native witnesses and cleanup facts must agree. Private success
+constructors and actual native binding/readback checks remain separate safeguards.
+The protocol crate converts owned records to core facts and uses core's phase and
+removal-reason types through local serde bridges; core has no JSON dependency.
+The GUI does not implement a second outcome converter or native-path decoder.
+Native-worker records require absolute, host-matching operational paths, while
+independent general reports can retain relative or foreign-host evidence without
+turning it into native navigation.
 GUI details use current accepted observations, without reinterpreting a previous
 preview as a current create result. Human diagnostics keep canonical phases and
 separate cleanup resource/native causes; exact protocol-1 facts remain unchanged.
@@ -92,7 +102,10 @@ as Empty, Checking, Ready, Removing, Stopped or Done. Changes collapse into one
 pending check. Remove Attachments during a check replaces the pending operation
 with Create. New inputs during Removing are refused; after Done or Stopped they
 replace the batch. There is no run history, waiting queue, session report storage,
-eviction or lazy reload. Continue creates a fresh request with the same operands.
+eviction or lazy reload. Continue creates a fresh request with the same operands, including when the
+previous attempt stopped before any observations. Core owns the advisory preview
+copy offer and complete-results interpretation; GUI busy/quit/lifecycle gates do
+not depend on display severity.
 A settled stopped summary uses core totals from current create records and
 unprocessed work, including sources without preview rows. Retained preview rows
 are not added a second time.
@@ -139,8 +152,8 @@ power loss is not promised; a crash can leave a private staging file.
 `eml_core::vocabulary` owns `Outcome`, severity, explanations, run failures,
 part names, decimal byte formatting and `BatchTotals`. The CLI and GUI render
 these values; `wording.rs` holds only desktop interaction and layout wording.
-`view_model.rs` adapts accepted protocol receipts into core facts without changing
-protocol-1 JSON. `present.rs` unites check/create rows by lossless native source
+`eml_protocol` adapts accepted records into core facts without changing protocol-1
+JSON; `RunReport` projects settled totals through core aggregation. `present.rs` unites check/create rows by lossless native source
 path. A current create item takes precedence; before it arrives, the previous
 create result or a known check failure remains visible. Otherwise the row waits.
 Interrupted work is Not processed. Completed missing sources are No longer found;

@@ -11,6 +11,22 @@ fn t1_settlement_without_busy_work_is_rendered_on_next_tick() {
     let cli = root.path().join("check.sh");
     let records = include_str!("../../../../tests/contract/protocol/planned-create-unix.jsonl")
         .replace("@VERSION@", eml_core::product::VERSION);
+    let records: String = records
+        .lines()
+        .map(|line| {
+            let mut record: serde_json::Value = serde_json::from_str(line).unwrap();
+            if record["type"] == "item" {
+                for (field, name) in [("source", "a.eml"), ("destination", "a.no-attachments.eml")]
+                {
+                    record[field]["native"] = serde_json::to_value(
+                        eml_protocol::NativePathValue::new(&root.path().join(name)),
+                    )
+                    .unwrap();
+                }
+            }
+            format!("{record}\n")
+        })
+        .collect();
     std::fs::write(
         &cli,
         format!("#!/bin/sh\ncat >/dev/null\ncat <<'RECORDS'\n{records}\nRECORDS\n"),

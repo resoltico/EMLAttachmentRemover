@@ -29,7 +29,25 @@ pub struct NamespaceObservation {
     /// Failed operation's zero-based index, if one was attempted and failed.
     pub failed_edge_index: Option<u16>,
 }
+/// Maximum ordered operations admitted in a namespace observation.
+pub const MAX_NAMESPACE_EDGES: u16 = 513;
 impl NamespaceObservation {
+    /// Whether all required operations consistently succeeded.
+    pub fn succeeded(self) -> bool {
+        self.required_edges > 0
+            && self.required_edges <= MAX_NAMESPACE_EDGES
+            && self.completed_edges == self.required_edges
+            && self.failed_edge_index.is_none()
+            && self.receipt.is_some_and(SyncReceipt::succeeded)
+    }
+    /// Whether no namespace operation was required or attempted.
+    pub fn is_unattempted(self) -> bool {
+        self.receipt.is_none()
+            && self.required_edges == 0
+            && self.completed_edges == 0
+            && self.failed_edge_index.is_none()
+    }
+
     pub(super) const fn unattempted() -> Self {
         Self {
             receipt: None,
@@ -108,17 +126,14 @@ impl PublishedCopy {
 pub struct CreatedCopy(PublishedCopy);
 impl CreatedCopy {
     pub(super) fn qualify(publication: PublishedCopy) -> Result<Self, Box<PublishedCopy>> {
-        if publication.address == AddressState::Verified
-            && publication
-                .file_sync
-                .is_some_and(|receipt| receipt.state == crate::fs::SyncState::Succeeded)
-            && namespace_qualified(publication.namespace_sync)
-            && matches!(
-                publication.cleanup.state,
-                crate::fs::CleanupState::NotNeeded | crate::fs::CleanupState::Complete
-            )
-            && publication.cleanup.native_code.is_none()
-        {
+        if crate::qualification::publication(
+            crate::vocabulary::Publication::Published,
+            true,
+            publication.address,
+            publication.file_sync,
+            publication.namespace_sync,
+            &publication.cleanup,
+        ) {
             Ok(Self(publication))
         } else {
             Err(Box::new(publication))
@@ -135,15 +150,14 @@ impl CreatedCopy {
 pub struct ExistingCopy(ExistingObservation);
 impl ExistingCopy {
     pub(super) fn qualify(observation: ExistingObservation) -> Result<Self, ExistingObservation> {
-        if observation.identity.is_some()
-            && observation.bytes_equal == Some(true)
-            && observation.stable
-            && observation.address == AddressState::Verified
-            && observation
-                .file_sync
-                .is_some_and(|receipt| receipt.state == crate::fs::SyncState::Succeeded)
-            && namespace_qualified(observation.namespace_sync)
-        {
+        if crate::qualification::existing(
+            observation.identity.is_some(),
+            observation.bytes_equal,
+            observation.stable,
+            observation.address,
+            observation.file_sync,
+            observation.namespace_sync,
+        ) {
             Ok(Self(observation))
         } else {
             Err(observation)
@@ -199,15 +213,6 @@ impl UnknownPublication {
     pub fn cleanup(&self) -> &CleanupReceipt {
         &self.cleanup
     }
-}
-fn namespace_qualified(namespace: NamespaceObservation) -> bool {
-    namespace.required_edges > 0
-        && namespace.required_edges <= 513
-        && namespace.completed_edges == namespace.required_edges
-        && namespace.failed_edge_index.is_none()
-        && namespace
-            .receipt
-            .is_some_and(|receipt| receipt.state == crate::fs::SyncState::Succeeded)
 }
 /// Publication effect for a failed item, independent of its intended destination.
 #[derive(Debug)]
@@ -315,6 +320,16 @@ pub enum ItemResult<'a> {
     Planned(PlannedCopy<'a>),
     /// Actual failure, potentially with published/unknown evidence.
     Failed(Box<ItemFailure<'a>>),
+}
+impl<'a> ItemResult<'a> {
+    /// Fully admitted immutable message metadata, when available.
+    pub fn metadata(&self) -> Option<MessageMetadata<'a>> {
+        match self {
+            Self::Created(_, data) | Self::UpToDate(_, data) => Some(*data),
+            Self::Planned(plan) => Some(plan.metadata()),
+            Self::Failed(failure) => failure.metadata(),
+        }
+    }
 }
 /// Aggregate terminal accounting, computed once in the reusable workflow.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -600,5 +615,44 @@ mod tests {
             copy.namespace_sync.receipt = Some(SyncReceipt { state, ..success() });
             assert!(ExistingCopy::qualify(copy).is_err());
         }
+    }
+
+    #[test]
+    fn successful_state_does_not_qualify_invalid_fallback_receipts() {
+        for namespace in [false, true] {
+            let bad = SyncReceipt {
+                method: crate::SyncMethod::FsyncFullfsyncUnsupported,
+                state: crate::SyncState::Succeeded,
+                native_code: Some(5),
+            };
+            let mut publication = published();
+            if namespace {
+                publication.namespace_sync.receipt = Some(bad);
+            } else {
+                publication.file_sync = Some(bad);
+            }
+            assert!(CreatedCopy::qualify(publication).is_err());
+            let mut existing = ExistingObservation {
+                identity: Some(published().identity()),
+                bytes_equal: Some(true),
+                stable: true,
+                address: AddressState::Verified,
+                file_sync: Some(success()),
+                namespace_sync: complete_namespace(),
+            };
+            if namespace {
+                existing.namespace_sync.receipt = Some(bad);
+            } else {
+                existing.file_sync = Some(bad);
+            }
+            assert!(ExistingCopy::qualify(existing).is_err());
+        }
+    }
+
+    #[test]
+    fn complete_cleanup_with_a_residual_name_cannot_qualify_publication() {
+        let mut publication = published();
+        publication.cleanup.residual_name = Some("owned-stage".into());
+        assert!(CreatedCopy::qualify(publication).is_err());
     }
 }

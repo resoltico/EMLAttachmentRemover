@@ -3,13 +3,12 @@ use crate::{
     state::{Batch, Kind, State},
     wording::{self as words},
 };
-use base64::{Engine, engine::general_purpose::STANDARD};
 use eml_core::{
     ErrorCode,
     vocabulary::{BatchTotals, Outcome, Severity, fields, format_bytes},
 };
-use eml_protocol::records::{ItemRecord, NativePathRecord, PathEncoding};
-use std::{collections::HashMap, ffi::OsString, os::unix::ffi::OsStringExt, path::PathBuf};
+use eml_protocol::records::ItemRecord;
+use std::{collections::HashMap, path::PathBuf};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum RowStatus {
     Settled(Outcome),
@@ -72,8 +71,8 @@ impl Row {
     fn explanation(&self) -> String {
         let mut lines = vec![self.status.explanation()];
         // A waiting/missing/unconfirmed replacement must not reuse old outcome claims.
-        if self.status == RowStatus::Settled(crate::view_model::outcome(&self.item))
-            && let Some(facts) = crate::view_model::facts(&self.item)
+        if self.status == RowStatus::Settled(self.item.outcome())
+            && let Some(facts) = self.item.outcome_facts()
         {
             let meaning = eml_core::vocabulary::classify(&facts);
             lines.extend(meaning.consequences.iter().map(|c| c.text()));
@@ -99,7 +98,7 @@ impl Row {
             self.item
                 .destination
                 .value()
-                .and_then(|p| native(&p.native))
+                .and_then(|p| p.native_absolute_path())
                 .map(|p| eml_protocol::TerminalPath::new(&p).to_string())
                 .unwrap_or_default(),
             fields::STATUS,
@@ -122,7 +121,7 @@ impl Row {
                 eml_protocol::DisplayText::new(&error.detail)
             );
         }
-        if let Some(facts) = crate::view_model::facts(&self.item)
+        if let Some(facts) = self.item.outcome_facts()
             && facts.cleanup.state != eml_core::CleanupState::NotNeeded
         {
             text += &format!(
@@ -160,16 +159,6 @@ impl Row {
         text
     }
 }
-pub(super) fn native(path: &NativePathRecord) -> Option<PathBuf> {
-    (path.encoding == PathEncoding::UnixBytes)
-        .then(|| {
-            STANDARD
-                .decode(&path.base64)
-                .ok()
-                .map(|bytes| PathBuf::from(OsString::from_vec(bytes)))
-        })
-        .flatten()
-}
 pub(super) fn rows(batch: &Batch) -> Option<Vec<Row>> {
     let absent_create_status = batch.create.as_ref().map(|slot| {
         if batch.state() == State::Removing {
@@ -186,17 +175,8 @@ pub(super) fn rows(batch: &Batch) -> Option<Vec<Row>> {
             .as_ref()
             .filter(|c| c.failure.is_none())
             .and_then(|c| {
-                c.report.with_report(|r| {
-                    r.failure().is_none()
-                        && r.summary().is_some_and(|summary| {
-                            summary.collection_complete
-                                && !summary.interrupted
-                                && summary
-                                    .run_error
-                                    .value()
-                                    .is_none_or(|error| error.code == "NO_INPUTS")
-                        })
-                })
+                c.report
+                    .with_report(eml_app::RunReport::results_cover_inventory)
             })
             .unwrap_or(false);
         if complete {
@@ -224,10 +204,10 @@ pub(super) fn rows(batch: &Batch) -> Option<Vec<Row>> {
         };
         handle.with_report(|report| {
             for (index, item) in report.items().iter().enumerate() {
-                let Some(key) = native(&item.source.native) else {
+                let Some(key) = report.source_path(index) else {
                     continue;
                 };
-                let outcome = crate::view_model::outcome(item);
+                let outcome = item.outcome();
                 let status = if let Some(fallback) =
                     absent_create_status.filter(|_| kind == Kind::Check || previous)
                 {
@@ -368,7 +348,7 @@ impl crate::DesktopController {
                     .as_ref()?
                     .report
                     .as_ref()?
-                    .with_report(crate::view_model::settled_totals)
+                    .with_report(eml_app::RunReport::settled_totals)
                     .flatten()
             })
             .flatten();
@@ -652,6 +632,8 @@ impl crate::DesktopController {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use base64::{Engine, engine::general_purpose::STANDARD};
+    use eml_protocol::records::{NativePathRecord, PathEncoding};
     #[test]
     fn native_paths_are_independent_of_display_and_decimal_sizes_are_used() {
         let path = NativePathRecord {
@@ -659,7 +641,7 @@ mod tests {
             base64: STANDARD.encode(b"/native/\xff.eml"),
         };
         assert_eq!(
-            native(&path).unwrap().as_os_str().as_encoded_bytes(),
+            path.native_path().unwrap().as_os_str().as_encoded_bytes(),
             b"/native/\xff.eml"
         );
         assert_eq!(format_bytes(1_500_000), "1.5 MB");

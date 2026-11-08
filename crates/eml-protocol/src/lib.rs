@@ -9,6 +9,7 @@
 pub const PROGRAM_ID: &str = eml_core::product::CLI_NAME;
 
 mod event;
+mod observation;
 mod output;
 mod output_buffer;
 mod path;
