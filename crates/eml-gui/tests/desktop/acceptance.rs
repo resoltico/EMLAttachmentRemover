@@ -1570,3 +1570,173 @@ fn t7_failed_only_disables_button_menu_and_controller_but_checking_stays_enabled
     pump(&c, || !c.is_busy());
     assert_eq!(requests(root.path()).len(), 2);
 }
+
+#[test]
+fn u1_slint_has_no_readable_literals() {
+    for entry in fs::read_dir(Path::new(env!("CARGO_MANIFEST_DIR")).join("ui")).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().is_none_or(|e| e != "slint") {
+            continue;
+        }
+        let source = fs::read_to_string(&path).unwrap();
+        for line in source.lines().filter(|l| !l.trim_start().starts_with("//")) {
+            if line.trim_start().starts_with("import ") || line.trim_start().starts_with("export ")
+            {
+                continue;
+            }
+            for (i, literal) in line.split('"').enumerate() {
+                if i % 2 == 0 || !literal.chars().any(char::is_alphabetic) {
+                    continue;
+                }
+                assert!(
+                    line.contains("@image-url") || line.contains("Key.") || line.contains("@keys"),
+                    "Readable Slint literal in {}: {literal}",
+                    path.display()
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn u5_chips_size_and_status_share_row_centre() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let check = check_stream(root.path(), &["one.eml"]);
+    let c = controller(root.path(), dual(root.path(), &check, ""));
+    c.stage(vec![root.path().join("inputs")]).unwrap();
+    pump(&c, || !c.is_busy());
+    let ui = c.window();
+    let row = label(&ui, "one.eml, Ready");
+    let centre = row.absolute_position().y + row.size().height / 2.0;
+    for text in ["report.pdf", "1.0 kB → 513 B", "Ready"] {
+        let e = label(&ui, text);
+        assert!(
+            (e.absolute_position().y + e.size().height / 2.0 - centre).abs() <= 1.0,
+            "{text} centre differs from row centre {centre}: {:?} {:?}",
+            e.absolute_position(),
+            e.size()
+        );
+    }
+}
+
+#[test]
+fn u6_first_row_y_is_stable_when_problems_arrive() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let check = check_stream(root.path(), &["one.eml", "two.eml"]);
+    let create = stream(
+        root.path(),
+        &[
+            ("one.eml", "created-attachment"),
+            ("two.eml", "prepublication-failure"),
+        ],
+        false,
+    );
+    let c = controller(root.path(), dual(root.path(), &check, &create));
+    c.stage(vec![root.path().join("inputs")]).unwrap();
+    pump(&c, || !c.is_busy());
+    let before = label(&c.window(), "one.eml, Ready").absolute_position().y;
+    c.start_selection();
+    pump(&c, || !c.is_busy());
+    let after = label(&c.window(), "one.eml, Copy saved")
+        .absolute_position()
+        .y;
+    assert!(
+        (before - after).abs() <= 1.0,
+        "first row moved: {before} -> {after}"
+    );
+}
+
+#[test]
+fn u8_selection_does_not_resize_list() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let mut values: Vec<Value> = check_stream(root.path(), &["zero.eml", "one.eml", "five.eml"])
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    values[1]["removed"] = json!([]);
+    let part = values[3]["removed"][0].clone();
+    values[3]["removed"] = (0..5)
+        .map(|n| {
+            let mut p = part.clone();
+            p["section"] = format!("2.{n}").into();
+            p["bytes"] = 1.into();
+            p
+        })
+        .collect::<Vec<_>>()
+        .into();
+    let check = values.iter().map(|v| format!("{v}\n")).collect::<String>();
+    let c = controller(root.path(), dual(root.path(), &check, ""));
+    c.stage(vec![root.path().join("inputs")]).unwrap();
+    pump(&c, || !c.is_busy());
+    let mut heights = Vec::new();
+    for name in ["zero.eml", "one.eml", "five.eml"] {
+        let row = c
+            .window()
+            .get_rows()
+            .iter()
+            .find(|r| r.name == name)
+            .unwrap();
+        c.window().invoke_select_email(row.key);
+        mock_elapsed_time(Duration::from_millis(1));
+        heights.push(label(&c.window(), "Emails").size().height);
+    }
+    assert!(
+        heights.iter().all(|h| (h - heights[0]).abs() <= 1.0),
+        "list heights: {heights:?}"
+    );
+}
+
+#[test]
+fn u10_check_failures_persist_until_the_create_result() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let check = stream(
+        root.path(),
+        &[
+            ("bad.eml", "prepublication-failure"),
+            ("good.eml", "planned-create-unix"),
+        ],
+        true,
+    );
+    let create = stream(
+        root.path(),
+        &[
+            ("bad.eml", "prepublication-failure"),
+            ("good.eml", "created"),
+        ],
+        false,
+    );
+    let (start, rest) = create.split_once('\n').unwrap();
+    let cli = script(
+        root.path(),
+        &format!(
+            "request=$(cat)\ncase \"$request\" in *'\"dry_run\":true'*) {};; *) {}while [ ! -f release ]; do :; done\n{};; esac",
+            emit(&check),
+            print(&(start.to_owned() + "\n")),
+            emit(rest)
+        ),
+    );
+    let c = controller(root.path(), cli);
+    c.stage(vec![root.path().join("inputs")]).unwrap();
+    pump(&c, || !c.is_busy());
+    let before = c.window().get_view().problems;
+    c.start_selection();
+    pump(&c, || {
+        c.window().get_view().progress_text.starts_with("0 of 2")
+    });
+    let during = c
+        .window()
+        .get_rows()
+        .iter()
+        .find(|r| r.name == "bad.eml")
+        .unwrap()
+        .status;
+    let problems = c.window().get_view().problems;
+    fs::write(root.path().join("release"), "").unwrap();
+    pump(&c, || !c.is_busy());
+    assert_eq!(during, "Not a valid email");
+    assert_eq!(problems, before);
+}
