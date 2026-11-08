@@ -35,7 +35,7 @@ export component PopupMenuImpl inherits Window {
                 }
 
                 set-current => {
-                    focus-scope.focus();
+                    self.focus-current();
                     root.current-highlight = index;
                     open-sub-menu-after-timeout.running = true;
                 }

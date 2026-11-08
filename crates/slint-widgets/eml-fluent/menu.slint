@@ -50,6 +50,7 @@ export component MenuItem {
     callback set-current <=> base.set-current;
     callback clear-current <=> base.clear-current;
     callback activate <=> base.activate;
+    public function focus-current() { base.focus-current(); }
 
     min-height: entry.is-separator ? 9px : max(32px, base.min-height);
     max-height: entry.is-separator ? 9px : base.max-height;

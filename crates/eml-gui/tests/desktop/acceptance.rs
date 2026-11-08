@@ -2693,3 +2693,199 @@ fn linux_menu_default_actions_preserve_enabled_and_checked_command_facts() {
         assert_eq!(ui.get_rows().row_count(), if expected { 2 } else { 1 });
     }
 }
+
+fn test_clipboard(window: &slint::Window) -> Option<String> {
+    i_slint_core::window::WindowInner::from_pub(window)
+        .context()
+        .platform()
+        .clipboard_text(slint::platform::Clipboard::DefaultClipboard)
+}
+fn text_shortcut(window: &slint::Window, text: &str) {
+    use slint::platform::{Key, WindowEvent};
+    window.dispatch_event(WindowEvent::KeyPressed {
+        text: Key::Control.into(),
+    });
+    window.dispatch_event(WindowEvent::KeyPressed { text: text.into() });
+    window.dispatch_event(WindowEvent::KeyReleased { text: text.into() });
+    window.dispatch_event(WindowEvent::KeyReleased {
+        text: Key::Control.into(),
+    });
+    mock_elapsed_time(Duration::from_millis(1));
+}
+fn text_element(window: &impl ElementRoot, name: &str) -> ElementHandle {
+    ElementHandle::find_by_accessible_label(window, name)
+        .next()
+        .unwrap_or_else(|| panic!("Missing text target: {name}"))
+}
+fn focus_text(window: &impl ElementRoot, name: &str, start: i32, end: i32) {
+    let editor = text_element(window, name);
+    editor.mock_single_click(slint::platform::PointerEventButton::Left);
+    editor.set_accessible_selection_offsets(start, end);
+    mock_elapsed_time(Duration::from_millis(1));
+}
+#[test]
+fn standard_copy_uses_diagnostic_selection_and_explicit_copy_details_keeps_full_facts() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let c = done(root.path(), &["one.eml"]);
+    select_first(&c);
+    let ui = c.window();
+    let facts = c.clipboard_text().unwrap();
+    let weak = Rc::downgrade(&c);
+    ui.on_copy_details(move || {
+        let c = weak.upgrade().unwrap();
+        let text = c.clipboard_text().unwrap();
+        i_slint_core::window::WindowInner::from_pub(c.window().window())
+            .context()
+            .platform()
+            .set_clipboard_text(&text, slint::platform::Clipboard::DefaultClipboard);
+    });
+    let mut view = ui.get_view();
+    view.diagnostics = "diagnostic selection and more".into();
+    ui.set_view(view);
+    mock_elapsed_time(Duration::from_millis(1));
+    label(&ui, "Details…").mock_single_click(slint::platform::PointerEventButton::Left);
+    focus_text(&ui, "Processing details", 0, 10);
+    text_shortcut(ui.window(), "c");
+    assert_eq!(test_clipboard(ui.window()).as_deref(), Some("diagnostic"));
+    #[cfg(target_os = "linux")]
+    {
+        label(&ui, "Edit").mock_single_click(slint::platform::PointerEventButton::Left);
+        mock_elapsed_time(Duration::from_millis(1));
+        i_slint_core::window::WindowInner::from_pub(ui.window())
+            .context()
+            .platform()
+            .set_clipboard_text(
+                "before menu copy",
+                slint::platform::Clipboard::DefaultClipboard,
+            );
+        label(&ui, "Copy").mock_single_click(slint::platform::PointerEventButton::Left);
+        mock_elapsed_time(Duration::from_millis(1));
+        assert_eq!(test_clipboard(ui.window()).as_deref(), Some("diagnostic"));
+    }
+    label(&ui, "Copy Details").mock_single_click(slint::platform::PointerEventButton::Left);
+    assert_eq!(test_clipboard(ui.window()).as_deref(), Some(facts.as_str()));
+    text_shortcut(ui.window(), "c");
+    assert_eq!(test_clipboard(ui.window()).as_deref(), Some(facts.as_str()));
+}
+#[test]
+fn standard_copy_is_enabled_for_a_focused_diagnostic_without_a_selected_email() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let c = done(root.path(), &["one.eml"]);
+    let ui = c.window();
+    assert!(c.selected_original().is_none());
+    assert!(!ui.get_view().can_copy);
+    let mut view = ui.get_view();
+    view.diagnostics = "selection without a row".into();
+    ui.set_view(view);
+    mock_elapsed_time(Duration::from_millis(1));
+    label(&ui, "Details…").mock_single_click(slint::platform::PointerEventButton::Left);
+    focus_text(&ui, "Processing details", 0, 9);
+    text_shortcut(ui.window(), "c");
+    assert_eq!(test_clipboard(ui.window()).as_deref(), Some("selection"));
+    #[cfg(target_os = "linux")]
+    {
+        label(&ui, "Edit").mock_single_click(slint::platform::PointerEventButton::Left);
+        mock_elapsed_time(Duration::from_millis(1));
+        let copy = label(&ui, "Copy");
+        #[cfg(target_os = "linux")]
+        assert_eq!(copy.accessible_enabled(), Some(true));
+        i_slint_core::window::WindowInner::from_pub(ui.window())
+            .context()
+            .platform()
+            .set_clipboard_text(
+                "before menu copy",
+                slint::platform::Clipboard::DefaultClipboard,
+            );
+        copy.mock_single_click(slint::platform::PointerEventButton::Left);
+        mock_elapsed_time(Duration::from_millis(1));
+        assert_eq!(test_clipboard(ui.window()).as_deref(), Some("selection"));
+    }
+    label(&ui, "Hide details").mock_single_click(slint::platform::PointerEventButton::Left);
+    i_slint_core::window::WindowInner::from_pub(ui.window())
+        .context()
+        .platform()
+        .set_clipboard_text(
+            "closed editor",
+            slint::platform::Clipboard::DefaultClipboard,
+        );
+    text_shortcut(ui.window(), "c");
+    assert_eq!(
+        test_clipboard(ui.window()).as_deref(),
+        Some("closed editor")
+    );
+}
+#[test]
+fn secondary_about_and_license_details_support_copy_and_select_all() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let c = controller(root.path(), completed(root.path(), "created"));
+    let about = c.about_window();
+    about.set_notice("Failed to open website".into());
+    about.set_notice_details("about diagnostic selection".into());
+    about.show().unwrap();
+    text_element(&about, "Details…").mock_single_click(slint::platform::PointerEventButton::Left);
+    focus_text(&about, "Website opening details", 0, 5);
+    text_shortcut(about.window(), "c");
+    assert_eq!(test_clipboard(about.window()).as_deref(), Some("about"));
+    text_shortcut(about.window(), "a");
+    text_shortcut(about.window(), "c");
+    assert_eq!(
+        test_clipboard(about.window()).as_deref(),
+        Some("about diagnostic selection")
+    );
+    let licenses = c.license_window();
+    licenses.set_notice("Failed to show notices".into());
+    licenses.set_notice_details("license diagnostic selection".into());
+    licenses.show().unwrap();
+    text_element(&licenses, "Details…")
+        .mock_single_click(slint::platform::PointerEventButton::Left);
+    focus_text(&licenses, "Notices opening details", 0, 7);
+    text_shortcut(licenses.window(), "c");
+    assert_eq!(
+        test_clipboard(licenses.window()).as_deref(),
+        Some("license")
+    );
+    text_shortcut(licenses.window(), "a");
+    text_shortcut(licenses.window(), "c");
+    assert_eq!(
+        test_clipboard(licenses.window()).as_deref(),
+        Some("license diagnostic selection")
+    );
+}
+
+#[test]
+#[cfg(target_os = "linux")]
+fn linux_menu_keyboard_focus_is_the_named_action_and_keys_keep_bubbling() {
+    use i_slint_core::{accessibility::AccessibleStringProperty, items::AccessibleRole};
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let c = controller(root.path(), completed(root.path(), "created"));
+    let ui = c.window();
+    let visits = Rc::new(std::cell::Cell::new(0));
+    let observed = visits.clone();
+    ui.on_website(move || observed.set(observed.get() + 1));
+    let focused = || {
+        let item = i_slint_core::window::WindowInner::from_pub(ui.window())
+            .focus_item
+            .borrow()
+            .upgrade()
+            .unwrap();
+        assert_eq!(item.accessible_role(), AccessibleRole::Button);
+        assert!(item.geometry().width() > 0. && item.geometry().height() > 0.);
+        item.accessible_string_property(AccessibleStringProperty::Label)
+            .unwrap()
+            .to_string()
+    };
+    label(&ui, "Help").invoke_accessible_default_action();
+    mock_elapsed_time(Duration::from_millis(1));
+    key(&ui, slint::platform::Key::DownArrow);
+    assert_eq!(focused(), "Project Website");
+    key(&ui, slint::platform::Key::DownArrow);
+    assert_eq!(focused(), "Licenses");
+    key(&ui, slint::platform::Key::UpArrow);
+    assert_eq!(focused(), "Project Website");
+    key(&ui, slint::platform::Key::Return);
+    assert_eq!(visits.get(), 1);
+}

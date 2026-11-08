@@ -12,6 +12,7 @@ pub mod preferences;
 mod present;
 mod report_export;
 mod state;
+mod text_commands;
 mod wording;
 use eml_app::{RequestError, RequestSnapshot, WorkerRun, WorkerState};
 use eml_core::RunMode;

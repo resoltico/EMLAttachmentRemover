@@ -26,7 +26,7 @@ export component MainWindow inherits Window {
     callback choose-files(); callback choose-folder(); callback choose-destination(); callback beside-source(); callback recent-destination(int);
     callback start-selection(); callback start-over(); callback stop(); callback toggle-problems();
     callback select-email(string); callback navigate-email(int,int); callback clear-selected();
-    callback reveal-report(); callback show-copy(); callback show-original(); callback copy-details(); callback export-report(); callback reveal-output(int);
+    callback reveal-report(); callback show-copy(); callback show-original(); callback copy-details(); callback copy(); callback export-report(); callback reveal-output(int);
     callback close-window(); callback minimize(); callback website(); callback licenses(); callback about();
     callback cancel-quit(); callback stop-and-quit(); callback quit-now();
     MenuBar {
@@ -37,7 +37,7 @@ export component MainWindow inherits Window {
             if root.view.can-reveal-report: MenuItem { title: root.words.show-saved-report; activated => { root.reveal-report(); } }
             MenuItem { title: root.words.close; shortcut: @keys(Control + W); activated => { root.close-window(); } }
         }
-        Menu { title: root.words.edit; MenuItem { title: root.words.copy; shortcut: @keys(Control + C); enabled: root.view.can-copy; activated => { root.copy-details(); } } }
+        Menu { title: root.words.edit; MenuItem { title: root.words.copy; shortcut: @keys(Control + C); enabled: batch-pane.text-has-focus || root.view.can-copy; activated => { root.copy(); } } }
         Menu { title: root.words.batch;
             MenuItem { title: root.view.primary; shortcut: @keys(Control + Return); enabled: root.view.can-start; activated => { root.start-selection(); } }
             MenuItem { title: root.words.stop; shortcut: @keys(Control + "."); enabled: root.view.can-stop; activated => { root.stop(); } }
