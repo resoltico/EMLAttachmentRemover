@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Complete Linux accessibility for control states, read-only text, popup menus, focus and live notices. Menu commands and appearance stay unchanged.
+
 - Saved folders use lossless native encoding; earlier string settings reset to defaults. CLI and GUI path labels distinguish invalid native units without changing protocol-1 JSON.
 
 - Run Windows CI from a copied driver so Cargo can rebuild its original executable; locate that driver from Cargo's artifact output rather than assuming a target directory.

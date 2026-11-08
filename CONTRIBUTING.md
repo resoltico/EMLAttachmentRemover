@@ -177,3 +177,18 @@ mutation testing, install the pinned cargo-mutants and run
 `cargo mutants -p eml-message`. These are focused/manual tools; nightly fuzzing
 runs for 15 minutes. Avoid adding campaign, evidence or native UI qualification
 frameworks. Add tests for a concrete required behavior or regression.
+
+## Pinned Slint source maintenance
+
+The [Qt backend patch](crates/slint-qt/SOURCE-PATCH.md) covers native path,
+window, text and accessibility integration. Linux also uses the
+[published Fluent widget closure](crates/slint-widgets/SOURCE-PATCH.md) with
+menu accessibility properties. Its original visual and layout source is retained.
+A [small build-helper extension](crates/slint-build-source/SOURCE-PATCH.md)
+selects the compiler's existing broad experimental switch explicitly for this
+Linux UI compilation: the copied published widgets use internal interfaces.
+This also enables other experimental syntax/context constructors; application
+UI code does not use them. No global environment flag is changed. macOS keeps
+builtin Cupertino and native menus. Review these source patches and rerun their
+native checks when changing the pinned toolkit; they are not a general-purpose
+replacement toolkit distribution.

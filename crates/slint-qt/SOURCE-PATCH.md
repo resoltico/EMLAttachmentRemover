@@ -32,20 +32,56 @@ Local changes:
    Hidden Wayland widgets return an unavailable handle: without an xdg_toplevel
    role, attempting to export them would cause a compositor protocol error.
 
-3. The enabled backend build fails when Qt is absent, unsupported, older than Qt 6.12, outside the Qt 6 series, explicitly
+3. The enabled backend build fails when Qt is absent, unsupported, older than
+   Qt 6.12, outside the Qt 6 series, explicitly
    disabled by `SLINT_NO_QT`, or built for WebAssembly. It cannot silently
    produce a nonfunctional native desktop backend.
 
 4. The native accessibility bridge maps Slint's enabled, selectable, selected
-   and visibility facts into Qt state flags and observes their changes. Static
-   text is not advertised as focusable; interactive roles retain focusability.
+   and visibility facts into Qt state flags and observes their changes. Item
+   visibility also requires its native QWidget to be visible; window flags
+   derive visibility, enabled state, active state and focus from that QWidget.
+   Static text is not advertised as focusable; interactive roles retain focusability.
+   Valid enabled focusable items expose Qt's focus action, forwarding to the
+   same selection-preserving Slint focus path used by the Winit bridge.
    State notifications carry only actual changed flags. Declared live-label
    changes keep NameChanged events and emit Qt announcements with the declared
-   politeness, excluding hidden, empty and unchanged text. Existing checked,
-   expandable, expanded, read-only and focus state meanings are retained.
+   politeness, excluding hidden, empty and unchanged text. The initial tree
+   does not announce every startup label. Later inserted live subtrees queue
+   their initial visible text after the parent caches commit, sharing the same
+   label cache with property notifications to avoid duplicate announcements.
+   Existing checked, expandable, expanded, read-only and focus state meanings
+   are retained.
+
+5. Actual owned text inputs expose Qt's TextInterface, including read-only
+   licenses, diagnostics and selectable About text. `qt_accessible/text.rs`
+   resolves weak items on each call and uses the existing Slint text model,
+   Unicode offset conversion, renderer hit testing and caret geometry. Qt
+   grapheme boundaries produce character boxes; out-of-viewport hit tests fail.
+   Selection/cursor actions use the existing core selection path. Bounded
+   Flickable scrolling reveals the requested text without changing selection
+   or cursor. Text, selection and caret changes have their native Qt events.
+   No EditableTextInterface is advertised, password models are excluded, and
+   text is not misrepresented as a numeric ValueInterface.
+
+6. Embedded popup roots are attached to the same accessible invocation parent
+   as the Winit backend, using temporary child snapshots and native-window
+   coordinate mapping. Dismissed popup nodes keep only weak model references.
+   Descendant queries upgrade the actual ItemWeak instead of reinterpreting it
+   as an ItemRc. Each native window owns and frees one refreshable weak root
+   slot, replacing the upstream allocation on every root lookup. The window
+   pointer is an owned raw Weak, so getters borrow/upgrade it before reading
+   QtWindow data, including during construction or deferred native deletion.
+   Each temporary child ItemWeak box is also freed after the Qt item has cloned
+   its weak ownership, for both new and reused children.
+   Hit testing follows the active popup paint stack before the base scene,
+   recurses through overflow descendants and intersects actual ancestor clips.
+   Nodes removed from the current tree are detached before deferred QObject
+   deletion; queued callbacks and actions cannot reuse retired nodes.
 
 Tests in `qt_accessible.rs` exercise the production pure Qt state mapping,
-state-change masks and announcement conditions without an OS accessibility
+state-change masks and announcement conditions; text helper tests cover independent
+UTF-16/UTF-8 and scrolling oracles, without an OS accessibility
 service. Native AT-SPI tests remain external field evidence.
 
 Tests in `file_transfer.rs` exercise URL rejection, empty transfer results,

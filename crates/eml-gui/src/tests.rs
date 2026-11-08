@@ -251,3 +251,32 @@ fn request_rejection_wording_preserves_the_actual_cause() {
     assert!(crate::wording::request_error(&error).contains("NUL"));
     assert!(!crate::wording::request_error(&error).contains("Too many items"));
 }
+
+#[cfg(unix)]
+#[test]
+fn invalid_destination_keeps_the_choice_and_renders_the_core_path_cause() {
+    use std::{ffi::OsString, os::unix::ffi::OsStringExt};
+    i_slint_backend_testing::init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let c = DesktopController::new(
+        root.path().join("unused-cli"),
+        root.path().to_owned(),
+        preferences::Preferences::load(root.path().join("settings")),
+    )
+    .unwrap();
+    {
+        let mut runtime = c.runtime.borrow_mut();
+        runtime.batch.inputs.push(root.path().join("selected.eml"));
+        runtime.batch.pending = Some(Kind::Check);
+    }
+    c.set_destination(Some(PathBuf::from(OsString::from_vec(
+        b"/invalid\0folder".to_vec(),
+    ))));
+    assert!(c.runtime.borrow().batch.destination.is_none());
+    let expected = eml_core::RequestPathError::InvalidPath {
+        path: eml_core::RequestPath::OutputDirectory,
+        violation: eml_core::PathViolation::EmbeddedNul,
+    }
+    .to_string();
+    assert_eq!(c.notice.borrow().as_ref().unwrap().0, expected);
+}

@@ -2629,3 +2629,67 @@ fn native_path_units_remain_distinct_in_rows_details_and_folder_choices() {
     assert!(details.contains(r"/copies-<0xFE>\n/c0<0xFD>.eml"));
     assert!(!details.contains('�'));
 }
+
+#[test]
+#[cfg(target_os = "linux")]
+fn linux_menu_default_actions_preserve_enabled_and_checked_command_facts() {
+    use i_slint_backend_testing::AccessibleRole;
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let c = controller(
+        root.path(),
+        dual(
+            root.path(),
+            &check_stream(root.path(), &["saved.eml", "failed.eml"]),
+            &stream(
+                root.path(),
+                &[
+                    ("saved.eml", "created"),
+                    ("failed.eml", "prepublication-failure"),
+                ],
+                false,
+            ),
+        ),
+    );
+    let ui = c.window();
+    let chosen = Rc::new(std::cell::Cell::new(0));
+    let count = chosen.clone();
+    ui.on_choose_files(move || count.set(count.get() + 1));
+    let exports = Rc::new(std::cell::Cell::new(0));
+    let count = exports.clone();
+    ui.on_export_report(move || count.set(count.get() + 1));
+    let file = label(&ui, "File");
+    assert_eq!(file.accessible_role(), Some(AccessibleRole::Button));
+    file.invoke_accessible_default_action();
+    mock_elapsed_time(Duration::from_millis(1));
+    let disabled = label(&ui, "Save Report…");
+    assert_eq!(disabled.accessible_role(), Some(AccessibleRole::Button));
+    assert_eq!(disabled.accessible_enabled(), Some(false));
+    assert!(
+        disabled
+            .accessible_description()
+            .is_some_and(|value| !value.is_empty())
+    );
+    disabled.invoke_accessible_default_action();
+    assert_eq!(exports.get(), 0);
+    let add = label(&ui, "Add Files…");
+    assert_eq!(add.accessible_role(), Some(AccessibleRole::Button));
+    add.invoke_accessible_default_action();
+    assert_eq!(chosen.get(), 1);
+    c.stage(vec![root.path().join("inputs")]).unwrap();
+    pump(&c, || !c.is_busy());
+    c.start_selection();
+    pump(&c, || !c.is_busy());
+    assert!(ui.get_view().can_filter);
+    for expected in [false, true] {
+        label(&ui, "Batch").invoke_accessible_default_action();
+        mock_elapsed_time(Duration::from_millis(1));
+        let filter = label(&ui, "Show Problems Only");
+        assert_eq!(filter.accessible_role(), Some(AccessibleRole::Button));
+        assert_eq!(filter.accessible_checkable(), Some(true));
+        assert_eq!(filter.accessible_checked(), Some(expected));
+        filter.invoke_accessible_default_action();
+        assert_eq!(ui.get_view().filtered, !expected);
+        assert_eq!(ui.get_rows().row_count(), if expected { 2 } else { 1 });
+    }
+}
