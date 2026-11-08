@@ -1299,8 +1299,9 @@ cpp! {{
 
     int indexOfItem(const QList<QObject *> &existing, void *item) {
         for (int i = 0; i < existing.count(); ++i) {
-            auto data = dynamic_cast<Slint_accessible_item *>(QAccessible::queryAccessibleInterface(existing[i]));
-            if (!data) continue;
+            auto iface = dynamic_cast<Slint_accessible_item *>(QAccessible::queryAccessibleInterface(existing[i]));
+            if (!iface) continue;
+            auto data = iface->data();
             if (rust!(Slint_indexOfItems [data: Pin<&SlintAccessibleItemData> as "void*", item: &ItemWeak as "void*"] -> bool as "bool" {
                 data.item == *item
             })) {

@@ -75,6 +75,8 @@ Local changes:
    QtWindow data, including during construction or deferred native deletion.
    Each temporary child ItemWeak box is also freed after the Qt item has cloned
    its weak ownership, for both new and reused children.
+   Identity lookup passes the interface's Rust data pointer to Rust, preserving
+   provider identities across refreshes rather than casting the C++ interface.
    Hit testing follows the active popup paint stack before the base scene,
    recurses through overflow descendants and intersects actual ancestor clips.
    Nodes removed from the current tree are detached before deferred QObject
