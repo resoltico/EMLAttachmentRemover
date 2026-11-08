@@ -148,3 +148,55 @@ fn unresolved_emails_have_no_invented_terminal_outcome() {
     f.error = None;
     assert_eq!(Outcome::from(&f, 0), Outcome::Unknown);
 }
+
+#[test]
+fn field_whitespace_names_use_visible_kinds_without_trimming_real_names() {
+    use eml_core::RemovalReason;
+    assert_eq!(
+        part_name(Some("   "), RemovalReason::Attachment, "application/pdf"),
+        "Attachment"
+    );
+    assert_eq!(
+        part_name(
+            Some("\u{2003}\u{00a0}"),
+            RemovalReason::RelatedResource,
+            "image/png"
+        ),
+        "Inline image"
+    );
+    assert_eq!(
+        part_name(
+            Some(" report.pdf "),
+            RemovalReason::Attachment,
+            "application/pdf"
+        ),
+        " report.pdf "
+    );
+}
+
+#[test]
+fn field_incomplete_qualification_does_not_invent_a_new_write() {
+    let mut existing = facts();
+    existing.result = ResultKind::Failed;
+    existing.publication = Publication::NotPublished;
+    existing.error = Some(eml_core::ErrorCode::ExistingSyncFailed);
+    existing.existing = Some(ExistingFacts {
+        identity_known: true,
+        bytes_equal: Some(true),
+        stable: true,
+        address: AddressState::Verified,
+        file_sync: None,
+        namespace_sync: NamespaceObservation {
+            receipt: None,
+            required_edges: 0,
+            completed_edges: 0,
+            failed_edge_index: None,
+        },
+    });
+    let outcome = Outcome::from(&existing, 1);
+    assert_eq!(outcome, Outcome::NeedsChecking);
+    assert_eq!(
+        outcome.explanation(),
+        "A copy exists, but the final checks didn’t complete. Check the save folder, then try again. Existing copies are never replaced."
+    );
+}

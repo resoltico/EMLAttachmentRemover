@@ -329,6 +329,7 @@ impl crate::DesktopController {
                     .file_name()
                     .map(|n| n.to_string_lossy().into_owned())
                     .unwrap_or_else(|| row.item.source.display.clone());
+                let name = eml_protocol::DisplayText::new(&name).to_string();
                 let (prefix, suffix) = name.rsplit_once('.').map_or_else(
                     || (name.clone(), String::new()),
                     |(a, b)| (a.to_owned(), format!(".{b}")),
@@ -353,6 +354,7 @@ impl crate::DesktopController {
                         },
                     )
                 });
+                let folder = eml_protocol::DisplayText::new(&folder).to_string();
                 let size_text = row.size_text();
                 let description = wording::row_description(
                     &folder,
@@ -440,13 +442,11 @@ impl crate::DesktopController {
             .find(|row| Some(&row.key) == r.batch.selected.as_ref())
             .map(|row| EmailDetail {
                 visible: true,
-                name: row
-                    .key
-                    .file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .into_owned()
-                    .into(),
+                name: eml_protocol::TerminalPath::new(Path::new(
+                    row.key.file_name().unwrap_or_default(),
+                ))
+                .to_string()
+                .into(),
                 sentence: row.status.explanation().into(),
                 path_prefix: {
                     let path = row.copy.as_ref().unwrap_or(&row.key);

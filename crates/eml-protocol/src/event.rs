@@ -2,9 +2,9 @@
 use crate::PathValue;
 use eml_core::{
     AddressState, CleanupReceipt, CleanupState, Counts, Event, ExistingObservation, FailureEffect,
-    Identity, ItemEvent, ItemResult, MessageMetadata, NamespaceObservation, NativeDiagnostic,
-    OperationFailure, PlanAction, PublishedCopy, RemovedPart, RunOutcome, RunStart, SyncMethod,
-    SyncReceipt, SyncState,
+    Identity, ItemEvent, ItemResult, MessageMetadata, NamespaceObservation, OperationFailure,
+    PlanAction, PublishedCopy, RemovedPart, RunOutcome, RunStart, SyncMethod, SyncReceipt,
+    SyncState,
 };
 use serde::Serialize;
 use std::borrow::Cow;
@@ -60,14 +60,9 @@ struct ErrorFields<'a> {
     section: Option<&'a str>,
 }
 fn error<'a>(value: &'a OperationFailure, section: Option<&'a str>) -> ErrorFields<'a> {
-    let suffix = match value.native_diagnostic() {
-        None => String::new(),
-        Some(NativeDiagnostic::OsCode(code)) => format!(" (OS error {code})"),
-        #[cfg(windows)]
-        Some(NativeDiagnostic::NtStatus { status, win32 }) => {
-            format!(" (NTSTATUS 0x{:08X}; Win32 {win32})", status as u32)
-        }
-    };
+    let suffix = value
+        .native_diagnostic()
+        .map_or_else(String::new, |native| format!(" ({native})"));
     let detail = bounded_detail(value.detail(), &suffix);
     ErrorFields {
         code: value.code().as_str(),

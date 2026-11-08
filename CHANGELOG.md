@@ -6,6 +6,8 @@ Use concise bullets without category labels or subheadings, grouping related cha
 ## [Unreleased]
 
 - CLI human output is rewritten in plain language; JSON is unchanged. Update scripts that read human output to use protocol-1 JSON instead.
+- Keep numeric native error causes in human CLI diagnostics; protocol-1 JSON stays unchanged.
+- Show readable fallbacks for whitespace-only attachment names, escape filename controls in the app, and avoid false zero-save or new-write claims when results need checking.
 - The CLI and app share outcome labels, explanations, attachment names, size formatting and summary vocabulary from core.
 - Center row cells, use one button hierarchy and keep the header and detail pane stable. Popups follow their controls; results complete in displayed worker order.
 

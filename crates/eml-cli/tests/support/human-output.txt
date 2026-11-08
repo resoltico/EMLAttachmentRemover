@@ -32,6 +32,6 @@ $ -- missing.eml
 emlattachmentremover @VERSION@ — 1 email · some selected paths could not be read
 Can’t be read            missing.eml
                  The file couldn’t be read. Check that it still exists and that you have permission to open it.
-                 [Code: READ_FAILED · Phase: admission · Detail: Selected path could not be inspected or opened]
+                 [Code: READ_FAILED · Phase: admission · Detail: Selected path could not be inspected or opened (OS error 2)]
                  No new copy was published.
 1 can’t be copied · 0 not processed · 0 B removed. Exit 1

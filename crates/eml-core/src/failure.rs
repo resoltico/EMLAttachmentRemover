@@ -16,6 +16,17 @@ pub enum NativeDiagnostic {
         win32: u32,
     },
 }
+impl std::fmt::Display for NativeDiagnostic {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::OsCode(code) => write!(f, "OS error {code}"),
+            #[cfg(windows)]
+            Self::NtStatus { status, win32 } => {
+                write!(f, "NTSTATUS 0x{:08X}; Win32 {win32}", *status as u32)
+            }
+        }
+    }
+}
 
 /// Typed operation failure, independent of output, publication or cleanup facts.
 /// Construction stays private to business operations; frontends only observe it.

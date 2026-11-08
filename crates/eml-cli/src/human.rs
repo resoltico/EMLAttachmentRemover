@@ -79,13 +79,17 @@ impl<W: Write> EventSink for HumanSink<W> {
 }
 fn write_error(writer: &mut impl Write, error: &eml_core::OperationFailure) -> io::Result<()> {
     let [code, phase, detail] = [fields::CODE, fields::PHASE, fields::DETAIL];
-    writeln!(
+    write!(
         writer,
-        "                 [{code}: {} · {phase}: {} · {detail}: {}]",
+        "                 [{code}: {} · {phase}: {} · {detail}: {}",
         error.code(),
         error.phase(),
         error.detail()
-    )
+    )?;
+    if let Some(native) = error.native_diagnostic() {
+        write!(writer, " ({native})")?;
+    }
+    writeln!(writer, "]")
 }
 fn metadata<'a>(result: &'a eml_core::ItemResult<'a>) -> Option<eml_core::MessageMetadata<'a>> {
     use eml_core::ItemResult;
