@@ -1303,6 +1303,9 @@ fn s5_worker_failure_does_not_claim_preview_sources_disappeared() {
                 .all(|row| row.status == expected),
             "Absent create items after worker failure are not evidence of deleted sources"
         );
+        if launch_failure {
+            assert_eq!(c.window().get_view().problems, "2 can’t be copied");
+        }
         assert!(!c.window().get_view().banner.is_empty());
         assert!(c.capture_export().is_some());
     }

@@ -19,6 +19,8 @@ its independent model and verifier check retained bodies and removed parts.
 publication/cleanup consequences, related-resource notices, attachment names/kinds,
 size formatting and counts for both CLI and GUI. Both render those meanings;
 frontend controls and transport diagnostics retain their interface-specific owners.
+Core aggregation also counts represented pre-execution interface failures without
+inventing core outcomes; the interface keeps the failure cause and lifecycle.
 `eml_core::qualification` owns receipt predicates used by execution constructors,
 outcome interpretation and report consumers. Complete namespace edge accounting,
 method-specific native witnesses and cleanup facts must agree. Private success

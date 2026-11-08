@@ -305,3 +305,16 @@ fn preview_offers_and_complete_results_are_domain_decisions_not_tones() {
         ));
     }
 }
+
+#[test]
+fn represented_preexecution_failures_count_without_inventing_outcomes() {
+    let totals = BatchTotals::from([(None, 0, None); 2], 0).with_unclassified_failures(2);
+    assert_eq!(totals.emails, 2);
+    assert_eq!(totals.problems, 2);
+    assert!(totals.counts.is_empty());
+    assert_eq!(totals.problem_label(), "2 can’t be copied");
+    assert!(Severity::Failure.is_problem());
+    assert!(Severity::Attention.is_problem());
+    assert!(!Severity::Pending.is_problem());
+    assert!(!Severity::Neutral.is_problem());
+}

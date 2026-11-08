@@ -7,7 +7,7 @@ Use concise bullets without category labels or subheadings, grouping related cha
 
 - Share receipt qualification across execution, outcome interpretation and report reading; reject inconsistent successful sync, cleanup and read-only plan claims.
 - Use core phase/removal vocabularies and capability decisions in adapters; reject known code/phase mismatches and incompatible native-worker paths. Valid protocol-1 JSON stays unchanged.
-- Keep Continue available after stopping before observations; repeat the same request with fresh core admission.
+- Keep Continue available after stopping before observations; count known launch failures without inventing a core outcome.
 
 - Use core’s remaining-work aggregation for CLI and stopped app summaries, including work that never produced a preview row.
 
