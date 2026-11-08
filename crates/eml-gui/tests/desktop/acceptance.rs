@@ -1574,33 +1574,6 @@ fn t7_failed_only_disables_button_menu_and_controller_but_checking_stays_enabled
 }
 
 #[test]
-fn u1_slint_has_no_readable_literals() {
-    for entry in fs::read_dir(Path::new(env!("CARGO_MANIFEST_DIR")).join("ui")).unwrap() {
-        let path = entry.unwrap().path();
-        if path.extension().is_none_or(|e| e != "slint") {
-            continue;
-        }
-        let source = fs::read_to_string(&path).unwrap();
-        for line in source.lines().filter(|l| !l.trim_start().starts_with("//")) {
-            if line.trim_start().starts_with("import ") || line.trim_start().starts_with("export ")
-            {
-                continue;
-            }
-            for (i, literal) in line.split('"').enumerate() {
-                if i % 2 == 0 || !literal.chars().any(char::is_alphabetic) {
-                    continue;
-                }
-                assert!(
-                    line.contains("@image-url") || line.contains("Key.") || line.contains("@keys"),
-                    "Readable Slint literal in {}: {literal}",
-                    path.display()
-                );
-            }
-        }
-    }
-}
-
-#[test]
 fn u5_chips_size_and_status_share_row_centre() {
     init_no_event_loop();
     let root = tempfile::tempdir().unwrap();
@@ -1784,68 +1757,6 @@ fn u10_check_failures_persist_until_the_create_result() {
 }
 
 #[test]
-fn u1_rust_words_have_one_owner() {
-    fn inspect(directory: &Path) {
-        for entry in fs::read_dir(directory).unwrap() {
-            let path = entry.unwrap().path();
-            if path.is_dir() {
-                if path.file_name().unwrap() != "tests" {
-                    inspect(&path);
-                }
-                continue;
-            }
-            if path.extension().is_none_or(|e| e != "rs")
-                || ["wording.rs", "tests.rs"].contains(&path.file_name().unwrap().to_str().unwrap())
-            {
-                continue;
-            }
-            let source = fs::read_to_string(&path).unwrap();
-            let source = source.split("#[cfg(test)]\nmod tests").next().unwrap();
-            for line in source
-                .lines()
-                .filter(|l| !l.trim_start().starts_with("//") && !l.contains("reason ="))
-            {
-                for (i, literal) in line.split('"').enumerate() {
-                    if i % 2 == 0 {
-                        continue;
-                    }
-                    let readable: String = literal
-                        .split(['{', '}'])
-                        .enumerate()
-                        .filter(|(i, _)| i % 2 == 0)
-                        .map(|(_, s)| s)
-                        .collect();
-                    let readable = readable.replace("\\n", " ").replace("\\t", " ");
-                    let human = readable
-                        .split_whitespace()
-                        .filter(|w| w.chars().any(char::is_alphabetic))
-                        .count()
-                        > 1;
-                    let technical_name = [
-                        "C",
-                        "MacOS",
-                        "Contents",
-                        "EMLAttachmentRemover",
-                        "NSObject",
-                        "WinitApplicationDelegate",
-                        "EmlAboutMenuTarget",
-                    ]
-                    .contains(&readable.as_str());
-                    let single_word = readable.chars().next().is_some_and(char::is_uppercase)
-                        && readable.chars().all(|c| c.is_alphabetic() || c == '…');
-                    assert!(
-                        !human && (!single_word || technical_name),
-                        "Readable Rust literal in {}: {literal}",
-                        path.display()
-                    );
-                }
-            }
-        }
-    }
-    inspect(&Path::new(env!("CARGO_MANIFEST_DIR")).join("src"));
-}
-
-#[test]
 fn u9_unnamed_inline_image_is_named_by_kind() {
     init_no_event_loop();
     let root = tempfile::tempdir().unwrap();
@@ -1871,58 +1782,6 @@ fn u9_unnamed_inline_image_is_named_by_kind() {
     );
     assert!(!labels(&c.window()).iter().any(|s| s.contains("image/png")));
     assert!(c.clipboard_text().unwrap().contains("image/png"));
-}
-
-#[test]
-fn u4_visual_literals_and_unused_tokens_are_rejected() {
-    let directory = Path::new(env!("CARGO_MANIFEST_DIR")).join("ui");
-    let mut all = String::new();
-    let theme = fs::read_to_string(directory.join("theme.slint")).unwrap();
-    for entry in fs::read_dir(directory).unwrap() {
-        let path = entry.unwrap().path();
-        if path.extension().is_none_or(|e| e != "slint") {
-            continue;
-        }
-        let source = fs::read_to_string(&path).unwrap();
-        assert!(!source.contains(concat!("ui", "-size")));
-        if path.file_name().unwrap() != "theme.slint" {
-            for line in source.lines() {
-                for property in ["font-size:", "border-radius:"] {
-                    for value in line.split(property).skip(1) {
-                        assert!(
-                            !value.trim_start().starts_with(|c: char| c.is_ascii_digit()),
-                            "Visual literal: {line}"
-                        );
-                    }
-                }
-                assert!(
-                    !line
-                        .as_bytes()
-                        .windows(7)
-                        .any(|w| w[0] == b'#' && w[1..].iter().all(u8::is_ascii_hexdigit)),
-                    "Colour literal: {line}"
-                );
-            }
-        }
-        all.push_str(&source);
-    }
-    for line in theme.lines().filter(|l| l.contains("out property")) {
-        let name = line
-            .split('>')
-            .nth(1)
-            .unwrap()
-            .split(':')
-            .next()
-            .unwrap()
-            .trim();
-        let external = all.contains(&format!("Theme.{name}"));
-        let internal = theme.lines().filter(|other| *other != line).any(|other| {
-            other
-                .split(|c: char| !c.is_alphanumeric() && c != '-')
-                .any(|word| word == name)
-        });
-        assert!(external || internal, "Unused Theme token: {name}");
-    }
 }
 
 #[test]

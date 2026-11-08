@@ -5,6 +5,11 @@
 Use concise bullets without category labels or subheadings, grouping related changes and putting breaking changes and required actions first. Each bullet occupies one physical line, at most 200 characters including Markdown but excluding its `- ` marker: a ceiling, not a target. Shorten or split without losing material consequences. Use technical names when helpful; link to existing relevant documentation, without assuming paths or creating documents merely to satisfy this rule.
 ## [Unreleased]
 
+- Raise the Linux build and CLI runtime baseline to Ubuntu 26.04. Native GUI builds select desktop-winit on macOS or desktop-qt on Linux; the desktop feature is removed.
+- Keep Slint 1.18.1 with Qt 6.12 on Linux, preserving Wayland, X11 and native accessibility. Portal file panels and drops preserve native filenames; failed parent export is reported.
+- Remove maintenance advisory waivers; check every supported native dependency profile. Reject missing Qt and a runtime that differs from its build SDK.
+- Close Rust wording and Slint visual-token guard bypasses, and share the transparent colour token. Validate the Linux GUI sibling CLI before opening its window.
+
 - Check dirty and newly added source in the verification budget and shell lint; include verification scripts in harness size and fail on empty/missing inputs.
 - Share local/hosted lint commands, read tool pins from the invoking workspace and reuse trusted CI caches for release builds. Remove obsolete Windows sentinel artifacts.
 

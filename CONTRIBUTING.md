@@ -13,9 +13,16 @@ ID; CI sets it from its checked-out revision. Without it, ordinary builds displa
 only the workspace version. Distribution resolves and supplies HEAD for both
 frontends, using the optimized `dist` profile (see [release identity](docs/release.md)).
 On macOS, install Command Line Tools (`xcode-select --install`); full
-Xcode is unnecessary for builds. Ubuntu desktop development needs `pkg-config`
-and `libfontconfig1-dev`. Windows CLI development uses Visual Studio C++ Build
-Tools with the native x64 or ARM64 MSVC tools. CI builds a static CRT.
+Xcode is unnecessary for builds. Linux development and released CLI binaries
+require Ubuntu 26.04 or newer. Native GUI development also needs `pkg-config`,
+`libfontconfig1-dev` and `libwayland-dev`, plus the Qt SDK version in `xtask/tools.toml`. Install the
+official Qt 6.12 SDK (Qt Base, Qt Wayland and bundled ICU) for your architecture and set
+`QMAKE` to its `bin/qmake`. Distro Qt development packages may be older than the
+supported baseline. Install the
+[Qt Linux system prerequisites](https://doc.qt.io/qt-6/linux-requirements.html)
+for your display server; the SDK does not supply all host libraries.
+Windows CLI development uses Visual Studio C++ Build Tools with the native x64
+or ARM64 MSVC tools. CI builds a static CRT.
 
 ```sh
 cargo build --locked -p emlattachmentremover
@@ -34,10 +41,31 @@ open "target/desktop/app/EML Attachment Remover.app"
 ```
 
 Use a fresh output directory on subsequent distributions. Apart from `--version`
-and `-V`, the bare Cargo GUI executable is not a supported macOS launch path and fails before opening a window when
-its macOS bundle/helper context is missing. Cross-platform GUI library/testing
-backend development is available; distributed native GUI apps currently target
-macOS. On Windows, exclude `eml-app` and `eml-gui` from workspace commands
+and `-V`, the bare Cargo GUI executable requires its macOS bundle/helper context
+before opening a window. The GUI library and testing backend support macOS and
+Linux. Native Linux GUI builds use Slint's Qt backend, Qt 6 Widgets and Qt's
+accessibility integration;
+macOS uses Slint's Winit backend. CI installs the exact Qt SDK pin on Ubuntu 26.04 for both Linux
+architectures; `"$QMAKE" -query QT_VERSION` identifies the selected SDK. Native distribution archives currently target
+macOS. Linux development uses:
+
+```sh
+cargo build --locked -p emlattachmentremover
+cargo build --locked -p eml-gui --bin emlattachmentremover-gui --no-default-features --features desktop-qt
+cargo run --locked -p eml-gui --bin emlattachmentremover-gui --no-default-features --features desktop-qt
+```
+
+Keep the built CLI beside the GUI executable. Linux native operation requires
+Qt 6.12 or newer within Qt 6, with the runtime version matching the build SDK
+exactly, plus a Qt platform plugin for the session:
+Wayland or X11. Install Qt Wayland from the same SDK for Wayland, and put the
+SDK's `lib` directory on `LD_LIBRARY_PATH` when it is outside the system library
+search path. Native file dialogs require XDG Desktop Portal and your desktop's file chooser
+backend (for example, KDE or GTK). Wayland compositors must support xdg-foreign
+window export for parented panels. Dialogs are modal and parented to the app;
+portal setup or parent-export failures are shown as errors. There is no Zenity
+fallback. Accessibility uses Qt's platform integration. Missing Qt or `SLINT_NO_QT` is an error for the Linux
+native profile. On Windows, exclude `eml-app` and `eml-gui` from workspace commands
 and use `--target` with your native MSVC triple so host
 procedural macros are built independently of static-CRT target flags.
 
@@ -56,8 +84,9 @@ cargo xtask ci
 
 Obtain actionlint and shellcheck from their upstream releases or a package manager,
 using the versions in tools.toml. `cargo xtask ci` checks tool versions, formatting,
-dependency policy for all workspace features and the separate fuzz lockfile,
-workflows, shell scripts and the working-tree verification budget;
+dependency policy for the headless graph, both macOS native renderers, the Linux
+Qt graph and the separate fuzz lockfile, workflows, shell scripts and the
+working-tree verification budget;
 then runs Clippy and tests. On macOS it also builds the signed universal app in a
 fresh temporary directory. Structural complexity thresholds warn; other Clippy
 findings fail. Inline exceptions use `#[expect(..., reason = "...")]`.
@@ -75,8 +104,17 @@ Native Finder/Dock, file panels and appearance are manual checks.
 
 Merge CI restores caches on every producer and saves them only on main. Release
 builds read those trusted cache namespaces rather than keys with no producers.
+Linux test and release builds use the same Ubuntu 26.04 baseline, so they can
+reuse build outputs. Cache keys include the Qt/developer-tool pins.
 `cargo xtask lint` owns source/configuration checks for both hosted lint and local
-CI; `cargo xtask ci --rust-only` owns the native Clippy/test portion. The full
+CI; `cargo xtask ci --rust-only` owns the native Clippy/test portion. Native
+Clippy selects `desktop-winit` on macOS and `desktop-qt` on Linux. Linux also
+runs native adapter tests against Slint's testing backend and pure portal
+responses, plus the scoped Qt backend's boundary unit tests outside workspace
+test discovery. They do not contact desktop services. These
+platform profiles are mutually exclusive; `--all-features` is unsupported.
+macOS defaults to `renderer-software`; `renderer-skia` is optional. Linux Qt
+draws through Qt's painter rather than a Slint renderer selection. The full
 `cargo xtask ci` composes them and checks macOS archives separately.
 
 The budget reads tracked and non-ignored untracked working files, including

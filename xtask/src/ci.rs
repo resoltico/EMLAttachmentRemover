@@ -5,6 +5,9 @@ pub(crate) fn run(rust_only: bool) -> Result<()> {
     if !rust_only {
         crate::lint::run()?;
     }
+    if cfg!(target_os = "linux") {
+        crate::tools::qt()?;
+    }
     let target = host()?;
     let exclusions = if cfg!(windows) {
         &["--exclude", "eml-app", "--exclude", "eml-gui"][..]
@@ -23,8 +26,10 @@ pub(crate) fn run(rust_only: bool) -> Result<()> {
             &target,
         ])
         .args(exclusions);
-    if !cfg!(windows) {
-        clippy.args(["--features", "eml-gui/desktop"]);
+    if cfg!(target_os = "macos") {
+        clippy.args(["--features", "eml-gui/desktop-winit"]);
+    } else if cfg!(target_os = "linux") {
+        clippy.args(["--features", "eml-gui/desktop-qt"]);
     }
     clippy.args([
         "--",
@@ -40,6 +45,32 @@ pub(crate) fn run(rust_only: bool) -> Result<()> {
             .args(["--target", &target])
             .args(exclusions),
     )?;
+    if cfg!(target_os = "linux") {
+        // Native adapter tests use Slint's testing backend and pure portal responses.
+        command(Command::new("cargo").args([
+            "test",
+            "--locked",
+            "-p",
+            "eml-gui",
+            "--lib",
+            "--features",
+            "desktop-qt",
+            "--target",
+            &target,
+        ]))?;
+        // The scoped Qt backend patch is a dependency, outside workspace test discovery.
+        command(Command::new("cargo").args([
+            "test",
+            "--locked",
+            "-p",
+            "i-slint-backend-qt",
+            "--lib",
+            "--features",
+            "raw-window-handle-06",
+            "--target",
+            &target,
+        ]))?;
+    }
     if !rust_only && cfg!(target_os = "macos") {
         let out = tempfile::tempdir()?;
         crate::dist::build(false, true, true, None, out.path())?;

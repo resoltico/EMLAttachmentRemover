@@ -3,7 +3,11 @@
 mod actions;
 mod callbacks;
 pub mod ingress;
+#[cfg(feature = "native")]
+mod native_dialogs;
 pub mod platform;
+#[cfg(feature = "desktop-qt")]
+mod portal_dialogs;
 pub mod preferences;
 mod present;
 mod report_export;
@@ -46,9 +50,9 @@ struct ExportJob {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum OpenTarget {
     Main,
-    #[cfg(any(feature = "desktop", test))]
+    #[cfg(any(feature = "native", test))]
     About,
-    #[cfg(any(feature = "desktop", test))]
+    #[cfg(any(feature = "native", test))]
     Licenses,
 }
 struct OpenJob {
@@ -108,7 +112,7 @@ impl DesktopController {
         let about = AboutWindow::new()?;
         let licenses = LicenseWindow::new()?;
         ui.set_product_name(eml_core::product::DISPLAY_NAME.into());
-        ui.set_native_about(cfg!(all(feature = "desktop", target_os = "macos")));
+        ui.set_native_about(cfg!(all(feature = "native", target_os = "macos")));
         ui.set_words(wording::controls());
         about.set_words(wording::controls());
         licenses.set_words(wording::controls());
@@ -622,19 +626,19 @@ impl DesktopController {
             } else {
                 format!("{text} {detail}")
             }),
-            #[cfg(any(feature = "desktop", test))]
+            #[cfg(any(feature = "native", test))]
             OpenTarget::About => {
                 self.about.set_notice(text.into());
                 self.about.set_notice_details(detail.into());
             }
-            #[cfg(any(feature = "desktop", test))]
+            #[cfg(any(feature = "native", test))]
             OpenTarget::Licenses => {
                 self.licenses.set_notice(text.into());
                 self.licenses.set_notice_details(detail.into());
             }
         }
     }
-    #[cfg(any(feature = "desktop", test))]
+    #[cfg(any(feature = "native", test))]
     pub(crate) fn open_advisory(
         &self,
         target: OpenTarget,

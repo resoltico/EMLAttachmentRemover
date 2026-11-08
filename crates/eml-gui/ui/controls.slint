@@ -26,7 +26,7 @@ export component TextButton inherits Rectangle {
     max-height: self.min-height;
     horizontal-stretch: 0; vertical-stretch: 0;
     border-radius: Theme.radius-control;
-    background: pointer.has-hover && root.enabled ? Theme.raised : transparent;
+    background: pointer.has-hover && root.enabled ? Theme.raised : Theme.clear;
     border-width: keys.has-focus && root.enabled ? 1px : 0px;
     border-color: Theme.accent;
     accessible-role: button;

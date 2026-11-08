@@ -1,6 +1,6 @@
 [workspace]
 members = ["crates/eml-message", "crates/eml-core", "crates/eml-protocol", "crates/eml-cli", "crates/eml-app", "crates/eml-gui", "crates/spin-on", "xtask"]
-exclude = ["fuzz"]
+exclude = ["fuzz", "crates/slint-qt"]
 resolver = "3"
 
 [workspace.package]
@@ -55,3 +55,5 @@ debug = false
 # Slint 1.18.1 uses this executor; the source patch removes archived pin-utils.
 [patch.crates-io]
 spin_on = { path = "crates/spin-on" }
+
+i-slint-backend-qt = { path = "crates/slint-qt" }

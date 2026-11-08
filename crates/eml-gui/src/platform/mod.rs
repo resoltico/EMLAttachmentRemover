@@ -1,36 +1,36 @@
 //! Application-owned macOS menu routing and Quit admission.
-#[cfg(all(feature = "desktop", target_os = "macos"))]
+#[cfg(all(feature = "native", target_os = "macos"))]
 mod macos;
 pub(crate) fn set_busy(busy: bool) {
-    #[cfg(all(feature = "desktop", target_os = "macos"))]
+    #[cfg(all(feature = "native", target_os = "macos"))]
     macos::set_busy(busy);
     let _ = busy;
 }
 /// Install application-menu About routing and Quit admission after native startup.
 pub fn install() -> Result<(), Box<dyn std::error::Error>> {
-    #[cfg(all(feature = "desktop", target_os = "macos"))]
+    #[cfg(all(feature = "native", target_os = "macos"))]
     macos::install()?;
     Ok(())
 }
 pub(crate) fn take_quit() -> bool {
-    #[cfg(all(feature = "desktop", target_os = "macos"))]
+    #[cfg(all(feature = "native", target_os = "macos"))]
     return macos::take_quit();
-    #[cfg(not(all(feature = "desktop", target_os = "macos")))]
+    #[cfg(not(all(feature = "native", target_os = "macos")))]
     false
 }
 pub(crate) fn take_about() -> bool {
-    #[cfg(all(feature = "desktop", target_os = "macos"))]
+    #[cfg(all(feature = "native", target_os = "macos"))]
     return macos::take_about();
-    #[cfg(not(all(feature = "desktop", target_os = "macos")))]
+    #[cfg(not(all(feature = "native", target_os = "macos")))]
     false
 }
 
 pub(crate) fn refresh_menu() {
-    #[cfg(all(feature = "desktop", target_os = "macos"))]
+    #[cfg(all(feature = "native", target_os = "macos"))]
     macos::refresh_menu();
 }
 
-/// Reject an unsupported macOS bare executable before creating a misidentified UI.
+/// Validate the platform's native launch layout before creating the UI.
 pub fn validate_launch(executable: &std::path::Path, cli: &std::path::Path) -> std::io::Result<()> {
     #[cfg(target_os = "macos")]
     {
@@ -52,6 +52,13 @@ pub fn validate_launch(executable: &std::path::Path, cli: &std::path::Path) -> s
             ));
         }
     }
+    #[cfg(target_os = "linux")]
+    if !cli.is_file() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            crate::wording::LINUX_CLI_MISSING,
+        ));
+    }
     let _ = (executable, cli);
     Ok(())
 }
@@ -67,8 +74,22 @@ pub fn file_manager_label() -> &'static str {
 
 /// Drain one batch of native file URLs delivered by macOS.
 pub fn take_opened() -> Vec<std::path::PathBuf> {
-    #[cfg(all(feature = "desktop", target_os = "macos"))]
+    #[cfg(all(feature = "native", target_os = "macos"))]
     return macos::take_opened();
-    #[cfg(not(all(feature = "desktop", target_os = "macos")))]
+    #[cfg(not(all(feature = "native", target_os = "macos")))]
     Vec::new()
+}
+
+#[cfg(test)]
+mod tests {
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_launch_requires_the_sibling_cli() {
+        let root = tempfile::tempdir().unwrap();
+        let gui = root.path().join("emlattachmentremover-gui");
+        let cli = root.path().join(eml_core::product::CLI_NAME);
+        assert!(super::validate_launch(&gui, &cli).is_err());
+        std::fs::write(&cli, b"fixture").unwrap();
+        assert!(super::validate_launch(&gui, &cli).is_ok());
+    }
 }

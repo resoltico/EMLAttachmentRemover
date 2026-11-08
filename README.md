@@ -17,7 +17,7 @@ Choose the archive matching your platform:
 |---|---|---|
 | CLI, macOS Intel and Apple Silicon | `emlattachmentremover-VERSION-macos-universal.tar.gz` | macOS 15 |
 | Desktop app, both Mac CPUs | `emlattachmentremover-gui-VERSION-macos-universal.zip` | macOS 15 |
-| CLI, Linux x86_64 or aarch64 | `emlattachmentremover-VERSION-linux-ARCH.tar.gz` | Ubuntu 22.04 / glibc 2.35 |
+| CLI, Linux x86_64 or aarch64 | `emlattachmentremover-VERSION-linux-ARCH.tar.gz` | Ubuntu 26.04 |
 | CLI, Windows x86_64 or aarch64 | `emlattachmentremover-VERSION-windows-ARCH.zip` | Windows 10 |
 
 Extract into a new folder. On macOS and Linux, run `./emlattachmentremover --help`;
@@ -126,6 +126,13 @@ publication. Ordinary owned folders are the supported environment; see the
 [threat model](docs/threat-model.md) for guarantees and excluded actors.
 
 ## Develop and redistribute
+
+Native Linux GUI development uses the Slint Qt 6.12+ backend with accessibility
+and parented file dialogs through XDG Desktop Portal. A desktop file chooser
+portal backend must be installed and running. Wayland requires xdg-foreign window
+export; setup errors are shown in the app. The Qt runtime must match its build SDK.
+There is no Zenity fallback; macOS uses the Slint Winit backend. Linux supports both
+Wayland and X11 through Qt. Native GUI archives currently target macOS.
 
 See [CONTRIBUTING](CONTRIBUTING.md) for the shortest build and check commands,
 [architecture](docs/architecture.md) for crate boundaries, and the

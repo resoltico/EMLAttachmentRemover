@@ -21,8 +21,8 @@ jobs:
       fail-fast: true
       matrix:
         include:
-          - { runner: ubuntu-22.04, target: x86_64-unknown-linux-gnu }
-          - { runner: ubuntu-22.04-arm, target: aarch64-unknown-linux-gnu }
+          - { runner: ubuntu-26.04, target: x86_64-unknown-linux-gnu }
+          - { runner: ubuntu-26.04-arm, target: aarch64-unknown-linux-gnu }
           - { runner: windows-2022, target: x86_64-pc-windows-msvc }
           - { runner: windows-11-arm, target: aarch64-pc-windows-msvc }
     runs-on: ${{ matrix.runner }}
@@ -38,7 +38,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: cargo-test-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml') }}
+          key: cargo-test-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', 'xtask/tools.toml') }}
           restore-keys: cargo-test-${{ runner.os }}-${{ runner.arch }}-
       - name: Read tool versions
         id: tools
@@ -77,7 +77,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: cargo-app-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml') }}
+          key: cargo-app-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', 'xtask/tools.toml') }}
           restore-keys: cargo-app-${{ runner.os }}-${{ runner.arch }}-
       - name: Read tool versions
         id: tools
@@ -119,7 +119,7 @@ jobs:
             tests/contract/mime/inputs/01-gmail-attachment.eml
   checksums:
     needs: [cli, macos, floor-smoke]
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
@@ -135,7 +135,7 @@ jobs:
   draft:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [checksums]
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
       contents: write

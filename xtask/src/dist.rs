@@ -61,7 +61,7 @@ pub(crate) fn build(
                 "--bin",
                 "emlattachmentremover-gui",
                 "--features",
-                "eml-gui/desktop",
+                "eml-gui/desktop-winit",
             ]);
         }
         if mac {

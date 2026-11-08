@@ -255,7 +255,7 @@ pub(super) fn row_description(folder: &str, count: Option<usize>, size: &str) ->
     )
 }
 
-#[cfg(any(feature = "desktop", test))]
+#[cfg(any(feature = "native", test))]
 pub(super) const OPENING: &str = "Opening…";
 pub(super) const OPEN_SENT: &str = "Open command sent.";
 pub(super) const OPEN_FAILED: &str = "The native open operation did not complete.";
@@ -294,7 +294,7 @@ pub(crate) const SETTINGS_PARENT_MISSING: &str = "Settings file has no parent";
 pub(crate) const ABSOLUTE_LAUNCH_DIRECTORY: &str =
     "Launch operands need an absolute working directory";
 
-#[cfg(feature = "desktop")]
+#[cfg(all(feature = "native", target_os = "macos"))]
 pub(crate) const BUNDLE_CONTENTS_MISSING: &str = "Desktop executable has no Contents directory";
 
 pub(crate) fn report_filename(date: impl std::fmt::Display) -> String {
@@ -308,30 +308,30 @@ pub(crate) const GENERATION_EXHAUSTED: &str = "worker generation exhausted";
 /// Failure to locate the desktop home folder.
 pub const HOME_UNAVAILABLE: &str = "Cannot locate your home folder";
 
-#[cfg(all(feature = "desktop", target_os = "macos"))]
+#[cfg(all(feature = "native", target_os = "macos"))]
 pub(crate) const QUIT_MAIN_THREAD: &str = "Quit adapter requires the main thread";
 
-#[cfg(all(feature = "desktop", target_os = "macos"))]
+#[cfg(all(feature = "native", target_os = "macos"))]
 pub(crate) const DELEGATE_MISSING: &str = "Winit application delegate is absent";
 
-#[cfg(all(feature = "desktop", target_os = "macos"))]
+#[cfg(all(feature = "native", target_os = "macos"))]
 pub(crate) const QUIT_DELEGATE_UNSUPPORTED: &str =
     "Cannot install the Quit adapter on this application delegate";
 
-#[cfg(all(feature = "desktop", target_os = "macos"))]
+#[cfg(all(feature = "native", target_os = "macos"))]
 pub(crate) const QUIT_INSTALL_FAILED: &str = "Could not install the Quit adapter";
 
-#[cfg(all(feature = "desktop", target_os = "macos"))]
+#[cfg(all(feature = "native", target_os = "macos"))]
 pub(crate) const DOCUMENT_DELEGATE_UNSUPPORTED: &str =
     "Cannot install document opening on this application delegate";
 
-#[cfg(all(feature = "desktop", target_os = "macos"))]
+#[cfg(all(feature = "native", target_os = "macos"))]
 pub(crate) const DOCUMENT_INSTALL_FAILED: &str = "Could not install document opening";
 
-#[cfg(all(feature = "desktop", target_os = "macos"))]
+#[cfg(all(feature = "native", target_os = "macos"))]
 pub(crate) const NSOBJECT_MISSING: &str = "NSObject is unavailable";
 
-#[cfg(all(feature = "desktop", target_os = "macos"))]
+#[cfg(all(feature = "native", target_os = "macos"))]
 pub(crate) const ABOUT_TARGET_FAILED: &str = "Cannot register the application About target";
 
 #[cfg(target_os = "macos")]
@@ -348,20 +348,35 @@ pub(crate) const SHOW_FILE_MANAGER: &str = "Show in File Manager";
 
 pub(crate) const ABOUT_PREFIX: &str = "About ";
 
-#[cfg(feature = "desktop")]
+#[cfg(feature = "native")]
 pub(super) const EML_FILTER: &str = "EML messages";
-#[cfg(feature = "desktop")]
+#[cfg(feature = "native")]
 pub(super) const REPORT_FILTER: &str = "JSON Lines report";
-#[cfg(feature = "desktop")]
+#[cfg(feature = "native")]
 pub(super) const SHOW_EMAIL_FAILED: &str = "Couldn’t show the email. Check that it still exists.";
-#[cfg(feature = "desktop")]
+#[cfg(feature = "native")]
 pub(super) const SHOW_OUTPUT_FAILED: &str = "Couldn’t open the save folder.";
-#[cfg(feature = "desktop")]
+#[cfg(feature = "native")]
 pub(super) const SHOW_REPORT_FAILED: &str = "Couldn’t show the saved report.";
-#[cfg(feature = "desktop")]
+#[cfg(feature = "native")]
 pub(super) const WEBSITE_FAILED: &str = "Couldn’t open the project website.";
-#[cfg(feature = "desktop")]
+#[cfg(feature = "native")]
 pub(super) const LICENSES_FAILED: &str = "Couldn’t open bundled third-party notices.";
 
 pub(super) const REQUEST_REFUSED: &str = "The request was refused before processing any emails.";
 pub(super) const DIAGNOSTICS_TRUNCATED: &str = "\nDiagnostic output was truncated.";
+
+#[cfg(feature = "desktop-qt")]
+pub(crate) const ABSOLUTE_REVEAL: &str = "Showing a file requires an absolute path";
+
+#[cfg(feature = "desktop-qt")]
+pub(crate) const PORTAL_PARENT_UNAVAILABLE: &str =
+    "The file chooser could not be attached to this window.";
+#[cfg(feature = "desktop-qt")]
+pub(crate) const PORTAL_SELECTION_INVALID: &str =
+    "The file chooser returned an invalid local file selection.";
+#[cfg(feature = "desktop-qt")]
+pub(crate) const PORTAL_DIALOG_FAILED: &str = "Couldn’t open the desktop file chooser. Check that XDG Desktop Portal and your desktop’s file chooser backend are running";
+
+#[cfg(target_os = "linux")]
+pub(crate) const LINUX_CLI_MISSING: &str = "The CLI executable must be beside the GUI executable. Build both emlattachmentremover and eml-gui before launching the Linux GUI.";
