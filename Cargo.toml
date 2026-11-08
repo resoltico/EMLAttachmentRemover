@@ -1,6 +1,6 @@
 [workspace]
 members = ["crates/eml-message", "crates/eml-core", "crates/eml-protocol", "crates/eml-cli", "crates/eml-app", "crates/eml-gui", "crates/spin-on", "xtask"]
-exclude = ["fuzz", "crates/slint-qt", "crates/slint-build-source"]
+exclude = ["fuzz", "crates/slint-qt", "crates/slint-build-source", "crates/slint-core-source"]
 resolver = "3"
 
 [workspace.package]
@@ -61,3 +61,6 @@ i-slint-backend-qt = { path = "crates/slint-qt" }
 
 # Explicit configuration for the published Linux widget source provider.
 slint-build = { path = "crates/slint-build-source" }
+
+# Stable menu identity and live activation: see its SOURCE-PATCH.md.
+i-slint-core = { path = "crates/slint-core-source" }

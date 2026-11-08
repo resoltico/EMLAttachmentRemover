@@ -2717,6 +2717,25 @@ fn text_element(window: &impl ElementRoot, name: &str) -> ElementHandle {
         .next()
         .unwrap_or_else(|| panic!("Missing text target: {name}"))
 }
+// The testing backend applies initial preferred size but not later native
+// minimum constraints. Mirror the native window's minimum-size enforcement.
+fn honor_window_minimum(window: &slint::Window) {
+    let component = i_slint_core::window::WindowInner::from_pub(window)
+        .try_component()
+        .unwrap();
+    let component = i_slint_core::item_tree::ItemTreeRc::borrow_pin(&component);
+    let h = component
+        .as_ref()
+        .layout_info(i_slint_core::layout::Orientation::Horizontal);
+    let v = component
+        .as_ref()
+        .layout_info(i_slint_core::layout::Orientation::Vertical);
+    let size = window.size().to_logical(window.scale_factor());
+    window.set_size(slint::LogicalSize::new(
+        size.width.max(h.min),
+        size.height.max(v.min),
+    ));
+}
 fn focus_text(window: &impl ElementRoot, name: &str, start: i32, end: i32) {
     let editor = text_element(window, name);
     editor.mock_single_click(slint::platform::PointerEventButton::Left);
@@ -2826,6 +2845,16 @@ fn secondary_about_and_license_details_support_copy_and_select_all() {
     about.set_notice_details("about diagnostic selection".into());
     about.show().unwrap();
     text_element(&about, "Details…").mock_single_click(slint::platform::PointerEventButton::Left);
+    honor_window_minimum(about.window());
+    assert!(
+        text_element(&about, "Website opening details")
+            .size()
+            .height
+            >= 100.
+    );
+    focus_text(&about, eml_core::product::DISPLAY_NAME, 0, 3);
+    text_shortcut(about.window(), "c");
+    assert_eq!(test_clipboard(about.window()).as_deref(), Some("EML"));
     focus_text(&about, "Website opening details", 0, 5);
     text_shortcut(about.window(), "c");
     assert_eq!(test_clipboard(about.window()).as_deref(), Some("about"));
@@ -2835,12 +2864,27 @@ fn secondary_about_and_license_details_support_copy_and_select_all() {
         test_clipboard(about.window()).as_deref(),
         Some("about diagnostic selection")
     );
+    #[cfg(target_os = "linux")]
+    {
+        text_element(&about, "Edit").invoke_accessible_default_action();
+        mock_elapsed_time(Duration::from_millis(1));
+        let old_copy = text_element(&about, "Copy");
+        about.set_notice_details("".into());
+        mock_elapsed_time(Duration::from_millis(1));
+        mock_elapsed_time(Duration::ZERO); // Apply the queued context update after conditional teardown.
+        assert!(!about.get_text_copy_eligible());
+        old_copy.invoke_accessible_default_action();
+    }
     let licenses = c.license_window();
+    licenses.set_licenses("main license terms".into());
     licenses.set_notice("Failed to show notices".into());
     licenses.set_notice_details("license diagnostic selection".into());
     licenses.show().unwrap();
     text_element(&licenses, "Details…")
         .mock_single_click(slint::platform::PointerEventButton::Left);
+    focus_text(&licenses, "Software and artwork license terms", 0, 4);
+    text_shortcut(licenses.window(), "c");
+    assert_eq!(test_clipboard(licenses.window()).as_deref(), Some("main"));
     focus_text(&licenses, "Notices opening details", 0, 7);
     text_shortcut(licenses.window(), "c");
     assert_eq!(
@@ -2853,6 +2897,17 @@ fn secondary_about_and_license_details_support_copy_and_select_all() {
         test_clipboard(licenses.window()).as_deref(),
         Some("license diagnostic selection")
     );
+    #[cfg(target_os = "linux")]
+    {
+        text_element(&licenses, "Edit").invoke_accessible_default_action();
+        mock_elapsed_time(Duration::from_millis(1));
+        let old_copy = text_element(&licenses, "Copy");
+        licenses.set_notice_details("".into());
+        mock_elapsed_time(Duration::from_millis(1));
+        mock_elapsed_time(Duration::ZERO);
+        assert!(!licenses.get_text_copy_eligible());
+        old_copy.invoke_accessible_default_action();
+    }
 }
 
 #[test]
@@ -2888,4 +2943,85 @@ fn linux_menu_keyboard_focus_is_the_named_action_and_keys_keep_bubbling() {
     assert_eq!(focused(), "Project Website");
     key(&ui, slint::platform::Key::Return);
     assert_eq!(visits.get(), 1);
+}
+
+#[test]
+#[cfg(target_os = "linux")]
+fn open_menu_live_command_survives_unrelated_view_changes() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let c = controller(root.path(), completed(root.path(), "created"));
+    let ui = c.window();
+    let called = Rc::new(std::cell::Cell::new(0));
+    let observed = called.clone();
+    ui.on_close_window(move || observed.set(observed.get() + 1));
+    label(&ui, "File").invoke_accessible_default_action();
+    mock_elapsed_time(Duration::from_millis(1));
+    let close = label(&ui, "Close Window");
+    let mut view = ui.get_view();
+    view.can_add = false;
+    ui.set_view(view);
+    mock_elapsed_time(Duration::from_millis(1));
+    close.invoke_accessible_default_action();
+    assert_eq!(called.get(), 1);
+}
+#[test]
+#[cfg(target_os = "linux")]
+fn open_menu_rejects_currently_disabled_and_removed_commands() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let c = controller(root.path(), completed(root.path(), "created"));
+    let ui = c.window();
+    let called = Rc::new(std::cell::Cell::new(0));
+    let observed = called.clone();
+    ui.on_choose_files(move || observed.set(observed.get() + 1));
+    label(&ui, "File").invoke_accessible_default_action();
+    mock_elapsed_time(Duration::from_millis(1));
+    let add = label(&ui, "Add Files…");
+    let mut view = ui.get_view();
+    view.can_add = false;
+    ui.set_view(view);
+    mock_elapsed_time(Duration::from_millis(1));
+    add.invoke_accessible_default_action();
+    assert_eq!(called.get(), 0);
+    let mut view = ui.get_view();
+    view.can_reveal_report = true;
+    ui.set_view(view);
+    mock_elapsed_time(Duration::from_millis(1));
+    let observed = called.clone();
+    ui.on_reveal_report(move || observed.set(observed.get() + 10));
+    let observed = called.clone();
+    ui.on_close_window(move || observed.set(observed.get() + 100));
+    label(&ui, "File").invoke_accessible_default_action();
+    mock_elapsed_time(Duration::from_millis(1));
+    let old_report = label(&ui, "Show Saved Report");
+    let mut view = ui.get_view();
+    view.can_reveal_report = false;
+    ui.set_view(view);
+    mock_elapsed_time(Duration::from_millis(1));
+    old_report.invoke_accessible_default_action();
+    assert_eq!(called.get(), 0);
+}
+#[test]
+#[cfg(target_os = "linux")]
+fn menu_action_can_query_a_rebuilt_menu_without_holding_the_old_cache_borrow() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let c = controller(root.path(), completed(root.path(), "created"));
+    let ui = c.window();
+    let called = Rc::new(std::cell::Cell::new(0));
+    let observed = called.clone();
+    let weak = ui.as_weak();
+    ui.on_close_window(move || {
+        let ui = weak.upgrade().unwrap();
+        let mut view = ui.get_view();
+        view.can_add = !view.can_add;
+        ui.set_view(view);
+        label(&ui, "Help").invoke_accessible_default_action();
+        observed.set(observed.get() + 1);
+    });
+    label(&ui, "File").invoke_accessible_default_action();
+    mock_elapsed_time(Duration::from_millis(1));
+    label(&ui, "Close Window").invoke_accessible_default_action();
+    assert_eq!(called.get(), 1);
 }

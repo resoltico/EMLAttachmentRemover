@@ -7,6 +7,8 @@ import { ActionButton, TextButton, UiMetrics } from "controls.slint";
 component AboutLabel inherits TextInput {
     read-only: true; single-line: true; horizontal-alignment: center;
     accessible-label: self.text; vertical-stretch: 0;
+    callback focus-changed();
+    changed has-focus => { root.focus-changed(); }
 }
 export component AboutWindow inherits Window {
     in property <AppWords> words;
@@ -16,14 +18,17 @@ export component AboutWindow inherits Window {
     in property <string> notice;
     in property <string> notice-details;
     private property <bool> show-notice-details: false;
-    private property <bool> notice-details-has-focus: false;
-    private property <bool> details-text-focused: root.show-notice-details && root.notice-details != "" && root.notice-details-has-focus;
+    in property <bool> text-copy-eligible;
+    callback text-focus-changed();
+    callback text-editors-changed();
+    changed show-notice-details => { root.text-editors-changed(); }
+    changed notice-details => { root.text-editors-changed(); }
     callback copy(); callback select-all();
     title: root.words.about-prefix + root.product-name;
     icon: @image-url("eml-icon.png");
     default-font-size: Theme.body;
     preferred-width: 440px;
-    preferred-height: 490px + (root.notice != "" ? 64px : 0px) + (root.show-notice-details ? 100px : 0px);
+    preferred-height: 490px + (root.notice != "" ? 64px : 0px) + (root.show-notice-details ? Theme.diagnostic-height : 0px);
     callback website(); callback licenses(); callback dismiss();
     callback focus-website();
     focus-website => { website.focus(); }
@@ -33,11 +38,11 @@ export component AboutWindow inherits Window {
         }
         Menu { title: root.words.edit;
         MenuItem { title: root.words.copy; shortcut: @keys(Control + C);
-            enabled: name-text.has-focus || version-text.has-focus || purpose-text.has-focus || copyright-text.has-focus || root.details-text-focused;
+            enabled: root.text-copy-eligible;
             activated => { root.copy(); }
         }
         MenuItem { title: root.words.select-all; shortcut: @keys(Control + A);
-            enabled: name-text.has-focus || version-text.has-focus || purpose-text.has-focus || copyright-text.has-focus || root.details-text-focused;
+            enabled: root.text-copy-eligible;
             activated => { root.select-all(); }
         }
     } }
@@ -48,10 +53,10 @@ export component AboutWindow inherits Window {
             HorizontalBox { alignment: center; padding: 0px;
                 Image { source: root.icon; width: 64px; height: 64px; image-fit: contain; accessible-label: root.words.application-icon; }
             }
-            name-text := AboutLabel { text: root.product-name; font-size: Theme.title; font-weight: 600; }
-            version-text := AboutLabel { text: root.words.version-prefix + root.version; }
-            purpose-text := AboutLabel { text: root.words.purpose; single-line: false; }
-            copyright-text := AboutLabel { text: root.copyright; }
+            name-text := AboutLabel { focus-changed => { root.text-focus-changed(); } text: root.product-name; font-size: Theme.title; font-weight: 600; }
+            version-text := AboutLabel { focus-changed => { root.text-focus-changed(); } text: root.words.version-prefix + root.version; }
+            purpose-text := AboutLabel { focus-changed => { root.text-focus-changed(); } text: root.words.purpose; single-line: false; }
+            copyright-text := AboutLabel { focus-changed => { root.text-focus-changed(); } text: root.copyright; }
             HorizontalBox { alignment: center; spacing: Theme.space-2; padding: 0px;
                 website := ActionButton { text: root.words.project-website; clicked => { root.website(); } }
                 ActionButton { text: root.words.licenses; clicked => { root.licenses(); } }
@@ -59,9 +64,9 @@ export component AboutWindow inherits Window {
             if root.notice != "": Text { text: root.notice; wrap: word-wrap; vertical-alignment: center; color: Theme.text; accessible-live-region: polite; }
             if root.notice-details != "": TextButton { text: root.show-notice-details ? root.words.hide-details : root.words.details; expandable: true; expanded: root.show-notice-details; clicked => { root.show-notice-details = !root.show-notice-details; } }
             if root.show-notice-details && root.notice-details != "": TextEdit {
-                    init => { root.notice-details-has-focus = self.has-focus; }
-                    changed has-focus => { root.notice-details-has-focus = self.has-focus; }
-                    text: root.notice-details; read-only: true; preferred-height: 100px; max-height: 100px; accessible-label: root.words.website-details; }
+                    init => { root.text-editors-changed(); }
+                    changed has-focus => { root.text-focus-changed(); }
+                    text: root.notice-details; read-only: true; min-height: Theme.diagnostic-height; preferred-height: Theme.diagnostic-height; max-height: Theme.diagnostic-height; accessible-label: root.words.website-details; }
             HorizontalBox { alignment: center; vertical-stretch: 0; padding: 0px;
                 AboutSlint { width: 280px; height: 100px; horizontal-stretch: 0; vertical-stretch: 0; }
             }
@@ -77,8 +82,11 @@ export component LicenseWindow inherits Window {
     in property <string> notice;
     in property <string> notice-details;
     private property <bool> show-notice-details: false;
-    private property <bool> notice-details-has-focus: false;
-    private property <bool> details-text-focused: root.show-notice-details && root.notice-details != "" && root.notice-details-has-focus;
+    in property <bool> text-copy-eligible;
+    callback text-focus-changed();
+    callback text-editors-changed();
+    changed show-notice-details => { root.text-editors-changed(); }
+    changed notice-details => { root.text-editors-changed(); }
     callback copy(); callback select-all();
     default-font-size: Theme.body;
     callback third-party(); callback dismiss();
@@ -93,22 +101,22 @@ export component LicenseWindow inherits Window {
             MenuItem { title: root.words.close; shortcut: @keys(Control + W); activated => { root.dismiss(); } }
         }
         Menu { title: root.words.edit;
-        MenuItem { title: root.words.copy; shortcut: @keys(Control + C); enabled: license-text.has-focus || root.details-text-focused; activated => { root.copy(); } }
-        MenuItem { title: root.words.select-all; shortcut: @keys(Control + A); enabled: license-text.has-focus || root.details-text-focused; activated => { root.select-all(); } }
+        MenuItem { title: root.words.copy; shortcut: @keys(Control + C); enabled: root.text-copy-eligible; activated => { root.copy(); } }
+        MenuItem { title: root.words.select-all; shortcut: @keys(Control + A); enabled: root.text-copy-eligible; activated => { root.select-all(); } }
     } }
     forward-focus: license-focus;
     license-focus := FocusScope {
         forward-focus: license-text;
         key-pressed(event) => { if event.text == Key.Escape { root.dismiss(); return accept; } return reject; }
         VerticalBox { padding: Theme.space-6; spacing: Theme.space-4;
-            license-text := TextEdit { text: root.licenses; read-only: true; accessible-label: root.words.license-terms; }
+            license-text := TextEdit { changed has-focus => { root.text-focus-changed(); } text: root.licenses; read-only: true; accessible-label: root.words.license-terms; }
             VerticalBox { padding: 0px; spacing: Theme.space-2; vertical-stretch: 0;
                 Text { text: root.notice; wrap: word-wrap; vertical-alignment: center; color: Theme.text; accessible-live-region: polite; }
                 if root.notice-details != "": TextButton { text: root.show-notice-details ? root.words.hide-details : root.words.details; expandable: true; expanded: root.show-notice-details; clicked => { root.show-notice-details = !root.show-notice-details; } }
                 if root.show-notice-details && root.notice-details != "": TextEdit {
-                    init => { root.notice-details-has-focus = self.has-focus; }
-                    changed has-focus => { root.notice-details-has-focus = self.has-focus; }
-                    text: root.notice-details; read-only: true; preferred-height: 100px; max-height: 100px; accessible-label: root.words.notices-details; }
+                    init => { root.text-editors-changed(); }
+                    changed has-focus => { root.text-focus-changed(); }
+                    text: root.notice-details; read-only: true; preferred-height: Theme.diagnostic-height; max-height: Theme.diagnostic-height; accessible-label: root.words.notices-details; }
                 HorizontalBox { padding: 0px; alignment: end;
                     ActionButton { text: root.words.third-party; clicked => { root.third-party(); } }
                 }

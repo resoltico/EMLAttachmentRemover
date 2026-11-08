@@ -180,6 +180,8 @@ frameworks. Add tests for a concrete required behavior or regression.
 
 ## Pinned Slint source maintenance
 
+The [Core menu patch](crates/slint-core-source/SOURCE-PATCH.md) preserves actual
+item identity across menu rebuilds and validates live activation state.
 The [Qt backend patch](crates/slint-qt/SOURCE-PATCH.md) covers native path,
 window, text and accessibility integration. Linux also uses the
 [published Fluent widget closure](crates/slint-widgets/SOURCE-PATCH.md) with
