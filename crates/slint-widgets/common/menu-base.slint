@@ -124,24 +124,29 @@ export component MenuItemBase {
     callback set-current();
     callback clear-current();
     callback activate(entry : MenuEntry, y: length);
+    public function focus-current() { item-focus.focus(); }
+    changed is-current => { if root.is-current && !root.entry.is-separator { item-focus.focus(); } }
 
     background-layer := Rectangle {
         background: root.default-background;
 
         touch-area := TouchArea {
-            accessible-role: button;
-            accessible-label: root.entry.title;
-            accessible-description: root.entry.shortcut.to-string();
-            accessible-enabled: root.entry.enabled && !root.entry.is-separator;
-            accessible-checkable: root.entry.checkable;
-            accessible-checked: root.entry.checked;
-            accessible-action-default => {
-                if root.entry.enabled && !root.entry.is-separator {
-                    root.activate(root.entry, self.absolute-position.y);
-                }
-            }
             visible: !entry.is-separator;
             enabled: entry.enabled;
+
+            item-focus := FocusScope {
+                accessible-role: button;
+                accessible-label: root.entry.title;
+                accessible-description: root.entry.shortcut.to-string();
+                accessible-enabled: root.entry.enabled && !root.entry.is-separator;
+                accessible-checkable: root.entry.checkable;
+                accessible-checked: root.entry.checked;
+                accessible-action-default => {
+                    if root.entry.enabled && !root.entry.is-separator {
+                        root.activate(root.entry, self.absolute-position.y);
+                    }
+                }
+            }
 
             layout := HorizontalLayout {
                 padding-top: root.vertical-padding;

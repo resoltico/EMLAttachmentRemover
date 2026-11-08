@@ -2,6 +2,7 @@
 use super::*;
 impl DesktopController {
     pub(super) fn bind(self: &Rc<Self>) {
+        self.bind_text_commands();
         macro_rules! bind {
             ($method:ident,$body:expr) => {{
                 let weak = Rc::downgrade(self);
