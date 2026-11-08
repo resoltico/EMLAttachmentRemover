@@ -5,7 +5,7 @@ use crate::{
     OperationFailure, OutputLocation, RunControl, SourceOrigin,
     collection::{RootKind, path_total},
     copy_basename,
-    request::{native_bytes, path_limits},
+    request::{native_bytes, validate_native_path},
     selection::{SelectionError, append},
 };
 use std::{
@@ -331,7 +331,7 @@ impl DestinationPlan<'_> {
             native_bytes(&display),
             native_bytes(&info.native),
         )
-        .filter(|_| path_limits(&display).is_ok()) else {
+        .filter(|_| validate_native_path(&display).is_ok()) else {
             self.state = DestinationPlanState::InputLimitExceeded;
             self.error = Some(OperationFailure::new(
                 ErrorCode::InputLimitExceeded,

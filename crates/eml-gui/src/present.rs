@@ -90,13 +90,13 @@ impl Row {
         let mut text = format!(
             "{}: {}\n{}: {}\n{}: {}\n",
             fields::SOURCE,
-            eml_protocol::TerminalPath::new(&self.key),
+            eml_protocol::DisplayPath::new(&self.key),
             fields::DESTINATION,
             self.item
                 .destination
                 .value()
                 .and_then(|p| p.native_absolute_path())
-                .map(|p| eml_protocol::TerminalPath::new(&p).to_string())
+                .map(|p| eml_protocol::DisplayPath::new(&p).to_string())
                 .unwrap_or_default(),
             fields::STATUS,
             self.label()
@@ -133,7 +133,7 @@ impl Row {
                 text += &format!(
                     "{}: {}\n",
                     fields::RESIDUAL_RESOURCE,
-                    eml_protocol::TerminalPath::new(std::path::Path::new(&name))
+                    eml_protocol::DisplayPath::new(std::path::Path::new(&name))
                 );
             }
         }
@@ -367,12 +367,11 @@ impl crate::DesktopController {
             .iter()
             .filter(|row| !r.batch.problems_only || row.problem())
             .map(|row| {
-                let display = std::path::Path::new(&row.item.source.display);
-                let name = display
-                    .file_name()
-                    .map(|n| n.to_string_lossy().into_owned())
-                    .unwrap_or_else(|| row.item.source.display.clone());
-                let name = eml_protocol::DisplayText::new(&name).to_string();
+                let display = &row.key;
+                let name = eml_protocol::DisplayPath::new(Path::new(
+                    display.file_name().unwrap_or(display.as_os_str()),
+                ))
+                .to_string();
                 let (prefix, suffix) = name.rsplit_once('.').map_or_else(
                     || (name.clone(), String::new()),
                     |(a, b)| (a.to_owned(), format!(".{b}")),
@@ -387,17 +386,16 @@ impl crate::DesktopController {
                     .collect();
                 let folder = display.parent().map_or(String::new(), |p| {
                     p.strip_prefix(&self.home).map_or_else(
-                        |_| p.to_string_lossy().into_owned(),
+                        |_| eml_protocol::DisplayPath::new(p).to_string(),
                         |relative| {
                             if relative.as_os_str().is_empty() {
                                 "~".into()
                             } else {
-                                format!("~/{}", relative.to_string_lossy())
+                                format!("~/{}", eml_protocol::DisplayPath::new(relative))
                             }
                         },
                     )
                 });
-                let folder = eml_protocol::DisplayText::new(&folder).to_string();
                 let size_text = row.size_text();
                 let description = wording::row_description(
                     &folder,
@@ -485,7 +483,7 @@ impl crate::DesktopController {
             .find(|row| Some(&row.key) == r.batch.selected.as_ref())
             .map(|row| EmailDetail {
                 visible: true,
-                name: eml_protocol::TerminalPath::new(Path::new(
+                name: eml_protocol::DisplayPath::new(Path::new(
                     row.key.file_name().unwrap_or_default(),
                 ))
                 .to_string()
@@ -494,7 +492,7 @@ impl crate::DesktopController {
                 path_prefix: {
                     let path = row.copy.as_ref().unwrap_or(&row.key);
                     path.parent().map_or(String::new(), |p| {
-                        format!("{}/", eml_protocol::TerminalPath::new(p))
+                        format!("{}/", eml_protocol::DisplayPath::new(p))
                     })
                 }
                 .into(),
@@ -503,10 +501,10 @@ impl crate::DesktopController {
                     .as_ref()
                     .unwrap_or(&row.key)
                     .file_name()
-                    .map(|n| eml_protocol::TerminalPath::new(Path::new(n)).to_string())
+                    .map(|n| eml_protocol::DisplayPath::new(Path::new(n)).to_string())
                     .unwrap_or_default()
                     .into(),
-                path: eml_protocol::TerminalPath::new(row.copy.as_ref().unwrap_or(&row.key))
+                path: eml_protocol::DisplayPath::new(row.copy.as_ref().unwrap_or(&row.key))
                     .to_string()
                     .into(),
                 parts: Rc::new(VecModel::from(
@@ -571,10 +569,10 @@ impl crate::DesktopController {
                 .map_or_else(
                     || wording::NEXT_TO.into(),
                     |p| {
-                        p.file_name()
-                            .unwrap_or(p.as_os_str())
-                            .to_string_lossy()
-                            .into_owned()
+                        eml_protocol::DisplayPath::new(Path::new(
+                            p.file_name().unwrap_or(p.as_os_str()),
+                        ))
+                        .to_string()
                     },
                 )
                 .into(),
@@ -600,7 +598,7 @@ impl crate::DesktopController {
             .preferences
             .recent_destinations()
             .iter()
-            .map(|p| eml_protocol::TerminalPath::new(p).to_string())
+            .map(|p| eml_protocol::DisplayPath::new(p).to_string())
             .collect::<Vec<_>>();
         let revision = r.batch.revision();
         drop(r);
@@ -621,7 +619,7 @@ impl crate::DesktopController {
         self.ui.set_output_roots(strings(
             self.output_roots()
                 .iter()
-                .map(|p| eml_protocol::TerminalPath::new(p).to_string()),
+                .map(|p| eml_protocol::DisplayPath::new(p).to_string()),
         ));
         if !self.inputs_enabled() {
             self.ui.set_drop_hovered(false);

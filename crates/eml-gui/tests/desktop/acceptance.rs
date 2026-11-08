@@ -549,7 +549,9 @@ fn s12_invalid_preferences_are_silently_replaced_on_next_save() {
     c.set_destination(Some(root.path().to_owned()));
     assert_ne!(fs::read(&path).unwrap(), b"invalid");
     let settings: Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
-    assert_eq!(settings["last_destination"], root.path().to_str().unwrap());
+    let destination: eml_protocol::records::NativePathRecord =
+        serde_json::from_value(settings["last_destination"].clone()).unwrap();
+    assert_eq!(destination.native_path().as_deref(), Some(root.path()));
 }
 fn inside(element: &ElementHandle, width: f32, height: f32) {
     let p = element.absolute_position();
@@ -2513,4 +2515,117 @@ fn stopped_before_observations_can_continue_the_same_request() {
         .collect();
     assert_eq!(created.len(), 2);
     assert_eq!(created[0], created[1]);
+}
+
+#[test]
+#[cfg(unix)]
+fn native_path_units_remain_distinct_in_rows_details_and_folder_choices() {
+    use std::{ffi::OsStr, os::unix::ffi::OsStrExt};
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let folder = root.path().join(OsStr::from_bytes(b"source-\xfc"));
+    let destination = root.path().join(OsStr::from_bytes(b"copies-\xfe\n"));
+    let names = [
+        OsStr::from_bytes(b"odd-\xff.eml"),
+        OsStr::from_bytes(b"odd-\xfe.eml"),
+        OsStr::new("odd-�.eml"),
+        OsStr::new("odd-<0xFF>.eml"),
+    ];
+    let sources: Vec<_> = names.iter().map(|name| folder.join(name)).collect();
+    let copies: Vec<_> = (0..names.len())
+        .map(|index| {
+            destination.join(OsStr::from_bytes(&[
+                b'c',
+                b'0' + index as u8,
+                0xfd,
+                b'.',
+                b'e',
+                b'm',
+                b'l',
+            ]))
+        })
+        .collect();
+    let native_stream = |text: String| {
+        text.lines()
+            .map(|line| {
+                let mut record: Value = serde_json::from_str(line).unwrap();
+                if record["type"] == "item" {
+                    let index = record["index"].as_u64().unwrap() as usize;
+                    for (field, path) in
+                        [("source", &sources[index]), ("destination", &copies[index])]
+                    {
+                        record[field] =
+                            serde_json::to_value(eml_protocol::PathValue::new(path, path)).unwrap();
+                    }
+                }
+                format!("{record}\n")
+            })
+            .collect::<String>()
+    };
+    let check = native_stream(check_stream(
+        root.path(),
+        &["a.eml", "b.eml", "c.eml", "d.eml"],
+    ));
+    let create = native_stream(stream(
+        root.path(),
+        &[
+            ("a.eml", "created"),
+            ("b.eml", "created"),
+            ("c.eml", "created"),
+            ("d.eml", "created"),
+        ],
+        false,
+    ));
+    // Native path presentation does not depend on the host filesystem accepting
+    // those names (for example, APFS rejects invalid UTF-8 directory names).
+    let mut preferences = Preferences::load(root.path().join("preferences.json"));
+    preferences
+        .set_destination(Some(destination.clone()))
+        .unwrap();
+    let c = DesktopController::new(
+        dual(root.path(), &check, &create),
+        root.path().to_owned(),
+        preferences,
+    )
+    .unwrap();
+    c.window().show().unwrap();
+    c.stage(vec![folder.clone()]).unwrap();
+    pump(&c, || !c.is_busy());
+    let ui = c.window();
+    let expected = [
+        "odd-<0xFF>.eml",
+        "odd-<0xFE>.eml",
+        "odd-�.eml",
+        "odd-<<0xFF>.eml",
+    ];
+    assert_eq!(ui.get_rows().row_count(), expected.len());
+    for (row, expected) in ui.get_rows().iter().zip(expected) {
+        assert_eq!(row.name, expected);
+        assert_eq!(row.folder, "~/source-<0xFC>");
+    }
+    assert_eq!(ui.get_view().destination, r"copies-<0xFE>\n");
+    assert!(
+        ui.get_recent_destinations()
+            .row_data(0)
+            .unwrap()
+            .ends_with(r"/copies-<0xFE>\n")
+    );
+    select_first(&c);
+    assert_eq!(c.selected_original(), Some(sources[0].clone()));
+    assert_eq!(ui.get_detail().name, "odd-<0xFF>.eml");
+    let details = c.clipboard_text().unwrap();
+    assert!(details.contains("source-<0xFC>/odd-<0xFF>.eml"));
+    assert!(!details.contains('�'));
+    c.start_selection();
+    pump(&c, || !c.is_busy());
+    assert_eq!(ui.get_detail().path_suffix, "c0<0xFD>.eml");
+    assert!(ui.get_detail().path_prefix.ends_with(r"/copies-<0xFE>\n/"));
+    assert!(
+        ui.get_detail()
+            .path
+            .ends_with(r"/copies-<0xFE>\n/c0<0xFD>.eml")
+    );
+    let details = c.clipboard_text().unwrap();
+    assert!(details.contains(r"/copies-<0xFE>\n/c0<0xFD>.eml"));
+    assert!(!details.contains('�'));
 }

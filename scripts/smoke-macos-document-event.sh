@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 import plistlib
 import select
+import signal
 import subprocess
 import sys
 import tempfile
@@ -42,17 +43,20 @@ with tempfile.TemporaryDirectory(prefix="eml-document-event-") as temporary:
     actual = helper.with_name("emlattachmentremover-forwarded")
     helper.rename(actual)
     request_file = root / "request.json"
+    owner_file = root / "owner.pid"
     arrival = root / "arrival"
     os.mkfifo(arrival)
     # RDWR opens our notification pipe without a reader/writer-open race.
     descriptor = os.open(arrival, os.O_RDWR | os.O_NONBLOCK)
     helper.write_text(f'''#!/usr/bin/env python3
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
 data = sys.stdin.buffer.read()
 Path({str(request_file)!r}).write_bytes(data)
+Path({str(owner_file)!r}).write_text(str(os.getppid()))
 try:
     if json.loads(data)["dry_run"] is not True:
         raise RuntimeError("The native probe refuses create requests")
@@ -81,16 +85,24 @@ sys.exit(status)
         assert all(path["encoding"] == "unix-bytes" for path in paths), request
         observed = [base64.b64decode(path["base64"], validate=True) for path in paths]
         assert sorted(observed) == sorted(os.fsencode(path) for path in expected), request
+        return int(owner_file.read_text())
 
     with (root / "app.stdout").open("wb") as stdout, (root / "app.stderr").open("wb") as stderr:
-        process = subprocess.Popen([str(executable), str(warmup)], stdout=stdout, stderr=stderr)
+        # Launch through the same service as users. A helper request can precede
+        # NSApplication's first event-loop turn; it does not prove registration
+        # of a process started by directly executing the bundle's binary.
+        process = subprocess.Popen([
+            "open", "-n", "-W", "-a", str(app),
+            "--stdout", str(root / "app.stdout"),
+            "--stderr", str(root / "app.stderr"), "--args", str(warmup)
+        ], stdout=stdout, stderr=stderr)
         try:
-            # The first real check establishes that startup and delegate
-            # installation finished before sending the warm AppleEvent.
-            observe([warmup])
+            # LaunchServices owns registration; this check proves that our
+            # adapter installed and records the original GUI's process identity.
+            owner = observe([warmup])
             if not args.omit_delivery:
                 subprocess.run(["open", "-a", str(app), str(delivered)], check=True)
-            observe([warmup, delivered])
+            assert observe([warmup, delivered]) == owner, "A second GUI received the document"
             assert process.poll() is None, "The original GUI must own both requests"
             for path in (warmup, delivered):
                 assert path.read_bytes() == original, "Source bytes changed"
@@ -101,8 +113,18 @@ sys.exit(status)
             print((root / "app.stderr").read_text(errors="replace"), file=sys.stderr)
             raise
         finally:
-            if process.poll() is None:
-                process.terminate()
+            # The open -W child waits for the application; terminate only our
+            # uniquely named probe executable, then join its owned launcher.
+            listing = subprocess.check_output(["ps", "-axo", "pid=,args="], text=True)
+            for line in listing.splitlines():
+                columns = line.strip().split(None, 1)
+                if len(columns) == 2 and (
+                    columns[1] == str(executable) or columns[1].startswith(str(executable) + " ")
+                ):
+                    try:
+                        os.kill(int(columns[0]), signal.SIGTERM)
+                    except ProcessLookupError:
+                        pass
             try:
                 process.wait(timeout=5)
             except subprocess.TimeoutExpired:

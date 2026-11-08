@@ -1,5 +1,6 @@
 //! Recent destination and report folders, replacing invalid settings on the next save.
-use serde::{Deserialize, Serialize};
+use eml_protocol::{NativePathValue, records::NativePathRecord};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::{
     fs,
     io::{self, Write},
@@ -8,9 +9,71 @@ use std::{
 #[derive(Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Settings {
+    #[serde(
+        serialize_with = "serialize_recent",
+        deserialize_with = "deserialize_recent"
+    )]
     recent_destinations: Vec<PathBuf>,
+    #[serde(
+        default,
+        serialize_with = "serialize_folder",
+        deserialize_with = "deserialize_folder"
+    )]
     last_destination: Option<PathBuf>,
+    #[serde(
+        default,
+        serialize_with = "serialize_folder",
+        deserialize_with = "deserialize_folder"
+    )]
     last_report_folder: Option<PathBuf>,
+}
+fn folder_valid(path: &Path) -> bool {
+    path.is_absolute() && eml_core::validate_native_path(path).is_ok()
+}
+fn decode_folder(record: NativePathRecord) -> Option<PathBuf> {
+    record.native_path().filter(|path| folder_valid(path))
+}
+fn serialize_recent<S: Serializer>(paths: &[PathBuf], serializer: S) -> Result<S::Ok, S::Error> {
+    paths
+        .iter()
+        .map(|path| NativePathValue::new(path))
+        .collect::<Vec<_>>()
+        .serialize(serializer)
+}
+fn deserialize_recent<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Vec<PathBuf>, D::Error> {
+    let records = Vec::<NativePathRecord>::deserialize(deserializer)?;
+    if records.len() > 3 {
+        return Err(serde::de::Error::custom(
+            crate::wording::INVALID_SAVED_FOLDERS,
+        ));
+    }
+    records
+        .into_iter()
+        .map(|record| {
+            decode_folder(record)
+                .ok_or_else(|| serde::de::Error::custom(crate::wording::INVALID_SAVED_FOLDERS))
+        })
+        .collect()
+}
+fn serialize_folder<S: Serializer>(
+    path: &Option<PathBuf>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    path.as_deref()
+        .map(NativePathValue::new)
+        .serialize(serializer)
+}
+fn deserialize_folder<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<PathBuf>, D::Error> {
+    Option::<NativePathRecord>::deserialize(deserializer)?
+        .map(|record| {
+            decode_folder(record)
+                .ok_or_else(|| serde::de::Error::custom(crate::wording::INVALID_SAVED_FOLDERS))
+        })
+        .transpose()
 }
 /// Recent folder choices and their atomic backing file.
 pub struct Preferences {
@@ -20,42 +83,11 @@ pub struct Preferences {
 impl Preferences {
     /// Load defaults when settings cannot be read or decoded, silently.
     pub fn load(path: PathBuf) -> Self {
-        let loaded = match fs::read(&path) {
-            Ok(bytes) => serde_json::from_slice::<Settings>(&bytes)
-                .map_err(|error| error.to_string())
-                .and_then(|settings| {
-                    if settings.recent_destinations.len() <= 3
-                        && settings
-                            .recent_destinations
-                            .iter()
-                            .all(|path| path.is_absolute())
-                        && settings
-                            .last_destination
-                            .as_ref()
-                            .is_none_or(|p| p.is_absolute())
-                        && settings
-                            .last_report_folder
-                            .as_ref()
-                            .is_none_or(|p| p.is_absolute())
-                    {
-                        Ok(settings)
-                    } else {
-                        Err(crate::wording::INVALID_SAVED_FOLDERS.into())
-                    }
-                }),
-            Err(error)
-                if error.kind() == io::ErrorKind::NotFound
-                    && fs::symlink_metadata(&path)
-                        .is_err_and(|e| e.kind() == io::ErrorKind::NotFound) =>
-            {
-                Ok(Settings::default())
-            }
-            Err(error) => Err(error.to_string()),
-        };
-        Self {
-            path,
-            settings: loaded.unwrap_or_default(),
-        }
+        let settings = fs::read(&path)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<Settings>(&bytes).ok())
+            .unwrap_or_default();
+        Self { path, settings }
     }
     /// Platform configuration file; new installs start beside the originals.
     pub fn default_path() -> io::Result<PathBuf> {
@@ -75,6 +107,12 @@ impl Preferences {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 crate::wording::ABSOLUTE_DESTINATION,
+            ));
+        }
+        if destination.as_ref().is_some_and(|path| !folder_valid(path)) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                crate::wording::INVALID_SAVED_FOLDERS,
             ));
         }
         if let Some(path) = &destination {
@@ -103,6 +141,12 @@ impl Preferences {
                 crate::wording::ABSOLUTE_REPORT_FOLDER,
             ));
         }
+        if !folder_valid(&folder) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                crate::wording::INVALID_SAVED_FOLDERS,
+            ));
+        }
         self.settings.last_report_folder = Some(folder);
         self.save()
     }
@@ -120,5 +164,198 @@ impl Preferences {
         staged.as_file().sync_all()?;
         staged.persist(&self.path).map_err(|error| error.error)?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn assert_native_folder_round_trip(first: PathBuf, second: PathBuf, report: PathBuf) {
+        let root = tempfile::tempdir().unwrap();
+        let file = root.path().join("settings.json");
+        let mut preferences = Preferences::load(file.clone());
+        preferences.set_destination(Some(first.clone())).unwrap();
+        preferences.set_destination(Some(second.clone())).unwrap();
+        preferences.set_destination(Some(first.clone())).unwrap();
+        preferences.set_report_folder(report.clone()).unwrap();
+        let loaded = Preferences::load(file);
+        assert_eq!(loaded.destination(), Some(first.as_path()));
+        assert_eq!(loaded.recent_destinations(), [first, second]);
+        assert_eq!(loaded.last_report_folder(), Some(report.as_path()));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn native_destination_recents_and_report_folder_survive_reload() {
+        use std::{ffi::OsString, os::unix::ffi::OsStringExt};
+        let root = tempfile::tempdir().unwrap();
+        assert_native_folder_round_trip(
+            root.path()
+                .join(OsString::from_vec(b"destination-\xff".to_vec())),
+            root.path()
+                .join(OsString::from_vec(b"recent-\xfe".to_vec())),
+            root.path()
+                .join(OsString::from_vec(b"report-\xfd".to_vec())),
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn native_destination_recents_and_report_folder_survive_reload() {
+        use std::{ffi::OsString, os::windows::ffi::OsStringExt};
+        let root = tempfile::tempdir().unwrap();
+        assert_native_folder_round_trip(
+            root.path()
+                .join(OsString::from_wide(&[b'd' as u16, 0xd800])),
+            root.path()
+                .join(OsString::from_wide(&[b'r' as u16, 0xdc00])),
+            root.path()
+                .join(OsString::from_wide(&[b's' as u16, 0xd801])),
+        );
+    }
+
+    fn native(path: &Path) -> serde_json::Value {
+        serde_json::to_value(NativePathValue::new(path)).unwrap()
+    }
+
+    #[test]
+    fn invalid_saved_native_folders_default_wholly_and_next_save_replaces_them() {
+        use serde_json::json;
+        let root = tempfile::tempdir().unwrap();
+        let file = root.path().join("settings.json");
+        let valid = native(root.path());
+        let settings = json!({"recent_destinations": [valid.clone()],
+            "last_destination": valid.clone(), "last_report_folder": valid.clone()});
+        let mut foreign = valid.clone();
+        foreign["encoding"] = if cfg!(unix) {
+            "windows-utf16le"
+        } else {
+            "unix-bytes"
+        }
+        .into();
+        let mut malformed = valid.clone();
+        malformed["base64"] = "%%%".into();
+        let oversized = root.path().join("x".repeat(eml_core::MAX_PATH_UNITS + 1));
+        let deep = root
+            .path()
+            .join("x/".repeat(eml_core::MAX_PATH_COMPONENTS + 1));
+        let bad = [
+            foreign,
+            malformed,
+            native(Path::new("relative")),
+            native(&root.path().join("bad\0")),
+            native(&oversized),
+            native(&deep),
+        ];
+        for record in bad {
+            for field in [
+                "recent_destinations",
+                "last_destination",
+                "last_report_folder",
+            ] {
+                let mut invalid = settings.clone();
+                invalid[field] = if field == "recent_destinations" {
+                    json!([record.clone()])
+                } else {
+                    record.clone()
+                };
+                fs::write(&file, serde_json::to_vec(&invalid).unwrap()).unwrap();
+                let mut preferences = Preferences::load(file.clone());
+                assert!(preferences.destination().is_none(), "{field}: {record}");
+                assert!(preferences.recent_destinations().is_empty());
+                assert!(preferences.last_report_folder().is_none());
+                preferences
+                    .set_destination(Some(root.path().to_owned()))
+                    .unwrap();
+                assert_eq!(
+                    Preferences::load(file.clone()).destination(),
+                    Some(root.path())
+                );
+            }
+        }
+        for invalid in [
+            json!({"recent_destinations": [valid.clone(), valid.clone(), valid.clone(), valid.clone()],
+            "last_destination": valid.clone(), "last_report_folder": valid}),
+            json!({"recent_destinations": ["/old/destination"], "last_destination": "/old/destination", "last_report_folder": null}),
+        ] {
+            fs::write(&file, serde_json::to_vec(&invalid).unwrap()).unwrap();
+            let mut preferences = Preferences::load(file.clone());
+            assert!(preferences.destination().is_none());
+            assert!(preferences.recent_destinations().is_empty());
+            assert!(preferences.last_report_folder().is_none());
+            preferences
+                .set_report_folder(root.path().to_owned())
+                .unwrap();
+            assert_eq!(
+                Preferences::load(file.clone()).last_report_folder(),
+                Some(root.path())
+            );
+        }
+    }
+
+    #[test]
+    fn invalid_choices_leave_settings_unchanged_and_failed_save_keeps_latest_choice() {
+        let root = tempfile::tempdir().unwrap();
+        let file = root.path().join("settings.json");
+        let mut preferences = Preferences::load(file.clone());
+        preferences
+            .set_destination(Some(root.path().to_owned()))
+            .unwrap();
+        let original = fs::read(&file).unwrap();
+        for bad in [
+            PathBuf::from("relative"),
+            root.path().join("bad\0"),
+            root.path().join("x".repeat(eml_core::MAX_PATH_UNITS + 1)),
+        ] {
+            assert!(preferences.set_destination(Some(bad.clone())).is_err());
+            assert!(preferences.set_report_folder(bad).is_err());
+            assert_eq!(preferences.destination(), Some(root.path()));
+            assert!(preferences.last_report_folder().is_none());
+            assert_eq!(fs::read(&file).unwrap(), original);
+        }
+        let blocked = root.path().join("blocked");
+        fs::write(&blocked, b"not a directory").unwrap();
+        preferences.path = blocked.join("settings.json");
+        let latest = root.path().join("latest");
+        assert!(preferences.set_destination(Some(latest.clone())).is_err());
+        assert_eq!(preferences.destination(), Some(latest.as_path()));
+        assert_eq!(
+            preferences.recent_destinations(),
+            [latest.clone(), root.path().to_owned()]
+        );
+        assert_eq!(fs::read(&file).unwrap(), original);
+        preferences.path = file.clone();
+        preferences
+            .set_report_folder(root.path().to_owned())
+            .unwrap();
+        assert_eq!(
+            Preferences::load(file).destination(),
+            Some(latest.as_path())
+        );
+    }
+
+    #[test]
+    fn recent_native_folders_keep_three_choices_and_null_destination() {
+        let root = tempfile::tempdir().unwrap();
+        let file = root.path().join("settings.json");
+        let mut preferences = Preferences::load(file.clone());
+        for index in 0..5 {
+            preferences
+                .set_destination(Some(root.path().join(index.to_string())))
+                .unwrap();
+        }
+        preferences.set_destination(None).unwrap();
+        let loaded = Preferences::load(file);
+        assert!(loaded.destination().is_none());
+        assert!(loaded.last_report_folder().is_none());
+        assert_eq!(
+            loaded.recent_destinations(),
+            [
+                root.path().join("4"),
+                root.path().join("3"),
+                root.path().join("2")
+            ]
+        );
     }
 }

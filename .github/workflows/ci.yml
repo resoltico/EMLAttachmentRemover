@@ -123,7 +123,19 @@ jobs:
           $expected = if ($env:RUNNER_ARCH -eq 'ARM64') { 'aarch64-pc-windows-msvc' } else { 'x86_64-pc-windows-msvc' }
           if ($target -ne $expected) { throw "Expected native Rust host $expected; found $target" }
           if ($target -notlike '*-pc-windows-msvc') { throw "Expected native MSVC host; found $target" }
-          cargo run --locked -p xtask --target $target -- ci --rust-only
+          # Cargo test rebuilds xtask for its integration tests. Windows cannot
+          # replace a running executable, so run an isolated copy of the artifact.
+          $build = cargo build --locked -p xtask --bin xtask --target $target --message-format=json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $artifact = @($build | ConvertFrom-Json | Where-Object {
+            $_.reason -eq 'compiler-artifact' -and $_.target.name -eq 'xtask' -and $_.executable
+          } | Select-Object -ExpandProperty executable)
+          if ($artifact.Count -ne 1) { throw "Expected one xtask executable; found $($artifact.Count)" }
+          $driver = Join-Path $env:RUNNER_TEMP 'eml-xtask-ci.exe'
+          Copy-Item -LiteralPath $artifact[0] -Destination $driver
+          Write-Host "CI driver: $driver; Cargo artifact: $($artifact[0])"
+          & $driver ci --rust-only
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - if: runner.os != 'Windows'
         run: cargo xtask ci --rust-only
       - if: github.ref == 'refs/heads/main' && steps.cache.outputs.cache-hit != 'true'

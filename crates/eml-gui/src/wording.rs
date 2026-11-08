@@ -280,8 +280,7 @@ pub(super) const STARTING: &str = "Starting…";
 pub(super) const CHECK_METADATA: &str = "Metadata from: read-only check\n";
 pub(super) const CREATE_METADATA: &str = "Metadata from: copy process\n";
 
-pub(crate) const INVALID_SAVED_FOLDERS: &str =
-    "Saved folders must use absolute paths; at most three recent destinations are supported.";
+pub(crate) const INVALID_SAVED_FOLDERS: &str = "Saved folders must use absolute, NUL-free native paths within the path limits; at most three recent destinations are supported.";
 
 pub(crate) const CONFIG_UNAVAILABLE: &str = "Cannot locate the configuration folder";
 

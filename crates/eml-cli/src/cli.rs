@@ -5,7 +5,7 @@ use clap::{
     error::{ContextKind, ContextValue, ErrorKind},
 };
 use eml_core::{InvalidRequest, OutputLocation, RunControl, RunMode, RunRequest};
-use eml_protocol::{JsonSink, MAX_REQUEST_BYTES, TerminalPath, decode_request};
+use eml_protocol::{DisplayPath, JsonSink, MAX_REQUEST_BYTES, decode_request};
 use std::{
     ffi::{OsStr, OsString},
     fs::File,
@@ -120,7 +120,7 @@ fn terminal(writer: &mut impl Write, text: &str) -> io::Result<()> {
         } else {
             line
         };
-        write!(writer, "{}", TerminalPath::new(Path::new(value)))?;
+        write!(writer, "{}", DisplayPath::new(Path::new(value)))?;
         if newline {
             writer.write_all(b"\n")?;
         }

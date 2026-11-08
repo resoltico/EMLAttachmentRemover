@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Saved folders use lossless native encoding; earlier string settings reset to defaults. CLI and GUI path labels distinguish invalid native units without changing protocol-1 JSON.
+
+- Run Windows CI from a copied driver so Cargo can rebuild its original executable; locate that driver from Cargo's artifact output rather than assuming a target directory.
+
 - Raise the Linux build and CLI runtime baseline to Ubuntu 26.04. Native GUI builds select desktop-winit on macOS or desktop-qt on Linux; the desktop feature is removed.
 - Keep Slint 1.18.1 with Qt 6.12 on Linux, preserving Wayland, X11 and native accessibility. Portal file panels and drops preserve native filenames; failed parent export is reported.
 - Remove maintenance advisory waivers; check every supported native dependency profile. Reject missing Qt and a runtime that differs from its build SDK.

@@ -38,7 +38,7 @@ fn discard(stage: tempfile::NamedTempFile, error: io::Error) -> io::Error {
             error.kind(),
             format!(
                 "{error}; could not remove private report staging file {}: {cleanup}",
-                eml_protocol::TerminalPath::new(&path)
+                eml_protocol::DisplayPath::new(&path)
             ),
         ),
     }

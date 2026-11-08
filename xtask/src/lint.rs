@@ -23,7 +23,15 @@ pub(crate) fn run() -> Result<()> {
             &["aarch64-apple-darwin", "x86_64-apple-darwin"][..],
         ),
         (
+            "eml-gui/desktop-winit,eml-gui/renderer-software,eml-gui/renderer-skia",
+            &["aarch64-apple-darwin", "x86_64-apple-darwin"][..],
+        ),
+        (
             "eml-gui/desktop-qt",
+            &["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"][..],
+        ),
+        (
+            "eml-gui/desktop-qt,eml-gui/renderer-software",
             &["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"][..],
         ),
     ] {

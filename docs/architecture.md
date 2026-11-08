@@ -185,8 +185,12 @@ Buttons, menus and controller boundaries share predicates in `actions.rs`.
 Slint uses Cupertino on macOS and Fluent on Linux. Native open/reveal requests run
 off the UI thread, bounded to one per initiating window. Acceptance is advisory,
 not proof of viewer contents or current file identity. About and Licenses retain
-their focus/reset behavior. Preferences retain their folder keys; unreadable,
-invalid or old content gives defaults silently and is replaced on the next save.
+their focus/reset behavior. Native Linux uses Qt with parented XDG portal panels;
+macOS uses Winit. Human path formatting is shared in `eml-protocol`, separate from
+unchanged wire display strings. Preferences keep native paths in memory and use
+native encoding at the settings boundary, validated by core's path policy.
+Unreadable, invalid or old string settings give defaults silently and are replaced
+on the next save, without migration.
 
 On macOS, the verified Winit application-delegate class receives About/Quit routing
 and an `application:openURLs:` adapter. Only absent selectors with matching ABI
