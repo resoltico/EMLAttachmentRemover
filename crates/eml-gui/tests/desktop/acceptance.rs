@@ -1614,6 +1614,23 @@ fn u5_chips_size_and_status_share_row_centre() {
             e.size()
         );
     }
+    let dot = ElementHandle::find_by_element_type_name(&ui, "ToneDot")
+        .next()
+        .unwrap();
+    assert!((dot.absolute_position().y + dot.size().height / 2.0 - centre).abs() <= 1.0);
+    let source =
+        fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("ui/batch.slint")).unwrap();
+    let row = source
+        .split("for row[")
+        .nth(1)
+        .unwrap()
+        .split("TouchArea")
+        .next()
+        .unwrap();
+    assert!(
+        !row.contains("border-width:"),
+        "Rows must have no border: {row}"
+    );
 }
 
 #[test]

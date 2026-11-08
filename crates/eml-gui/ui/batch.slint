@@ -46,7 +46,7 @@ export component BatchPane inherits Rectangle {
                     if root.view.state == BatchState.checking || root.view.state == BatchState.ready: ActionButton { text: root.words.add-folder; enabled: root.view.can-add; clicked => { root.add-folder(); } }
                     if root.view.state == BatchState.checking || root.view.state == BatchState.ready: TextButton { text: root.words.start-over; enabled: root.view.can-reset; clicked => { root.reset(); } }
                 }
-                HorizontalBox { padding: 0px; spacing: Theme.space-2;
+                HorizontalBox { height: Theme.control-height; padding: 0px; spacing: Theme.space-2;
                     Label { text: root.view.summary; color: Theme.muted; overflow: elide; horizontal-stretch: 1; }
                     if root.view.problems != "": Chip { text: root.view.filtered ? root.words.show-all : root.view.problems; selected: root.view.filtered; clicked => { root.filter(); } }
                 }
@@ -79,28 +79,29 @@ export component BatchPane inherits Rectangle {
             }
             emails := ListView { width: parent.width; height: parent.height; content-width: self.visible-width; content-y <=> root.scroll-y;
                 accessible-role: list; accessible-label: root.words.emails;
-                for row in root.rows: Rectangle {
+                for row[index] in root.rows: Rectangle {
                     height: root.row-height; background: row.selected ? Theme.accent-soft : Theme.surface;
-                    border-width: 1px; border-color: Theme.raised; border-radius: Theme.radius-control;
+                    border-radius: Theme.radius-control;
+                    if index < root.rows.length - 1: Rectangle { y: parent.height - 1px; width: parent.width; height: 1px; background: Theme.border; opacity: 0.4; }
                     accessible-role: list-item; accessible-label: row.name + ", " + row.status;
                     accessible-description: row.description;
                     accessible-item-selectable: true; accessible-item-selected: row.selected;
                     accessible-action-default => { list-focus.focus(); root.select(row.key); }
                     TouchArea { clicked => { list-focus.focus(); root.select(row.key); } }
                     HorizontalBox { width: parent.width; height: parent.height; padding-left: Theme.space-2; padding-right: Theme.space-2; padding-top: 2px; padding-bottom: 2px; spacing: root.column-spacing;
-                        VerticalBox { width: root.email-column; padding: 0px; spacing: 0px;
+                        VerticalBox { width: root.email-column; padding: 0px; spacing: 0px; alignment: center;
                             // The suffix keeps the extension visible when the name is clipped.
                             Rectangle { min-height: Theme.line-height; vertical-stretch: 0;
                                 prefix := Label { x: 0px; width: min(self.preferred-width,max(0px,parent.width - suffix.preferred-width)); height: parent.height; text: row.prefix; overflow: elide; font-weight: 550; }
-                                suffix := Label { x: prefix.width; width: min(self.preferred-width,max(0px,parent.width - prefix.width)); height: parent.height; text: row.suffix; font-weight: 550; overflow: elide; }
+                                suffix := Label { x: prefix.width - (prefix.preferred-width > prefix.width ? Theme.space-1 : 0px); width: min(self.preferred-width,max(0px,parent.width - prefix.width)); height: parent.height; text: row.suffix; font-weight: 550; overflow: elide; }
                             }
                             Rectangle { min-height: 17px; vertical-stretch: 0; accessible-role: text; accessible-label: row.folder;
                                 folder-prefix := Label { x: 0px; width: min(self.preferred-width,max(0px,parent.width - folder-suffix.preferred-width)); height: parent.height; text: row.folder-prefix; font-size: Theme.small; color: Theme.muted; overflow: elide; accessible-role: none; }
                                 folder-suffix := Label { x: folder-prefix.width; width: min(self.preferred-width,max(0px,parent.width - folder-prefix.width)); height: parent.height; text: row.folder-suffix; font-size: Theme.small; color: Theme.muted; overflow: elide; accessible-role: none; }
                             }
                         }
-                        Rectangle { width: root.attachments-column;
-                        HorizontalBox { width: parent.width; height: parent.height; padding: 0px; spacing: 5px;
+                        VerticalBox { width: root.attachments-column; padding: 0px; alignment: center;
+                        HorizontalBox { width: parent.width; height: 22px; padding: 0px; spacing: Theme.space-1;
                             if row.has-chips: AttachmentChip { text: row.chip1; }
                             if !row.has-chips: Label { text: row.chip1; font-size: Theme.small; color: Theme.muted; overflow: elide; }
                             if row.chip2 != "": AttachmentChip { text: row.chip2; }
@@ -115,10 +116,11 @@ export component BatchPane inherits Rectangle {
                             }
                             if !row.size-reduction-known: Label { text: row.size-text; width: parent.width; height: parent.height; overflow: elide; accessible-role: none; }
                         }
-                        HorizontalBox { width: root.status-column; padding: 0px; spacing: Theme.space-2;
+                        VerticalBox { width: root.status-column; padding: 0px; alignment: center;
+                        HorizontalBox { height: Theme.line-height; padding: 0px; spacing: Theme.space-2;
                             VerticalBox { width: 8px; padding: 0px; spacing: 0px; alignment: center; ToneDot { tone: Theme.tone(row.tone); } }
                             Label { text: row.status; color: Theme.tone(row.tone); overflow: elide; horizontal-stretch: 1; }
-                        }
+                        }}
                     }
                 }
             }
