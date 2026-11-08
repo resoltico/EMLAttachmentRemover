@@ -135,3 +135,21 @@ pub(super) fn outcome(item: &wire::ItemRecord) -> vocabulary::Outcome {
         vocabulary::Outcome::from(&facts, item.removed.len())
     })
 }
+
+/// Project settled current-run facts, including work whose source rows were never observed.
+pub(super) fn settled_totals(report: &eml_app::RunReport) -> Option<vocabulary::BatchTotals> {
+    let summary = report.summary()?;
+    Some(vocabulary::BatchTotals::from(
+        report.items().iter().map(|item| {
+            (
+                Some(outcome(item)),
+                item.removed.len(),
+                item.source_bytes
+                    .value()
+                    .copied()
+                    .zip(item.copy_bytes.value().copied()),
+            )
+        }),
+        summary.counts.not_processed as usize,
+    ))
+}

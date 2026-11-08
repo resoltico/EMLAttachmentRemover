@@ -876,9 +876,11 @@ pub struct BatchTotals {
     pub problems: usize,
 }
 impl BatchTotals {
-    /// Aggregate accepted outcomes and their removal metadata.
+    /// Aggregate accepted outcomes, metadata and remaining work without item events.
+    /// Row-only projections pass zero; remaining work must not also appear as rows.
     pub fn from(
         items: impl IntoIterator<Item = (Option<Outcome>, usize, Option<(u64, u64)>)>,
+        unprocessed: usize,
     ) -> Self {
         let mut totals = Self::default();
         for (outcome, parts, bytes) in items {
@@ -896,6 +898,10 @@ impl BatchTotals {
                     totals.bytes_removed += source.saturating_sub(copy);
                 }
             }
+        }
+        totals.emails += unprocessed;
+        if unprocessed > 0 {
+            *totals.counts.entry(Outcome::NotProcessed).or_default() += unprocessed;
         }
         totals
     }

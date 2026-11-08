@@ -160,12 +160,12 @@ fn write_human(
                         "Invalid interrupted item counts",
                     )
                 })?;
-            let mut totals = BatchTotals::from(
+            let totals = BatchTotals::from(
                 items
                     .iter()
                     .map(|&(outcome, parts, bytes)| (Some(outcome), parts, bytes)),
+                counts.not_processed(),
             );
-            *totals.counts.entry(Outcome::NotProcessed).or_default() += counts.not_processed();
             writeln!(
                 writer,
                 "{}. Exit {}{}",

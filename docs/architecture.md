@@ -93,6 +93,9 @@ pending check. Remove Attachments during a check replaces the pending operation
 with Create. New inputs during Removing are refused; after Done or Stopped they
 replace the batch. There is no run history, waiting queue, session report storage,
 eviction or lazy reload. Continue creates a fresh request with the same operands.
+A settled stopped summary uses core totals from current create records and
+unprocessed work, including sources without preview rows. Retained preview rows
+are not added a second time.
 Until that create settles, the prior create report supplies row results that the
 current report has not yet replaced. A new batch drops it. Before discovery
 reports a total, create progress reads “Starting…”.
