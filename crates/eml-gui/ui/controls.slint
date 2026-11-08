@@ -79,8 +79,8 @@ export component Chip inherits TextButton {
     in property <bool> selected;
     accessible-checkable: true;
     accessible-checked: root.selected;
-    background: root.selected ? Theme.accent : Theme.surface;
-    foreground: root.selected ? Theme.on-accent : Theme.text;
+    background: root.selected ? Theme.accent-soft : Theme.surface;
+    foreground: root.selected ? Theme.accent : Theme.text;
     border-width: root.has-focus ? 2px : 1px;
     border-color: root.selected || root.has-focus ? Theme.accent : Theme.border;
 }

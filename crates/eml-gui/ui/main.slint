@@ -54,7 +54,7 @@ export component MainWindow inherits Window {
     if root.view.state == BatchState.empty: EmptyBatch { words: root.words; notice: root.view.notice; can-reveal-report: root.view.can-reveal-report; reveal-report => { root.reveal-report(); } enabled: root.view.can-add; hovered: root.drop-hovered;
         add-files => { root.choose-files(); } add-folder => { root.choose-folder(); }
     }
-    if root.view.state != BatchState.empty: BatchPane { words: root.words; view: root.view; rows: root.rows; detail: root.detail; hovered: root.drop-hovered;
+    batch-pane := BatchPane { visible: root.view.state != BatchState.empty; words: root.words; view: root.view; rows: root.rows; detail: root.detail; hovered: root.drop-hovered;
         add-files => { root.choose-files(); } add-folder => { root.choose-folder(); } reset => { root.start-over(); }
         start => { root.start-selection(); } stop => { root.stop(); } filter => { root.toggle-problems(); }
         select(key) => { root.select-email(key); } navigate(delta,edge) => { root.navigate-email(delta,edge); } clear-selected => { root.clear-selected(); }
@@ -62,20 +62,20 @@ export component MainWindow inherits Window {
         show-copy => { root.show-copy(); } show-original => { root.show-original(); } copy-details => { root.copy-details(); }
         destination => { destinations.show(); } output => { root.show-output(); }
     }
-    destinations := PopupWindow { x: max(0px,(root.width - Theme.column-max-width) / 2 + 90px); y: root.height - self.height - 60px; width: 340px;
+    destinations := PopupWindow { x: batch-pane.destination-anchor-x; y: batch-pane.destination-anchor-y - self.height; width: 340px;
         height: 88px + root.recent-destinations.length * 36px;
         Rectangle { background: Theme.raised; border-width: 1px; border-color: Theme.border;
             VerticalBox { padding: Theme.space-2; spacing: Theme.space-1;
-                TextButton { text: root.words.next-to; clicked => { destinations.close(); root.beside-source(); } }
-                for folder[index] in root.recent-destinations: TextButton { text: folder; clicked => { destinations.close(); root.recent-destination(index); } }
-                TextButton { text: root.words.choose-folder; clicked => { destinations.close(); root.choose-destination(); } }
+                ActionButton { text: root.words.next-to; clicked => { destinations.close(); root.beside-source(); } }
+                for folder[index] in root.recent-destinations: ActionButton { text: folder; clicked => { destinations.close(); root.recent-destination(index); } }
+                ActionButton { text: root.words.choose-folder; clicked => { destinations.close(); root.choose-destination(); } }
             }
         }
     }
-    outputs := PopupWindow { x: max(0px,root.width - self.width - 24px); y: root.height - self.height - 60px; width: 420px; height: min(400px,16px + root.output-roots.length * 36px);
+    outputs := PopupWindow { x: batch-pane.output-anchor-x + batch-pane.output-anchor-width - self.width; y: batch-pane.output-anchor-y - self.height; width: 420px; height: min(400px,16px + root.output-roots.length * 36px);
         Rectangle { background: Theme.raised; border-width: 1px; border-color: Theme.border;
             ListView { x: 8px; y: 8px; width: parent.width - 16px; height: parent.height - 16px; content-width: self.visible-width;
-                for path[index] in root.output-roots: TextButton { text: path; min-width: 0px; min-height: 36px; clicked => { outputs.close(); root.reveal-output(index); } }
+                for path[index] in root.output-roots: ActionButton { text: path; min-width: 0px; min-height: 36px; clicked => { outputs.close(); root.reveal-output(index); } }
             }
         }
     }
