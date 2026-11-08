@@ -5,15 +5,18 @@
 Use concise bullets without category labels or subheadings, grouping related changes and putting breaking changes and required actions first. Each bullet occupies one physical line, at most 200 characters including Markdown but excluding its `- ` marker: a ceiling, not a target. Shorten or split without losing material consequences. Use technical names when helpful; link to existing relevant documentation, without assuming paths or creating documents merely to satisfy this rule.
 ## [Unreleased]
 
+- CLI human output is rewritten in plain language; JSON is unchanged. Update scripts that read human output to use protocol-1 JSON instead.
+- The CLI and app share outcome labels, explanations, attachment names, size formatting and summary vocabulary from core.
+- Center row cells, use one button hierarchy and keep the header and detail pane stable. Popups follow their controls; results complete in displayed worker order.
+
 - Replace desktop run history and its queue with one batch and one list; adding emails after completion starts a new batch immediately.
 - Preview files and folders automatically without writing. Remove Attachments saves copies and updates the same list; the CLI keeps --dry-run.
 - Show attachment names, before/after sizes and plain-language results, with one problems filter and a scrolling detail pane. Copy Details includes native paths and diagnostics.
-- Keep saved results visible through Continue and refresh completed checks delivered through Open With.
 - Use Stop and Continue for interrupted batches. Force is limited to Quit Now after five seconds of Stop and Quit; exiting waits for the worker and report exports.
 - Restore Finder Open With for emails and folders; Dock-icon drops use the same handler (not verified by hand).
 - Keep batch reports in memory; Save Report exports exact settled bytes through the native save panel, preserving approved replacement and prior targets on failure.
 - Silently use defaults for unreadable or invalid desktop preferences and replace them on the next save; keep three recent destinations and the last report folder.
-- Center desktop content, keep detail actions visible at minimum size and support enlarged text, keyboard navigation, and light/dark appearance.
+- Center desktop content, keep detail actions visible at minimum size and support keyboard navigation and light/dark appearance.
 - Keep native open/reveal work off the UI thread and reject stale native-panel submissions after a Quit decision.
 - Reject headerless message roots as MALFORMED without creating copies; minimal header-bearing exports and headerless MIME body parts remain supported.
 - Group explicitly interrupted items as Not processed in the GUI and human CLI summary; preserve raw JSON counts, unknown outcomes, publication qualifications and cleanup warnings.

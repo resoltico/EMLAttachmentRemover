@@ -936,7 +936,7 @@ fn s5_missing_unprocessed_waiting_and_preview_statuses_are_distinct() {
             c.window()
                 .get_view()
                 .summary
-                .contains("1.0 kB will be removed")
+                .contains("1.0 kB would be removed")
         );
         c.start_selection();
         pump(&c, || !c.is_busy());
@@ -1205,7 +1205,7 @@ fn s6_ready_summary_counts_existing_copies_separately_from_new_removals() {
     assert_eq!(c.window().get_view().title, "2 emails");
     assert_eq!(
         c.window().get_view().summary,
-        "1 attachment · 515 B will be removed · 1 already copied"
+        "1 attachment · 515 B would be removed · 1 copy to verify"
     );
 }
 
@@ -1700,6 +1700,19 @@ fn u8_selection_does_not_resize_list() {
         heights.iter().all(|h| (h - heights[0]).abs() <= 1.0),
         "list heights: {heights:?}"
     );
+    for (pane, separator) in [
+        ("detail-pane", "detail-separator"),
+        ("footer", "footer-separator"),
+    ] {
+        let find = |id| {
+            ElementHandle::find_by_element_id(&c.window(), &format!("BatchPane::{id}"))
+                .next()
+                .unwrap()
+        };
+        assert!(
+            (find(pane).absolute_position().y - find(separator).absolute_position().y).abs() <= 1.0
+        );
+    }
     let source =
         fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("ui/batch.slint")).unwrap();
     let detail = source
@@ -1802,8 +1815,20 @@ fn u1_rust_words_have_one_owner() {
                         .filter(|w| w.chars().any(char::is_alphabetic))
                         .count()
                         > 1;
+                    let technical_name = [
+                        "C",
+                        "MacOS",
+                        "Contents",
+                        "EMLAttachmentRemover",
+                        "NSObject",
+                        "WinitApplicationDelegate",
+                        "EmlAboutMenuTarget",
+                    ]
+                    .contains(&readable.as_str());
+                    let single_word = readable.chars().next().is_some_and(char::is_uppercase)
+                        && readable.chars().all(|c| c.is_alphabetic() || c == '…');
                     assert!(
-                        !human,
+                        !human && (!single_word || technical_name),
                         "Readable Rust literal in {}: {literal}",
                         path.display()
                     );
@@ -1857,7 +1882,7 @@ fn u4_visual_literals_and_unused_tokens_are_rejected() {
         if path.file_name().unwrap() != "theme.slint" {
             for line in source.lines() {
                 for property in ["font-size:", "border-radius:"] {
-                    if let Some((_, value)) = line.split_once(property) {
+                    for value in line.split(property).skip(1) {
                         assert!(
                             !value.trim_start().starts_with(|c: char| c.is_ascii_digit()),
                             "Visual literal: {line}"
@@ -1884,7 +1909,13 @@ fn u4_visual_literals_and_unused_tokens_are_rejected() {
             .next()
             .unwrap()
             .trim();
-        assert!(all.matches(name).count() > 1, "Unused Theme token: {name}");
+        let external = all.contains(&format!("Theme.{name}"));
+        let internal = theme.lines().filter(|other| *other != line).any(|other| {
+            other
+                .split(|c: char| !c.is_alphanumeric() && c != '-')
+                .any(|word| word == name)
+        });
+        assert!(external || internal, "Unused Theme token: {name}");
     }
 }
 
@@ -2051,4 +2082,203 @@ fn u11_create_results_follow_displayed_worker_index_order() {
     pump(&c, || !c.is_busy());
     assert_eq!(first, "Copy saved");
     assert_eq!(second, "Copy saved");
+}
+
+#[test]
+fn u1_controller_renders_core_outcomes_and_every_error_code() {
+    use eml_core::{ErrorCode, vocabulary::Outcome};
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let mut names = vec![
+        "ready.eml".to_owned(),
+        "none.eml".to_owned(),
+        "verify.eml".to_owned(),
+    ];
+    names.extend(ErrorCode::ALL.iter().map(|c| format!("{}.eml", c.as_str())));
+    let mut values: Vec<Value> = check_stream(
+        root.path(),
+        &names.iter().map(String::as_str).collect::<Vec<_>>(),
+    )
+    .lines()
+    .map(|l| serde_json::from_str(l).unwrap())
+    .collect();
+    values[2]["removed"] = json!([]);
+    let source = values[3]["source"].clone();
+    let destination = values[3]["destination"].clone();
+    values[3] = records("planned-existing")[1].clone();
+    values[3]["index"] = 2.into();
+    values[3]["source"] = source;
+    values[3]["destination"] = destination;
+    for (n, code) in ErrorCode::ALL.iter().enumerate() {
+        let i = n + 4;
+        let source = values[i]["source"].clone();
+        let destination = values[i]["destination"].clone();
+        values[i] = records("prepublication-failure")[1].clone();
+        values[i]["source"] = source;
+        values[i]["destination"] = destination;
+        values[i]["index"] = (i - 1).into();
+        values[i]["error"]["code"] = code.as_str().into();
+        values[i]["error"]["phase"] = code.allowed_phases()[0].as_str().into();
+    }
+    let summary = values.last_mut().unwrap();
+    summary["counts"]["planned"] = 3.into();
+    summary["counts"]["failed"] = ErrorCode::ALL.len().into();
+    summary["interrupted"] = true.into();
+    summary["exit_code"] = 130.into();
+    let check = values.iter().map(|v| format!("{v}\n")).collect::<String>();
+    let cases = [
+        ("saved.eml", "created-attachment", Outcome::CopySaved),
+        ("as-is.eml", "created", Outcome::CopiedAsIs),
+        ("exists.eml", "up-to-date", Outcome::AlreadyExists),
+        ("needs.eml", "published-with-error", Outcome::NeedsChecking),
+        (
+            "matched.eml",
+            "existing-sync-failure",
+            Outcome::NeedsChecking,
+        ),
+        ("unknown.eml", "unknown-publication", Outcome::Unknown),
+        (
+            "stopped.eml",
+            "started-preedge-cancellation",
+            Outcome::NotProcessed,
+        ),
+    ];
+    let create = stream(root.path(), &cases.map(|(n, s, _)| (n, s)), false);
+    let c = controller(root.path(), dual(root.path(), &check, &create));
+    c.stage(vec![root.path().join("inputs")]).unwrap();
+    pump(&c, || !c.is_busy());
+    let actual = |name: &str| {
+        c.window()
+            .get_rows()
+            .iter()
+            .find(|r| r.name == name)
+            .unwrap()
+            .status
+    };
+    for (name, outcome) in [
+        ("ready.eml", Outcome::Ready),
+        ("none.eml", Outcome::NothingToRemove),
+        ("verify.eml", Outcome::WillVerify),
+    ] {
+        assert_eq!(actual(name), outcome.label());
+    }
+    for code in ErrorCode::ALL {
+        let outcome = if *code == ErrorCode::Interrupted {
+            Outcome::NotProcessed
+        } else {
+            Outcome::Failed(*code)
+        };
+        assert_eq!(actual(&format!("{}.eml", code.as_str())), outcome.label());
+    }
+    c.start_selection();
+    pump(&c, || !c.is_busy());
+    for (name, _, outcome) in cases {
+        assert_eq!(actual(name), outcome.label());
+    }
+}
+
+#[test]
+fn u6_every_state_family_and_filter_preserves_first_row_y() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let check = check_stream(root.path(), &["one.eml", "two.eml"]);
+    let create = stream(
+        root.path(),
+        &[
+            ("one.eml", "created-attachment"),
+            ("two.eml", "prepublication-failure"),
+        ],
+        false,
+    );
+    let check_lines: Vec<_> = check.lines().collect();
+    let create_lines: Vec<_> = create.lines().collect();
+    let cli = script(
+        root.path(),
+        &format!(
+            "request=$(cat)\ncase \"$request\" in *'\"dry_run\":true'*) {}while [ ! -f checked ]; do :; done\n{};; *) {}while [ ! -f created ]; do :; done\n{};; esac",
+            print(&(check_lines[..2].join("\n") + "\n")),
+            emit(&(check_lines[2..].join("\n") + "\n")),
+            print(&(create_lines[0].to_owned() + "\n")),
+            emit(&(create_lines[1..].join("\n") + "\n"))
+        ),
+    );
+    let c = controller(root.path(), cli);
+    let ui = c.window();
+    c.stage(vec![root.path().join("inputs")]).unwrap();
+    pump(&c, || ui.get_rows().row_count() == 1);
+    assert_eq!(ui.get_view().state, BatchState::Checking);
+    let y = label(&ui, "one.eml, Ready").absolute_position().y;
+    let same = |label_text: &str| {
+        assert!(
+            (label(&ui, label_text).absolute_position().y - y).abs() <= 1.0,
+            "state {:?} shifted first row",
+            ui.get_view().state
+        )
+    };
+    fs::write(root.path().join("checked"), "").unwrap();
+    pump(&c, || !c.is_busy());
+    same("one.eml, Ready");
+    c.start_selection();
+    pump(&c, || ui.get_view().progress_text.starts_with("0 of 2"));
+    same("one.eml, Waiting");
+    assert!(
+        (label(&ui, &ui.get_view().progress_text)
+            .absolute_position()
+            .x
+            - label(&ui, "Removing attachments…").absolute_position().x)
+            .abs()
+            <= 1.0
+    );
+    fs::write(root.path().join("created"), "").unwrap();
+    pump(&c, || !c.is_busy());
+    same("one.eml, Copy saved");
+    assert!(
+        (label(
+            &ui,
+            "Your originals are unchanged. Drop more emails to start a new batch."
+        )
+        .absolute_position()
+        .x - label(&ui, &ui.get_view().title).absolute_position().x)
+            .abs()
+            <= 1.0
+    );
+    ui.invoke_toggle_problems();
+    same("two.eml, Not a valid email");
+    drop(c);
+    let root = tempfile::tempdir().unwrap();
+    let check = stream(
+        root.path(),
+        &[
+            ("one.eml", "planned-create-unix"),
+            ("two.eml", "prepublication-failure"),
+        ],
+        true,
+    );
+    let create = stream(
+        root.path(),
+        &[
+            ("one.eml", "started-preedge-cancellation"),
+            ("two.eml", "prepublication-failure"),
+        ],
+        false,
+    );
+    let c = controller(root.path(), dual(root.path(), &check, &create));
+    let ui = c.window();
+    c.stage(vec![root.path().join("inputs")]).unwrap();
+    pump(&c, || !c.is_busy());
+    assert!((label(&ui, "one.eml, No attachments").absolute_position().y - y).abs() <= 1.0);
+    ui.invoke_toggle_problems();
+    assert!(
+        (label(&ui, "two.eml, Not a valid email")
+            .absolute_position()
+            .y
+            - y)
+            .abs()
+            <= 1.0
+    );
+    ui.invoke_toggle_problems();
+    c.start_selection();
+    pump(&c, || !c.is_busy());
+    assert_eq!(ui.get_view().state, BatchState::Stopped);
+    assert!((label(&ui, "one.eml, Not processed").absolute_position().y - y).abs() <= 1.0);
 }

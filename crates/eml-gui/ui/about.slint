@@ -2,7 +2,7 @@ import { Theme } from "theme.slint";
 import { AppWords } from "models.slint";
 // Copyright 2026 Ervins Strauhmanis
 // SPDX-License-Identifier: MPL-2.0
-import { AboutSlint, TextEdit, VerticalBox, HorizontalBox, Palette } from "std-widgets.slint";
+import { AboutSlint, TextEdit, VerticalBox, HorizontalBox } from "std-widgets.slint";
 import { ActionButton, TextButton, UiMetrics } from "controls.slint";
 component AboutLabel inherits TextInput {
     read-only: true; single-line: true; horizontal-alignment: center;
@@ -53,7 +53,7 @@ export component AboutWindow inherits Window {
                 website := ActionButton { text: root.words.project-website; clicked => { root.website(); } }
                 ActionButton { text: root.words.licenses; clicked => { root.licenses(); } }
             }
-            if root.notice != "": Text { text: root.notice; wrap: word-wrap; vertical-alignment: center; color: Palette.foreground; accessible-live-region: polite; }
+            if root.notice != "": Text { text: root.notice; wrap: word-wrap; vertical-alignment: center; color: Theme.text; accessible-live-region: polite; }
             if root.notice-details != "": TextButton { text: root.show-notice-details ? root.words.hide-details : root.words.details; expandable: true; expanded: root.show-notice-details; clicked => { root.show-notice-details = !root.show-notice-details; } }
             if root.show-notice-details && root.notice-details != "": TextEdit { text: root.notice-details; read-only: true; preferred-height: 100px; max-height: 100px; accessible-label: root.words.website-details; }
             HorizontalBox { alignment: center; vertical-stretch: 0; padding: 0px;
@@ -94,7 +94,7 @@ export component LicenseWindow inherits Window {
         VerticalBox { padding: Theme.space-6; spacing: Theme.space-4;
             license-text := TextEdit { text: root.licenses; read-only: true; accessible-label: root.words.license-terms; }
             VerticalBox { padding: 0px; spacing: Theme.space-2; vertical-stretch: 0;
-                Text { text: root.notice; wrap: word-wrap; vertical-alignment: center; color: Palette.foreground; accessible-live-region: polite; }
+                Text { text: root.notice; wrap: word-wrap; vertical-alignment: center; color: Theme.text; accessible-live-region: polite; }
                 if root.notice-details != "": TextButton { text: root.show-notice-details ? root.words.hide-details : root.words.details; expandable: true; expanded: root.show-notice-details; clicked => { root.show-notice-details = !root.show-notice-details; } }
                 if root.show-notice-details && root.notice-details != "": TextEdit { text: root.notice-details; read-only: true; preferred-height: 100px; max-height: 100px; accessible-label: root.words.notices-details; }
                 HorizontalBox { padding: 0px; alignment: end;

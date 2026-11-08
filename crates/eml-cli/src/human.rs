@@ -1,7 +1,7 @@
 //! Human rendering of core outcomes; never a GUI protocol.
 use eml_core::{
     Event, EventSink,
-    vocabulary::{BatchTotals, Outcome, OutcomeFacts, RunFailure, format_bytes},
+    vocabulary::{BatchTotals, Outcome, OutcomeFacts, RunFailure, fields, format_bytes},
 };
 use eml_protocol::{BoundedEventBuffer, MAX_LINE_BYTES};
 use std::io::{self, Write};
@@ -78,9 +78,10 @@ impl<W: Write> EventSink for HumanSink<W> {
     }
 }
 fn write_error(writer: &mut impl Write, error: &eml_core::OperationFailure) -> io::Result<()> {
+    let [code, phase, detail] = [fields::CODE, fields::PHASE, fields::DETAIL];
     writeln!(
         writer,
-        "                 [{} during {}: {}]",
+        "                 [{code}: {} · {phase}: {} · {detail}: {}]",
         error.code(),
         error.phase(),
         error.detail()
@@ -104,10 +105,10 @@ fn write_human(
     match event {
         Event::Start(value) => writeln!(
             writer,
-            "{} {} — {} emails{}{}",
+            "{} {} — {}{}{}",
             env!("CARGO_PKG_NAME"),
             eml_core::product::VERSION_WITH_REVISION.as_str(),
-            value.total,
+            eml_core::vocabulary::email_count(value.total),
             if value.dry_run {
                 " · check only, nothing is written"
             } else {
@@ -132,7 +133,11 @@ fn write_human(
                         "Invalid interrupted item counts",
                     )
                 })?;
-            let mut totals = BatchTotals::from(items.iter().copied());
+            let mut totals = BatchTotals::from(
+                items
+                    .iter()
+                    .map(|&(outcome, parts, bytes)| (Some(outcome), parts, bytes)),
+            );
             *totals.counts.entry(Outcome::NotProcessed).or_default() += counts.not_processed();
             writeln!(
                 writer,
@@ -156,29 +161,22 @@ fn write_human(
     }
 }
 fn write_item(writer: &mut impl Write, value: &eml_core::ItemEvent<'_>) -> io::Result<()> {
-    use eml_protocol::TerminalPath;
     let facts = OutcomeFacts::from(&value.result);
     let data = metadata(&value.result);
     let outcome = Outcome::from(&facts, data.map_or(0, |d| d.removed.len()));
-    write!(
-        writer,
-        "{:<24} {}",
-        outcome.label(),
-        TerminalPath::new(value.source.display)
-    )?;
+    write_label(writer, outcome, value.source.display)?;
     if let Some(path) = value.destination {
-        write!(writer, " → {}", TerminalPath::new(path.display))?;
+        write!(
+            writer,
+            " → {}",
+            eml_protocol::TerminalPath::new(path.display)
+        )?;
     }
     if let Some(data) = data {
         write!(
             writer,
-            " · {} {} · {} → {}",
-            data.removed.len(),
-            if data.removed.len() == 1 {
-                "attachment"
-            } else {
-                "attachments"
-            },
+            " · {} · {} → {}",
+            eml_core::vocabulary::attachment_count(data.removed.len()),
             format_bytes(data.source_bytes),
             format_bytes(data.copy_bytes)
         )?;
@@ -210,7 +208,7 @@ mod tests {
     ));
     fn expected_human_start() -> String {
         format!(
-            "emlattachmentremover {} — 1 emails · check only, nothing is written\n",
+            "emlattachmentremover {} — 1 email · check only, nothing is written\n",
             eml_core::product::VERSION_WITH_REVISION.as_str()
         )
     }
@@ -367,3 +365,19 @@ mod tests {
         root.close().unwrap();
     }
 }
+
+fn write_label(
+    writer: &mut impl Write,
+    outcome: Outcome,
+    source: &std::path::Path,
+) -> io::Result<()> {
+    write!(
+        writer,
+        "{:<24} {}",
+        outcome.label(),
+        eml_protocol::TerminalPath::new(source)
+    )
+}
+#[cfg(test)]
+#[path = "../tests/support/human_labels.rs"]
+mod labels;

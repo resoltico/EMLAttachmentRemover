@@ -6,11 +6,11 @@ import { BatchState, Tone, EmailRow, EmailDetail, BatchView, AppWords } from "mo
 import { ActionButton, PrimaryButton, TextButton, Label, Chip, ToneDot, UiMetrics, AttachmentChip } from "controls.slint";
 export component BatchPane inherits Rectangle {
     min-height: 0px; preferred-height: 0px; max-height: 100000px; vertical-stretch: 1;
-    out property <length> destination-anchor-x: destination-anchor.absolute-position.x;
-    out property <length> destination-anchor-y: destination-anchor.absolute-position.y;
-    out property <length> output-anchor-x: output-anchor.absolute-position.x;
-    out property <length> output-anchor-width: output-anchor.width;
-    out property <length> output-anchor-y: output-anchor.absolute-position.y;
+    out property <length> destination-anchor-x: destination-content.absolute-position.x;
+    out property <length> destination-anchor-y: destination-content.absolute-position.y;
+    out property <length> output-anchor-x: output-content.absolute-position.x;
+    out property <length> output-anchor-width: output-content.width;
+    out property <length> output-anchor-y: output-content.absolute-position.y;
     in property <AppWords> words;
     in property <BatchView> view;
     in property <[EmailRow]> rows;
@@ -19,10 +19,10 @@ export component BatchPane inherits Rectangle {
     callback add-files(); callback add-folder(); callback reset(); callback start(); callback stop();
     callback filter(); callback select(string); callback navigate(int,int); callback clear-selected();
     callback reveal-report(); callback show-copy(); callback show-original(); callback copy-details(); callback destination(); callback output();
-    private property <length> column-width: min(Theme.column-max-width,root.width - 48px);
+    private property <length> column-width: min(Theme.column-max-width,root.width - Theme.space-6 * 2);
     private property <length> column-x: (root.width - self.column-width) / 2;
-    private property <length> text-x: root.column-x + UiMetrics.scroll-inset + 8px;
-    private property <length> text-width: root.column-width - 2 * (UiMetrics.scroll-inset + 8px);
+    private property <length> text-x: root.column-x + UiMetrics.scroll-inset + Theme.space-2;
+    private property <length> text-width: root.column-width - 2 * (UiMetrics.scroll-inset + Theme.space-2);
     private property <length> row-height: Theme.row-height;
     private property <bool> wide: root.width >= 900px;
     private property <length> email-column: root.column-width * 0.32;
@@ -45,7 +45,7 @@ export component BatchPane inherits Rectangle {
     changed list-height => { root.reveal-selected(); }
     VerticalBox { width: parent.width; height: parent.height; padding: 0px; spacing: 0px;
         Rectangle { height: header.preferred-height;
-            header := VerticalBox { x: root.text-x; width: root.text-width; padding-top: 18px; padding-bottom: Theme.space-3; padding-left: 0px; padding-right: 0px; spacing: 6px;
+            header := VerticalBox { x: root.text-x; width: root.text-width; padding-top: Theme.space-4; padding-bottom: Theme.space-3; padding-left: 0px; padding-right: 0px; spacing: Theme.space-2;
                 HorizontalBox { min-height: Theme.control-height; padding: 0px; spacing: Theme.space-2;
                     Label { text: root.view.title; font-size: Theme.title; font-weight: 700; horizontal-stretch: 1; overflow: elide; accessible-live-region: polite; }
                     if root.view.state == BatchState.checking || root.view.state == BatchState.ready: ActionButton { text: root.words.add-files; enabled: root.view.can-add; clicked => { root.add-files(); } }
@@ -94,7 +94,7 @@ export component BatchPane inherits Rectangle {
                     accessible-item-selectable: true; accessible-item-selected: row.selected;
                     accessible-action-default => { list-focus.focus(); root.select(row.key); }
                     TouchArea { clicked => { list-focus.focus(); root.select(row.key); } }
-                    HorizontalBox { width: parent.width; height: parent.height; padding-left: Theme.space-2; padding-right: Theme.space-2; padding-top: 2px; padding-bottom: 2px; spacing: root.column-spacing;
+                    HorizontalBox { width: parent.width; height: parent.height; padding-left: Theme.space-2; padding-right: Theme.space-2; padding-top: 0px; padding-bottom: 0px; spacing: root.column-spacing;
                         VerticalBox { width: root.email-column; padding: 0px; spacing: 0px; alignment: center;
                             // The suffix keeps the extension visible when the name is clipped.
                             Rectangle { min-height: Theme.line-height; vertical-stretch: 0;
@@ -133,15 +133,15 @@ export component BatchPane inherits Rectangle {
             Rectangle { width: parent.width; height: parent.height; visible: root.hovered; background: transparent; border-width: 2px; border-color: Theme.accent; }
         }
         }
-        if root.detail.visible: Rectangle {
+        if root.detail.visible: detail-pane := Rectangle {
             background: Theme.raised;
-            Rectangle { width: parent.width; height: 1px; background: Theme.border; }
+            detail-separator := Rectangle { x: 0px; y: 0px; width: parent.width; height: 1px; background: Theme.border; }
             accessible-role: groupbox; accessible-label: root.words.details-label;
             preferred-height: min(root.height * 0.4, 240px);
             max-height: self.preferred-height; min-height: Theme.control-height + Theme.space-6 + Theme.line-height; vertical-stretch: 0;
-            VerticalBox { x: root.text-x - UiMetrics.scroll-inset; width: root.text-width + UiMetrics.scroll-inset * 2; height: parent.height; padding-top: Theme.space-2; padding-bottom: Theme.space-2; padding-left: 0px; padding-right: 0px; spacing: 6px;
+            VerticalBox { x: root.text-x - UiMetrics.scroll-inset; width: root.text-width + UiMetrics.scroll-inset * 2; height: parent.height; padding-top: Theme.space-2; padding-bottom: Theme.space-2; padding-left: 0px; padding-right: 0px; spacing: Theme.space-2;
                 ScrollView { vertical-stretch: 1; min-height: 0px; content-width: self.visible-width; content-height: detail-content.preferred-height;
-                    detail-content := VerticalBox { width: parent.visible-width; x: 0px; padding: 0px; spacing: 6px;
+                    detail-content := VerticalBox { width: parent.visible-width; x: 0px; padding: 0px; spacing: Theme.space-2;
                         Label { text: root.detail.name; font-weight: 650; overflow: elide; }
                         Label { text: root.detail.sentence; wrap: word-wrap; }
                         for part in root.detail.parts: HorizontalBox { padding: 0px; spacing: Theme.space-2;
@@ -163,24 +163,24 @@ export component BatchPane inherits Rectangle {
             }
         }
 
-        Rectangle { height: Theme.footer-height; background: Theme.raised;
-            Rectangle { width: parent.width; height: 1px; background: Theme.border; }
-            HorizontalBox { x: root.text-x; width: root.text-width; height: Theme.control-height; y: (parent.height - self.height) / 2; padding: 0px; spacing: 10px;
+        footer := Rectangle { height: Theme.footer-height; background: Theme.raised;
+            footer-separator := Rectangle { x: 0px; y: 0px; width: parent.width; height: 1px; background: Theme.border; }
+            HorizontalBox { x: root.text-x; width: root.text-width; height: Theme.control-height; y: (parent.height - self.height) / 2; padding: 0px; spacing: 0px;
                 if root.view.state == BatchState.checking || root.view.state == BatchState.ready: Label { text: root.words.save-copies; color: Theme.muted; }
-                destination-anchor := Rectangle { width: destination-content.preferred-width; height: Theme.control-height;
-                    destination-content := HorizontalBox { padding: 0px; spacing: 0px;
+                destination-anchor := Rectangle { width: destination-content.preferred-width + ((root.view.state == BatchState.checking || root.view.state == BatchState.ready) ? Theme.space-2 : 0px); height: Theme.control-height;
+                    destination-content := HorizontalBox { x: Theme.space-2; width: self.preferred-width; padding: 0px; spacing: 0px;
                 if root.view.state == BatchState.checking || root.view.state == BatchState.ready: ActionButton { text: root.view.destination + " ▾"; enabled: root.view.can-add; clicked => { root.destination(); } }
                     }
                 }
-                if root.view.state == BatchState.removing: VerticalBox { padding: 0px; spacing: Theme.space-1; horizontal-stretch: 1;
+                if root.view.state == BatchState.removing: VerticalBox { padding: 0px; padding-right: Theme.space-2; spacing: Theme.space-1; horizontal-stretch: 1;
                     Label { text: root.view.progress-text; }
                     ProgressIndicator { progress: root.view.progress; }
                 }
-                if root.view.state != BatchState.removing: Label { text: (root.view.state == BatchState.checking || root.view.state == BatchState.ready) ? (root.wide ? root.words.destination-hint : "") : root.view.footer; color: Theme.muted; horizontal-stretch: 1; overflow: elide; }
+                if root.view.state != BatchState.removing: Rectangle { horizontal-stretch: 1; Label { x: (root.view.state == BatchState.checking || root.view.state == BatchState.ready) ? Theme.space-2 : 0px; width: max(0px,parent.width - self.x - ((root.view.state == BatchState.stopped || root.view.state == BatchState.done) ? Theme.space-2 : 0px)); height: parent.height; text: (root.view.state == BatchState.checking || root.view.state == BatchState.ready) ? (root.wide ? root.words.destination-hint : "") : root.view.footer; color: Theme.muted; overflow: elide; } }
                 if root.view.state == BatchState.stopped || root.view.state == BatchState.done: ActionButton { text: root.words.start-over; enabled: root.view.can-reset; clicked => { root.reset(); } }
                 if root.view.state == BatchState.removing: ActionButton { text: root.view.stopping ? root.words.stopping : root.words.stop; enabled: root.view.can-stop; clicked => { root.stop(); } }
-                output-anchor := Rectangle { width: output-content.preferred-width; height: Theme.control-height;
-                    output-content := HorizontalBox { padding: 0px; spacing: 0px;
+                output-anchor := Rectangle { width: output-content.preferred-width + (root.view.state != BatchState.removing ? Theme.space-2 : 0px); height: Theme.control-height;
+                    output-content := HorizontalBox { x: Theme.space-2; width: self.preferred-width; padding: 0px; spacing: 0px;
                 if root.view.state != BatchState.removing: PrimaryButton { text: root.view.state == BatchState.done ? root.words.show-output : root.view.primary; enabled: root.view.state == BatchState.done ? root.view.can-output : root.view.can-start; clicked => { if root.view.state == BatchState.done { root.output(); } else { root.start(); } } }
                     }
                 }
