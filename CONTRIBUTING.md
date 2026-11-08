@@ -57,7 +57,7 @@ cargo xtask ci
 Obtain actionlint and shellcheck from their upstream releases or a package manager,
 using the versions in tools.toml. `cargo xtask ci` checks tool versions, formatting,
 dependency policy for all workspace features and the separate fuzz lockfile,
-workflows, shell scripts and the committed verification budget;
+workflows, shell scripts and the working-tree verification budget;
 then runs Clippy and tests. On macOS it also builds the signed universal app in a
 fresh temporary directory. Structural complexity thresholds warn; other Clippy
 findings fail. Inline exceptions use `#[expect(..., reason = "...")]`.
@@ -73,12 +73,18 @@ The desktop uses one batch with automatic read-only previews. See the
 [desktop guide](README.md#desktop-app) and [review captures](docs/gui-screenshots/README.md).
 Native Finder/Dock, file panels and appearance are manual checks.
 
-Merge CI restores caches on every producer and saves them only on main. The
-[CI workflow](.github/workflows/ci.yml) and `cargo xtask ci` own the commands;
-[project rules](docs/project-rules.md) define the verification budget. The budget
-script reads `HEAD` by default, or the Git ref supplied as its argument. Staging
-files does not change its inputs; use a commit containing the intended inputs
-when checking the delivered state.
+Merge CI restores caches on every producer and saves them only on main. Release
+builds read those trusted cache namespaces rather than keys with no producers.
+`cargo xtask lint` owns source/configuration checks for both hosted lint and local
+CI; `cargo xtask ci --rust-only` owns the native Clippy/test portion. The full
+`cargo xtask ci` composes them and checks macOS archives separately.
+
+The budget reads tracked and non-ignored untracked working files, including
+verification scripts; deleted files are omitted. To compare a committed state,
+run `scripts/check-budget.sh <git-ref>`. Both modes reject an empty product set.
+Shell lint uses the same working-file selection and fails if listing fails or
+no shell files are found. `cargo xtask tool-versions` prints pins from the invoking
+workspace, and does not rely on an executable's compiled-in configuration.
 
 ## Distribution and notices
 

@@ -1,23 +1,9 @@
-use crate::{Result, host, run as command, tool};
+use crate::{Result, host, run as command};
 use std::process::Command;
 
 pub(crate) fn run(rust_only: bool) -> Result<()> {
     if !rust_only {
-        command(Command::new("cargo").args(["fmt", "--all", "--check"]))?;
-        tool("cargo-deny", "cargo_deny")?;
-        tool("actionlint", "actionlint")?;
-        tool("shellcheck", "shellcheck")?;
-        command(Command::new("cargo").args(["deny", "--all-features", "--locked", "check"]))?;
-        command(Command::new("cargo").args([
-            "deny",
-            "--manifest-path",
-            "fuzz/Cargo.toml",
-            "--locked",
-            "check",
-        ]))?;
-        command(&mut Command::new("actionlint"))?;
-        command(Command::new("bash").args(["-c", "git ls-files -z '*.sh' | xargs -0 shellcheck"]))?;
-        command(Command::new("bash").arg("scripts/check-budget.sh"))?;
+        crate::lint::run()?;
     }
     let target = host()?;
     let exclusions = if cfg!(windows) {
