@@ -63,10 +63,7 @@ impl Row {
         self.status.label()
     }
     pub(super) fn problem(&self) -> bool {
-        matches!(
-            self.status.severity(),
-            Severity::Attention | Severity::Failure
-        )
+        self.status.severity().is_problem()
     }
     fn explanation(&self) -> String {
         let mut lines = vec![self.status.explanation()];
@@ -340,6 +337,11 @@ impl crate::DesktopController {
                 )
             }),
             0,
+        )
+        .with_unclassified_failures(
+            rows.iter()
+                .filter(|row| row.status == RowStatus::StartFailed)
+                .count(),
         );
         let stopped_totals = (r.batch.state() == State::Stopped)
             .then(|| {

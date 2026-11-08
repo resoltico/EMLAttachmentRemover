@@ -114,6 +114,12 @@ pub enum Severity {
     /// Qualification or certainty is incomplete.
     Attention,
 }
+impl Severity {
+    /// Whether this prominence belongs in the shared problem count/filter.
+    pub const fn is_problem(self) -> bool {
+        matches!(self, Self::Attention | Self::Failure)
+    }
+}
 /// Meaning of removal metadata for these exact accepted facts.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RemovalMode {
@@ -889,7 +895,7 @@ impl BatchTotals {
                 continue;
             };
             *totals.counts.entry(outcome).or_default() += 1;
-            if matches!(outcome.severity(), Severity::Attention | Severity::Failure) {
+            if outcome.severity().is_problem() {
                 totals.problems += 1;
             }
             if matches!(outcome, Outcome::Ready | Outcome::CopySaved) {
@@ -904,6 +910,12 @@ impl BatchTotals {
             *totals.counts.entry(Outcome::NotProcessed).or_default() += unprocessed;
         }
         totals
+    }
+    /// Count represented positions whose interface failed before work could start.
+    /// Their positions were already included; do not manufacture core outcomes or emails.
+    pub fn with_unclassified_failures(mut self, count: usize) -> Self {
+        self.problems += count;
+        self
     }
     /// Number of emails with this exact outcome.
     pub fn count(&self, outcome: Outcome) -> usize {
