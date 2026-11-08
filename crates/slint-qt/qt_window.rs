@@ -2857,7 +2857,8 @@ impl WindowAdapterInternal for QtWindow {
     fn handle_focus_change(&self, _old: Option<ItemRc>, new: Option<ItemRc>) {
         let widget_ptr = self.widget_ptr();
         if let Some(ai) = accessible_item(new) {
-            let item = &ai;
+            let ai_weak = ai.downgrade();
+            let item: &i_slint_core::item_tree::ItemWeak = &ai_weak;
             cpp! {unsafe [widget_ptr as "QWidget*", item as "void*"] {
                 auto accessible = QAccessible::queryAccessibleInterface(widget_ptr);
                 if (auto slint_accessible = dynamic_cast<Slint_accessible*>(accessible)) {
