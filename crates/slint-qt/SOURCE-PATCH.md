@@ -44,6 +44,7 @@ Local changes:
    Static text is not advertised as focusable; interactive roles retain focusability.
    Valid enabled focusable items expose Qt's focus action, forwarding to the
    same selection-preserving Slint focus path used by the Winit bridge.
+   Focus is appended after existing activation actions, preserving default Press.
    State notifications carry only actual changed flags. Declared live-label
    changes keep NameChanged events and emit Qt announcements with the declared
    politeness, excluding hidden, empty and unchanged text. The initial tree
