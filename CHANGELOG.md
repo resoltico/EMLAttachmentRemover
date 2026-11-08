@@ -5,6 +5,7 @@
 Use concise bullets without category labels or subheadings, grouping related changes and putting breaking changes and required actions first. Each bullet occupies one physical line, at most 200 characters including Markdown but excluding its `- ` marker: a ceiling, not a target. Shorten or split without losing material consequences. Use technical names when helpful; link to existing relevant documentation, without assuming paths or creating documents merely to satisfy this rule.
 ## [Unreleased]
 
+- Distinguish completed cleanup with a retained native error from unconfirmed cleanup, preserving failure status and receipt facts.
 - Show core publication, cleanup and inline-resource notices in app details; keep cleanup resource names and native causes in human diagnostics.
 - List attachment names and kinds in human CLI output. Use shared request errors, canonical diagnostic phases and known-result counts in the app.
 - Retain CLI refusal diagnostics in expandable app details; Continue describes verification of existing copies. Exact JSON report export is unchanged.
