@@ -228,23 +228,9 @@ pub(super) fn rows(batch: &Batch) -> Option<Vec<Row>> {
     }
     let mut result: Vec<Row> = rows.into_values().collect();
     result.sort_by(|a, b| {
-        let a_folder = std::path::Path::new(&a.item.source.display)
-            .parent()
-            .unwrap_or(std::path::Path::new(""));
-        let b_folder = std::path::Path::new(&b.item.source.display)
-            .parent()
-            .unwrap_or(std::path::Path::new(""));
-        crate::state::natural_cmp(a_folder.as_os_str(), b_folder.as_os_str())
-            .then_with(|| {
-                crate::state::natural_cmp(
-                    std::path::Path::new(&a.item.source.display)
-                        .file_name()
-                        .unwrap_or_default(),
-                    std::path::Path::new(&b.item.source.display)
-                        .file_name()
-                        .unwrap_or_default(),
-                )
-            })
+        a.item
+            .index
+            .cmp(&b.item.index)
             .then_with(|| a.key.cmp(&b.key))
     });
     Some(result)
@@ -432,7 +418,7 @@ impl crate::DesktopController {
                 }
             })
             .collect();
-        // Reuse controls for unchanged keys and insert streamed rows in natural order.
+        // Reuse controls for unchanged keys and insert streamed rows in worker index order.
         for (index, row) in visible.iter().enumerate() {
             if self
                 .model
