@@ -1,209 +1,26 @@
 //! One-list product language; protocol diagnostics remain verbatim in exports.
-use crate::{
-    present::Row,
-    state::{Batch, State},
-};
-use eml_core::{ErrorCode, vocabulary::MeaningKind};
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Status {
-    Ready,
-    None,
-    Comparison,
-    Saved,
-    AsIs,
-    Existing,
-    NeedsChecking,
-    Unknown,
-    Failed,
-    Waiting,
-    Stopped,
-    Missing,
-    StartFailed,
-}
-pub(crate) fn status(kind: MeaningKind, code: Option<ErrorCode>, removed: usize) -> Status {
-    use MeaningKind::*;
-    match kind {
-        Prepared => {
-            if removed > 0 {
-                Status::Ready
-            } else {
-                Status::None
-            }
-        }
-        Comparison => Status::Comparison,
-        Created => {
-            if removed > 0 {
-                Status::Saved
-            } else {
-                Status::AsIs
-            }
-        }
-        ExistingVerified => Status::Existing,
-        PublishedIncomplete | ExistingMatched => Status::NeedsChecking,
-        PublicationUncertain | Unestablished => Status::Unknown,
-        NotPublished if code == Some(ErrorCode::Interrupted) => Status::Stopped,
-        NotPublished => Status::Failed,
-    }
-}
-pub(crate) fn label(status: Status, code: Option<ErrorCode>) -> &'static str {
-    match status {
-        Status::Ready => "Ready",
-        Status::None => "No attachments",
-        Status::Comparison => "Copy exists, will verify",
-        Status::Saved => "Copy saved",
-        Status::AsIs => "Copied as is",
-        Status::Existing => "Copy already exists",
-        Status::NeedsChecking => "Saved, needs checking",
-        Status::Unknown => "Result unknown",
-        Status::Waiting => "Waiting",
-        Status::Stopped => "Not processed",
-        Status::Missing => "No longer found",
-        Status::Failed => failure(code).0,
-        Status::StartFailed => failure(None).0,
-    }
-}
-pub(crate) fn tone(status: Status) -> crate::Tone {
-    use crate::Tone;
-    match status {
-        Status::Ready => Tone::Accent,
-        Status::Saved | Status::AsIs | Status::Existing => Tone::Ok,
-        Status::NeedsChecking | Status::Unknown => Tone::Warn,
-        Status::Failed | Status::StartFailed => Tone::Bad,
-        _ => Tone::Muted,
-    }
-}
-pub(crate) fn detail(status: Status, code: Option<ErrorCode>) -> &'static str {
-    match status {
-        Status::Ready => "These will be removed from the copy:",
-        Status::None | Status::AsIs => "Nothing to remove. The copy keeps the whole message.",
-        Status::Comparison => {
-            "A copy with this name already exists. It will be checked, never replaced."
-        }
-        Status::Saved => "Copy saved. Removed:",
-        Status::Existing => "An identical copy already exists. Nothing was written.",
-        Status::Waiting => "Waiting to be copied.",
-        Status::Stopped => "Not copied because the batch was stopped. Continue to finish it.",
-        Status::Missing => "This file was no longer there when the copies were made.",
-        Status::Unknown => {
-            "The app couldn’t confirm whether a copy was written. Check the save folder, then try again. Existing copies are never replaced."
-        }
-        Status::NeedsChecking => {
-            "The copy was written, but the final checks didn’t complete. Check the save folder, then use Continue or try again. Existing copies are never replaced."
-        }
-        Status::Failed => failure(code).1,
-        Status::StartFailed => banner("launch"),
-    }
-}
-fn failure(code: Option<ErrorCode>) -> (&'static str, &'static str) {
-    use ErrorCode::*;
-    match code {
-        Some(Malformed) => (
-            "Not a valid email",
-            "This file isn’t a valid email, so no copy can be made. Export it again from your mail app and add the new file.",
-        ),
-        Some(NoBody) => (
-            "No text to keep",
-            "This email has no plain-text or HTML body, so a copy would be empty.",
-        ),
-        Some(Protected) => (
-            "Protected content",
-            "This email contains signed or encrypted content that can’t be changed safely.",
-        ),
-        Some(UnsupportedMime) => (
-            "Unsupported format",
-            "This email uses a structure the app doesn’t support.",
-        ),
-        Some(LimitExceeded) => (
-            "Too large or complex",
-            "This email is larger or more deeply nested than the app supports (256 MB maximum).",
-        ),
-        Some(ReadFailed | BindFailed) => (
-            "Can’t be read",
-            "The file couldn’t be read. Check that it still exists and that you have permission to open it.",
-        ),
-        Some(SourceNotRegular) => (
-            "Not a file",
-            "This isn’t a regular file. Add the email file itself.",
-        ),
-        Some(SourceChanged) => (
-            "Changed while reading",
-            "The file changed while it was being read. Try again when nothing else is using it.",
-        ),
-        Some(DestinationExists) => (
-            "Name already taken",
-            "A different file already has the copy’s name. Move it or choose another save folder.",
-        ),
-        Some(DestinationCollision) => (
-            "Duplicate copy name",
-            "Two emails would get the same copy name. Choose a save folder, or keep copies next to the originals.",
-        ),
-        Some(SourceDestinationAlias) => (
-            "Would overwrite original",
-            "The copy would replace an original, so it was skipped.",
-        ),
-        Some(DestinationUnsupported) => (
-            "Folder not supported",
-            "The save folder doesn’t support safe copying. Choose another folder.",
-        ),
-        Some(StageFailed | WriteFailed) => (
-            "Couldn’t save copy",
-            "The copy couldn’t be written. Check free space and permissions in the save folder.",
-        ),
-        Some(Internal) => (
-            "Couldn’t copy",
-            "An internal check failed, so no copy was made. Save Report… and send it with a bug report.",
-        ),
-        _ => (
-            "Couldn’t copy",
-            "No copy was made. Use Copy Details for more information.",
-        ),
-    }
-}
-pub(crate) fn size(bytes: u64) -> String {
-    if bytes < 1000 {
-        return format!("{bytes} B");
-    }
-    for (scale, unit) in [(1_000_000_000, "GB"), (1_000_000, "MB"), (1000, "kB")] {
-        if bytes >= scale {
-            return format!("{:.1} {unit}", bytes as f64 / scale as f64);
-        }
-    }
-    unreachable!()
-}
+use crate::state::{Batch, State};
+use eml_core::vocabulary::{BatchTotals, Outcome, Severity, format_bytes};
 pub(crate) fn plural(n: usize, one: &str, many: &str) -> String {
     format!("{n} {}", if n == 1 { one } else { many })
 }
-pub(crate) fn banner(code: &str) -> &'static str {
-    match code {
-        "NO_INPUTS" => "No .eml files were found in what you added. Add other files or folders.",
-        "INPUT_LIMIT_EXCEEDED" => {
-            "Too many files. Up to 4,096 emails can be processed at once. Add fewer folders."
-        }
-        "OUTPUT_OVERLAP" => {
-            "The save folder is inside a folder you added. Choose a different save folder."
-        }
-        "INPUT_ADMISSION_FAILED" => {
-            "Some items you added can’t be opened. Check that they still exist, then Start Over."
-        }
-        "OUTPUT_FAILED" => {
-            "The copy process stopped while reporting results. Save Report… and try again."
-        }
-        "launch" => "The copy process couldn’t start. Reinstall the app if this keeps happening.",
-        _ => {
-            "The copy process stopped unexpectedly. Results shown may be incomplete. Save Report… for details."
-        }
-    }
-}
-
 pub(super) struct Header {
     pub title: String,
     pub summary: String,
     pub problems: String,
 }
-pub(super) fn header(batch: &Batch, rows: &[Row], total: Option<u32>) -> Header {
-    let count = |s| rows.iter().filter(|row| row.status == s).count();
-    let problems = rows.iter().filter(|row| row.problem()).count();
-    let has_warn = rows.iter().any(|row| tone(row.status) == crate::Tone::Warn);
+pub(super) fn header(
+    batch: &Batch,
+    totals: &BatchTotals,
+    total: Option<u32>,
+    missing: usize,
+) -> Header {
+    let count = |outcome| totals.count(outcome);
+    let problems = totals.problems;
+    let has_warn = totals
+        .counts
+        .keys()
+        .any(|outcome| outcome.severity() == Severity::Attention);
     let pill = if problems == 0 {
         String::new()
     } else if has_warn {
@@ -211,24 +28,9 @@ pub(super) fn header(batch: &Batch, rows: &[Row], total: Option<u32>) -> Header 
     } else {
         format!("{problems} can’t be copied")
     };
-    let saved = count(Status::Saved) + count(Status::AsIs);
-    let attachments: usize = rows
-        .iter()
-        .filter(|row| matches!(row.status, Status::Ready | Status::Saved))
-        .map(|row| row.item.removed.len())
-        .sum();
-    let removed: u64 = rows
-        .iter()
-        .filter(|row| matches!(row.status, Status::Ready | Status::Saved))
-        .filter_map(|row| {
-            Some(
-                row.item
-                    .source_bytes
-                    .value()?
-                    .saturating_sub(*row.item.copy_bytes.value()?),
-            )
-        })
-        .sum();
+    let saved = count(Outcome::CopySaved) + count(Outcome::CopiedAsIs);
+    let attachments = totals.attachments;
+    let removed = totals.bytes_removed;
     let (title, parts) = match batch.state() {
         State::Empty => (String::new(), vec![]),
         State::Checking => (
@@ -241,7 +43,7 @@ pub(super) fn header(batch: &Batch, rows: &[Row], total: Option<u32>) -> Header 
             total
                 .map(|n| {
                     vec![
-                        format!("{} of {n} checked", rows.len()),
+                        format!("{} of {n} checked", totals.emails),
                         "nothing is written yet".into(),
                     ]
                 })
@@ -253,35 +55,24 @@ pub(super) fn header(batch: &Batch, rows: &[Row], total: Option<u32>) -> Header 
             } else {
                 vec![
                     plural(attachments, "attachment", "attachments"),
-                    format!("{} will be removed", size(removed)),
+                    format!("{} will be removed", format_bytes(removed)),
                 ]
             };
-            let existing = count(Status::Comparison);
+            let existing = count(Outcome::WillVerify);
             if existing > 0 {
                 parts.push(format!("{existing} already copied"));
             }
-            (plural(rows.len(), "email", "emails"), parts)
+            (plural(totals.emails, "email", "emails"), parts)
         }
         State::Removing => (
             "Removing attachments…".into(),
-            vec![
-                total.map_or_else(
-                    || "Starting…".into(),
-                    |n| {
-                        format!(
-                            "{} of {n} done",
-                            rows.iter().filter(|r| r.status != Status::Waiting).count()
-                        )
-                    },
-                ),
-                "your originals are not changed".into(),
-            ],
+            vec!["Your originals are not changed".into()],
         ),
         State::Stopped => (
             "Stopped".into(),
             vec![
                 plural(saved, "copy saved", "copies saved"),
-                format!("{} not processed", count(Status::Stopped)),
+                format!("{} not processed", count(Outcome::NotProcessed)),
             ],
         ),
         State::Done => (
@@ -293,12 +84,12 @@ pub(super) fn header(batch: &Batch, rows: &[Row], total: Option<u32>) -> Header 
             {
                 let mut parts = Vec::new();
                 if removed > 0 {
-                    parts.push(format!("{} removed", size(removed)));
+                    parts.push(format!("{} removed", format_bytes(removed)));
                 }
                 for (n, phrase) in [
-                    (count(Status::AsIs), "copied as is"),
-                    (count(Status::Existing), "already existed"),
-                    (count(Status::Missing), "no longer found"),
+                    (count(Outcome::CopiedAsIs), "copied as is"),
+                    (count(Outcome::AlreadyExists), "already existed"),
+                    (missing, "no longer found"),
                 ] {
                     if n > 0 {
                         parts.push(format!("{n} {phrase}"));
@@ -313,7 +104,7 @@ pub(super) fn header(batch: &Batch, rows: &[Row], total: Option<u32>) -> Header 
         summary: if batch.problems_only {
             format!(
                 "Showing {problems} of {} · {}",
-                rows.len(),
+                totals.emails,
                 parts.join(" · ")
             )
         } else {
@@ -341,6 +132,21 @@ pub(super) fn estimate(seconds: Option<u64>) -> String {
 
 pub(super) fn controls() -> crate::AppWords {
     crate::AppWords {
+        show_all: "Show all".into(),
+        about_prefix: ABOUT_PREFIX.into(),
+        version_prefix: "Version ".into(),
+        select_all: "Select All".into(),
+        application_icon: "Application icon".into(),
+        purpose: "Create body-only copies of EML messages.\nKeep original messages unchanged.".into(),
+        project_website: "Project website".into(),
+        hide_details: "Hide details".into(),
+        details: "Details…".into(),
+        website_details: "Website opening details".into(),
+        license_title: "Software and artwork licenses".into(),
+        license_notice: "Third-party terms and source references are included with the application.".into(),
+        license_terms: "Software and artwork license terms".into(),
+        notices_details: "Notices opening details".into(),
+        third_party: "Third-party licenses…".into(),
         show_report: "Show".into(), show_saved_report: "Show Saved Report".into(),
     add_files: "Add Files…".into(),
     add_folder: "Add Folder…".into(),
@@ -352,7 +158,7 @@ pub(super) fn controls() -> crate::AppWords {
     details_label: "Email details".into(),
     attachments: "Attachments".into(),
     size: "Size".into(),
-    status: "Status".into(),
+    status: eml_core::vocabulary::fields::STATUS.into(),
     show_copy: "Show Copy".into(),
     show_original: "Show Original".into(),
     copy_details: "Copy Details".into(),
@@ -412,27 +218,11 @@ pub(super) fn progress(done: usize, total: u32, remaining: Option<u64>) -> Strin
     format!("{done} of {total} done · {}", estimate(remaining))
 }
 pub(super) fn attachment(part: &eml_protocol::records::RemovedRecord) -> crate::AttachmentView {
-    use eml_protocol::records::Removal;
-    let kind = match part.reason {
-        Removal::RelatedResource
-            if part
-                .content_type
-                .get(..6)
-                .is_some_and(|kind| kind.eq_ignore_ascii_case("image/")) =>
-        {
-            "Inline image"
-        }
-        Removal::RelatedResource => "Inline resource",
-        Removal::NonBodyPart if part.content_type.eq_ignore_ascii_case("text/calendar") => {
-            "Calendar invite"
-        }
-        Removal::NonBodyPart => "Other content",
-        Removal::Attachment => "",
-    };
+    let kind = eml_core::vocabulary::part_kind(part_reason(part.reason), &part.content_type);
     crate::AttachmentView {
         name: attachment_name(part).into(),
         kind: kind.into(),
-        size: size(part.bytes).into(),
+        size: format_bytes(part.bytes).into(),
     }
 }
 
@@ -453,24 +243,106 @@ pub(super) fn row_description(folder: &str, count: Option<usize>, size: &str) ->
     )
 }
 
-pub(crate) fn is_failed(status: Status) -> bool {
-    matches!(status, Status::Failed | Status::StartFailed)
-}
-
 #[cfg(any(feature = "desktop", test))]
 pub(super) const OPENING: &str = "Opening…";
 pub(super) const OPEN_SENT: &str = "Open command sent.";
 pub(super) const OPEN_FAILED: &str = "The native open operation did not complete.";
 
 pub(super) fn attachment_name(part: &eml_protocol::records::RemovedRecord) -> String {
-    eml_protocol::DisplayText::new(
-        part.filename
-            .value()
-            .filter(|name| !name.is_empty())
-            .unwrap_or(&part.content_type),
-    )
+    eml_protocol::DisplayText::new(eml_core::vocabulary::part_name(
+        part.filename.value().map(String::as_str),
+        part_reason(part.reason),
+        &part.content_type,
+    ))
     .to_string()
 }
+fn part_reason(reason: eml_protocol::records::Removal) -> eml_core::RemovalReason {
+    match reason {
+        eml_protocol::records::Removal::Attachment => eml_core::RemovalReason::Attachment,
+        eml_protocol::records::Removal::RelatedResource => eml_core::RemovalReason::RelatedResource,
+        eml_protocol::records::Removal::NonBodyPart => eml_core::RemovalReason::NonBodyPart,
+    }
+}
+pub(super) const WAITING: &str = "Waiting";
+pub(super) const WAITING_DETAIL: &str = "Waiting to be copied.";
+pub(super) const MISSING: &str = "No longer found";
+pub(super) const MISSING_DETAIL: &str = "This file was no longer there when the copies were made.";
+pub(super) const START_FAILED: &str = "Couldn’t copy";
+pub(super) const LAUNCH_FAILED: &str =
+    "The copy process couldn’t start. Reinstall the app if this keeps happening.";
+pub(super) const WORKER_FAILED: &str = "The copy process stopped unexpectedly. Results shown may be incomplete. Save Report… for details.";
+pub(super) const STARTING: &str = "Starting…";
+pub(super) const CHECK_METADATA: &str = "Metadata from: read-only check\n";
+pub(super) const CREATE_METADATA: &str = "Metadata from: copy process\n";
+
+pub(crate) const INVALID_SAVED_FOLDERS: &str =
+    "Saved folders must use absolute paths; at most three recent destinations are supported.";
+
+pub(crate) const CONFIG_UNAVAILABLE: &str = "Cannot locate the configuration folder";
+
+pub(crate) const ABSOLUTE_DESTINATION: &str = "Choose an absolute destination folder";
+
+pub(crate) const ABSOLUTE_REPORT_FOLDER: &str = "Choose an absolute report folder";
+
+pub(crate) const SETTINGS_PARENT_MISSING: &str = "Settings file has no parent";
+
+pub(crate) const ABSOLUTE_LAUNCH_DIRECTORY: &str =
+    "Launch operands need an absolute working directory";
+
+#[cfg(feature = "desktop")]
+pub(crate) const BUNDLE_CONTENTS_MISSING: &str = "Desktop executable has no Contents directory";
+
+pub(crate) fn report_filename(date: impl std::fmt::Display) -> String {
+    format!("EML emails {date}.jsonl")
+}
+
+pub(crate) const REVISION_EXHAUSTED: &str = "batch revision exhausted";
+
+pub(crate) const GENERATION_EXHAUSTED: &str = "worker generation exhausted";
+
+/// Failure to locate the desktop home folder.
+pub const HOME_UNAVAILABLE: &str = "Cannot locate your home folder";
+
+#[cfg(all(feature = "desktop", target_os = "macos"))]
+pub(crate) const QUIT_MAIN_THREAD: &str = "Quit adapter requires the main thread";
+
+#[cfg(all(feature = "desktop", target_os = "macos"))]
+pub(crate) const DELEGATE_MISSING: &str = "Winit application delegate is absent";
+
+#[cfg(all(feature = "desktop", target_os = "macos"))]
+pub(crate) const QUIT_DELEGATE_UNSUPPORTED: &str =
+    "Cannot install the Quit adapter on this application delegate";
+
+#[cfg(all(feature = "desktop", target_os = "macos"))]
+pub(crate) const QUIT_INSTALL_FAILED: &str = "Could not install the Quit adapter";
+
+#[cfg(all(feature = "desktop", target_os = "macos"))]
+pub(crate) const DOCUMENT_DELEGATE_UNSUPPORTED: &str =
+    "Cannot install document opening on this application delegate";
+
+#[cfg(all(feature = "desktop", target_os = "macos"))]
+pub(crate) const DOCUMENT_INSTALL_FAILED: &str = "Could not install document opening";
+
+#[cfg(all(feature = "desktop", target_os = "macos"))]
+pub(crate) const NSOBJECT_MISSING: &str = "NSObject is unavailable";
+
+#[cfg(all(feature = "desktop", target_os = "macos"))]
+pub(crate) const ABOUT_TARGET_FAILED: &str = "Cannot register the application About target";
+
+#[cfg(target_os = "macos")]
+pub(crate) fn bundle_required() -> String {
+    format!(
+        "Launch {}.app from the GUI archive, rather than the bare GUI executable. Its bundle metadata and Contents/Helpers CLI are required. To build it, run cargo xtask dist --app --out target/desktop.",
+        eml_core::product::DISPLAY_NAME
+    )
+}
+
+pub(crate) const SHOW_FINDER: &str = "Show in Finder";
+
+pub(crate) const SHOW_FILE_MANAGER: &str = "Show in File Manager";
+
+pub(crate) const ABOUT_PREFIX: &str = "About ";
+
 #[cfg(feature = "desktop")]
 pub(super) const EML_FILTER: &str = "EML messages";
 #[cfg(feature = "desktop")]

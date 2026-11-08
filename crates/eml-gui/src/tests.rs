@@ -197,7 +197,7 @@ fn native_open_remains_nonblocking_scoped_and_clears_recovered_errors() {
 }
 
 #[test]
-fn attachment_labels_preserve_resource_kind_and_unnamed_media_type() {
+fn attachment_labels_name_unnamed_parts_by_kind() {
     use eml_protocol::records::{Nullable, Removal, RemovedRecord};
     for (content_type, reason, expected) in [
         ("image/png", Removal::RelatedResource, "Inline image"),
@@ -214,7 +214,7 @@ fn attachment_labels_preserve_resource_kind_and_unnamed_media_type() {
             reason,
         };
         let view = wording::attachment(&part);
-        assert_eq!(view.name, content_type);
+        assert_eq!(view.name, expected);
         assert_eq!(view.kind, expected);
         assert_eq!(view.size, "100 B");
     }

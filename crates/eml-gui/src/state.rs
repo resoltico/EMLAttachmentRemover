@@ -66,7 +66,7 @@ impl Batch {
         self.revision = self
             .revision
             .checked_add(1)
-            .expect("batch revision exhausted");
+            .expect(crate::wording::REVISION_EXHAUSTED);
     }
     pub(super) fn filter(&mut self, enabled: bool) {
         if self.problems_only != enabled {
@@ -158,7 +158,7 @@ impl Batch {
         self.sequence = self
             .sequence
             .checked_add(1)
-            .expect("worker generation exhausted");
+            .expect(crate::wording::GENERATION_EXHAUSTED);
         let generation = self.sequence;
         let slot = Some(Slot {
             generation,

@@ -1,79 +1,126 @@
 //! Stable native row identity and projection of accepted worker observations.
 use crate::{
     state::{Batch, Kind, State},
-    wording::{self as words, Status},
+    wording::{self as words},
 };
 use base64::{Engine, engine::general_purpose::STANDARD};
-use eml_core::{ErrorCode, vocabulary::MeaningKind};
+use eml_core::{
+    ErrorCode,
+    vocabulary::{BatchTotals, Outcome, Severity, fields, format_bytes},
+};
 use eml_protocol::records::{ItemRecord, NativePathRecord, PathEncoding};
 use std::{collections::HashMap, ffi::OsString, os::unix::ffi::OsStringExt, path::PathBuf};
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum RowStatus {
+    Settled(Outcome),
+    Waiting,
+    Missing,
+    StartFailed,
+}
+impl RowStatus {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Settled(o) => o.label(),
+            Self::Waiting => words::WAITING,
+            Self::Missing => words::MISSING,
+            Self::StartFailed => words::START_FAILED,
+        }
+    }
+    fn explanation(self) -> &'static str {
+        match self {
+            Self::Settled(o) => o.explanation(),
+            Self::Waiting => words::WAITING_DETAIL,
+            Self::Missing => words::MISSING_DETAIL,
+            Self::StartFailed => words::LAUNCH_FAILED,
+        }
+    }
+    pub(crate) fn severity(self) -> Severity {
+        match self {
+            Self::Settled(o) => o.severity(),
+            Self::Waiting => Severity::Pending,
+            Self::Missing => Severity::Neutral,
+            Self::StartFailed => Severity::Failure,
+        }
+    }
+    fn tone(self) -> crate::Tone {
+        match self.severity() {
+            Severity::Neutral => crate::Tone::Muted,
+            Severity::Pending => crate::Tone::Accent,
+            Severity::Success => crate::Tone::Ok,
+            Severity::Attention => crate::Tone::Warn,
+            Severity::Failure => crate::Tone::Bad,
+        }
+    }
+}
 pub(super) struct Row {
     pub key: PathBuf,
     pub item: ItemRecord,
     pub kind: Kind,
-    pub status: Status,
+    pub status: RowStatus,
     pub copy: Option<PathBuf>,
 }
 impl Row {
-    pub(super) fn code(&self) -> Option<ErrorCode> {
-        self.item
-            .error
-            .value()
-            .and_then(|e| ErrorCode::from_wire_name(&e.code))
-    }
     pub(super) fn label(&self) -> &'static str {
-        words::label(self.status, self.code())
+        self.status.label()
     }
     pub(super) fn problem(&self) -> bool {
         matches!(
-            words::tone(self.status),
-            crate::Tone::Warn | crate::Tone::Bad
+            self.status.severity(),
+            Severity::Attention | Severity::Failure
         )
     }
     pub(super) fn size_text(&self) -> String {
         match (self.item.source_bytes.value(), self.item.copy_bytes.value()) {
             (Some(a), Some(b)) if !self.item.removed.is_empty() => {
-                format!("{} → {}", words::size(*a), words::size(*b))
+                format!("{} → {}", format_bytes(*a), format_bytes(*b))
             }
-            (Some(a), _) => words::size(*a),
+            (Some(a), _) => format_bytes(*a),
             _ => "—".into(),
         }
     }
     pub(super) fn details(&self) -> String {
         let mut text = format!(
-            "Source: {}\nDestination: {}\nStatus: {}\n",
+            "{}: {}\n{}: {}\n{}: {}\n",
+            fields::SOURCE,
             eml_protocol::TerminalPath::new(&self.key),
+            fields::DESTINATION,
             self.item
                 .destination
                 .value()
                 .and_then(|p| native(&p.native))
                 .map(|p| eml_protocol::TerminalPath::new(&p).to_string())
                 .unwrap_or_default(),
+            fields::STATUS,
             self.label()
         );
         text += match self.kind {
-            Kind::Check => "Metadata from: read-only check\n",
-            Kind::Create => "Metadata from: copy process\n",
+            Kind::Check => words::CHECK_METADATA,
+            Kind::Create => words::CREATE_METADATA,
         };
         if let Some(error) = self.item.error.value() {
             text += &format!(
-                "Code: {}\nPhase: {:?}\nDetail: {}\n",
-                error.code, error.phase, error.detail
+                "{}: {}\n{}: {:?}\n{}: {}\n",
+                fields::CODE,
+                error.code,
+                fields::PHASE,
+                error.phase,
+                fields::DETAIL,
+                error.detail
             );
         }
         if let Some(n) = self.item.source_bytes.value() {
-            text += &format!("Source bytes: {n}\n");
+            text += &format!("{}: {n}\n", fields::SOURCE_BYTES);
         }
         if let Some(n) = self.item.copy_bytes.value() {
-            text += &format!("Copy bytes: {n}\n");
+            text += &format!("{}: {n}\n", fields::COPY_BYTES);
         }
         for part in &self.item.removed {
             text += &format!(
-                "{}: {} ({}, {} bytes, {:?})\n",
+                "{}: {} ({}, {}, {:?})\n",
                 part.section,
                 part.filename.value().unwrap_or(&part.content_type),
                 part.content_type,
-                part.bytes,
+                format_bytes(part.bytes),
                 part.reason
             );
         }
@@ -93,13 +140,13 @@ pub(super) fn native(path: &NativePathRecord) -> Option<PathBuf> {
 pub(super) fn rows(batch: &Batch) -> Option<Vec<Row>> {
     let absent_create_status = batch.create.as_ref().map(|slot| {
         if batch.state() == State::Removing {
-            return Status::Waiting;
+            return RowStatus::Waiting;
         }
         if batch.state() == State::Stopped {
-            return Status::Stopped;
+            return RowStatus::Settled(Outcome::NotProcessed);
         }
         if slot.launch_error {
-            return Status::StartFailed;
+            return RowStatus::StartFailed;
         }
         let complete = slot
             .completion
@@ -120,9 +167,9 @@ pub(super) fn rows(batch: &Batch) -> Option<Vec<Row>> {
             })
             .unwrap_or(false);
         if complete {
-            Status::Missing
+            RowStatus::Missing
         } else {
-            Status::Unknown
+            RowStatus::Settled(Outcome::Unknown)
         }
     });
     let mut rows = HashMap::new();
@@ -147,17 +194,19 @@ pub(super) fn rows(batch: &Batch) -> Option<Vec<Row>> {
                 let Some(key) = native(&item.source.native) else {
                     continue;
                 };
-                let status = if let (Kind::Check, Some(status)) = (kind, absent_create_status) {
-                    status
+                let outcome = crate::view_model::outcome(item);
+                let status = if let Some(fallback) =
+                    absent_create_status.filter(|_| kind == Kind::Check || previous)
+                {
+                    if batch.state() == State::Removing
+                        && (outcome.severity() == Severity::Failure || previous)
+                    {
+                        RowStatus::Settled(outcome)
+                    } else {
+                        fallback
+                    }
                 } else {
-                    words::status(
-                        crate::view_model::meaning(item)
-                            .map_or(MeaningKind::Unestablished, |m| m.kind),
-                        item.error
-                            .value()
-                            .and_then(|e| ErrorCode::from_wire_name(&e.code)),
-                        item.removed.len(),
-                    )
+                    RowStatus::Settled(outcome)
                 };
                 if previous && !matches!(batch.state(), State::Removing) {
                     continue;
@@ -205,14 +254,18 @@ pub(super) fn banner(batch: &Batch) -> String {
         return String::new();
     };
     if slot.launch_error {
-        return words::banner("launch").into();
+        return words::LAUNCH_FAILED.into();
     }
     slot.report
         .as_ref()
         .and_then(|handle| {
             handle.with_report(|r| {
                 if let Some(error) = r.summary().and_then(|s| s.run_error.value()) {
-                    return words::banner(&error.code).to_owned();
+                    return ErrorCode::from_wire_name(&error.code)
+                        .map_or(words::WORKER_FAILED, |code| {
+                            eml_core::vocabulary::RunFailure(code).explanation()
+                        })
+                        .to_owned();
                 }
                 if r.failure().is_some()
                     || slot
@@ -220,7 +273,7 @@ pub(super) fn banner(batch: &Batch) -> String {
                         .as_ref()
                         .is_some_and(|c| c.failure.is_some())
                 {
-                    return words::banner("worker").into();
+                    return words::WORKER_FAILED.into();
                 }
                 String::new()
             })
@@ -259,7 +312,28 @@ impl crate::DesktopController {
         let Some((done, total)) = progress else {
             return;
         };
-        let header = wording::header(&r.batch, &rows, total);
+        let totals = BatchTotals::from(rows.iter().map(|row| {
+            (
+                match row.status {
+                    RowStatus::Settled(o) => o,
+                    _ => Outcome::NotProcessed,
+                },
+                row.item.removed.len(),
+                row.item
+                    .source_bytes
+                    .value()
+                    .copied()
+                    .zip(row.item.copy_bytes.value().copied()),
+            )
+        }));
+        let header = wording::header(
+            &r.batch,
+            &totals,
+            total,
+            rows.iter()
+                .filter(|r| r.status == RowStatus::Missing)
+                .count(),
+        );
         let visible: Vec<_> = rows
             .iter()
             .filter(|row| !r.batch.problems_only || row.problem())
@@ -277,7 +351,7 @@ impl crate::DesktopController {
                     .item
                     .removed
                     .iter()
-                    .filter(|_| !wording::is_failed(row.status))
+                    .filter(|_| !(row.status.severity() == Severity::Failure))
                     .take(2)
                     .map(wording::attachment_name)
                     .collect();
@@ -296,7 +370,8 @@ impl crate::DesktopController {
                 let size_text = row.size_text();
                 let description = wording::row_description(
                     &folder,
-                    (!wording::is_failed(row.status)).then_some(row.item.removed.len()),
+                    (!(row.status.severity() == Severity::Failure))
+                        .then_some(row.item.removed.len()),
                     &size_text,
                 );
                 EmailRow {
@@ -304,14 +379,14 @@ impl crate::DesktopController {
                         .item
                         .source_bytes
                         .value()
-                        .map(|n| wording::size(*n))
+                        .map(|n| format_bytes(*n))
                         .unwrap_or_default()
                         .into(),
                     copy_size: row
                         .item
                         .copy_bytes
                         .value()
-                        .map(|n| wording::size(*n))
+                        .map(|n| format_bytes(*n))
                         .unwrap_or_default()
                         .into(),
                     size_reduction_known: !row.item.removed.is_empty()
@@ -333,7 +408,7 @@ impl crate::DesktopController {
                         .first()
                         .cloned()
                         .unwrap_or_else(|| {
-                            if wording::is_failed(row.status) {
+                            if row.status.severity() == Severity::Failure {
                                 "—"
                             } else {
                                 wording::NO_ATTACHMENTS_CHIP
@@ -342,7 +417,9 @@ impl crate::DesktopController {
                         })
                         .into(),
                     chip2: names.get(1).cloned().unwrap_or_default().into(),
-                    more: if !wording::is_failed(row.status) && row.item.removed.len() > 2 {
+                    more: if !(row.status.severity() == Severity::Failure)
+                        && row.item.removed.len() > 2
+                    {
                         format!("+{}", row.item.removed.len() - 2)
                     } else {
                         String::new()
@@ -350,7 +427,7 @@ impl crate::DesktopController {
                     .into(),
                     size_text: size_text.into(),
                     status: row.label().into(),
-                    tone: wording::tone(row.status),
+                    tone: row.status.tone(),
                     selected: Some(&row.key) == r.batch.selected.as_ref(),
                 }
             })
@@ -384,7 +461,7 @@ impl crate::DesktopController {
                     .to_string_lossy()
                     .into_owned()
                     .into(),
-                sentence: wording::detail(row.status, row.code()).into(),
+                sentence: row.status.explanation().into(),
                 path_prefix: {
                     let path = row.copy.as_ref().unwrap_or(&row.key);
                     path.parent().map_or(String::new(), |p| {
@@ -460,7 +537,7 @@ impl crate::DesktopController {
             },
             progress_text: total
                 .map_or_else(
-                    || "Starting…".into(),
+                    || wording::STARTING.into(),
                     |n| wording::progress(done, n, estimate),
                 )
                 .into(),
@@ -510,6 +587,24 @@ impl crate::DesktopController {
 mod tests {
     use super::*;
     #[test]
+    fn u1_settled_rows_render_every_core_outcome_without_renaming() {
+        let mut outcomes = vec![
+            Outcome::Ready,
+            Outcome::NothingToRemove,
+            Outcome::CopySaved,
+            Outcome::CopiedAsIs,
+            Outcome::AlreadyExists,
+            Outcome::WillVerify,
+            Outcome::NeedsChecking,
+            Outcome::Unknown,
+            Outcome::NotProcessed,
+        ];
+        outcomes.extend(ErrorCode::ALL.iter().copied().map(Outcome::Failed));
+        for outcome in outcomes {
+            assert_eq!(RowStatus::Settled(outcome).label(), outcome.label());
+        }
+    }
+    #[test]
     fn native_paths_are_independent_of_display_and_decimal_sizes_are_used() {
         let path = NativePathRecord {
             encoding: PathEncoding::UnixBytes,
@@ -519,7 +614,7 @@ mod tests {
             native(&path).unwrap().as_os_str().as_encoded_bytes(),
             b"/native/\xff.eml"
         );
-        assert_eq!(words::size(1_500_000), "1.5 MB");
-        assert_eq!(words::label(Status::Missing, None), "No longer found");
+        assert_eq!(format_bytes(1_500_000), "1.5 MB");
+        assert_eq!(RowStatus::Missing.label(), "No longer found");
     }
 }

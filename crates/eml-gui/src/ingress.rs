@@ -12,7 +12,7 @@ pub fn launch_paths(
     if !cwd.is_absolute() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            "Launch operands need an absolute working directory",
+            crate::wording::ABSOLUTE_LAUNCH_DIRECTORY,
         ));
     }
     Ok(arguments
@@ -267,7 +267,7 @@ pub fn install_native(
     let notices = std::env::current_exe()?
         .parent()
         .and_then(Path::parent)
-        .ok_or("Desktop executable has no Contents directory")?
+        .ok_or(crate::wording::BUNDLE_CONTENTS_MISSING)?
         .join("Resources/THIRD-PARTY-NOTICES.txt");
     let weak = Rc::downgrade(controller);
     controller.license_window().on_third_party(move || {

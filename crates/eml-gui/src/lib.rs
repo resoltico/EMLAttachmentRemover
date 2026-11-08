@@ -31,6 +31,7 @@ mod ui {
     slint::include_modules!();
 }
 pub use ui::*;
+pub use wording::HOME_UNAVAILABLE;
 struct Active {
     kind: Kind,
     generation: u64,
@@ -110,6 +111,9 @@ impl DesktopController {
         ui.set_product_name(eml_core::product::DISPLAY_NAME.into());
         ui.set_native_about(cfg!(all(feature = "desktop", target_os = "macos")));
         ui.set_words(wording::controls());
+        about.set_words(wording::controls());
+        licenses.set_words(wording::controls());
+        licenses.set_notice(wording::controls().license_notice);
         about.set_product_name(eml_core::product::DISPLAY_NAME.into());
         about.set_version(eml_core::product::ABOUT_VERSION.as_str().into());
         about.set_copyright(

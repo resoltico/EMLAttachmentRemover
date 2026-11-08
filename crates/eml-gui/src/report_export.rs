@@ -3,7 +3,7 @@ use super::*;
 impl ReportExport {
     /// Default filename uses the user's local date.
     pub fn suggested_name(&self) -> String {
-        format!("EML emails {}.jsonl", chrono::Local::now().date_naive())
+        crate::wording::report_filename(chrono::Local::now().date_naive())
     }
 }
 impl DesktopController {

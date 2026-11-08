@@ -48,10 +48,7 @@ pub fn validate_launch(executable: &std::path::Path, cli: &std::path::Path) -> s
         {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
-                format!(
-                    "Launch {}.app from the GUI archive, rather than the bare GUI executable. Its bundle metadata and Contents/Helpers CLI are required. To build it, run cargo xtask dist --app --out target/desktop.",
-                    eml_core::product::DISPLAY_NAME
-                ),
+                crate::wording::bundle_required(),
             ));
         }
     }
@@ -62,9 +59,9 @@ pub fn validate_launch(executable: &std::path::Path, cli: &std::path::Path) -> s
 /// Platform-appropriate output-folder action label, without native service policy.
 pub fn file_manager_label() -> &'static str {
     if cfg!(target_os = "macos") {
-        "Show in Finder"
+        crate::wording::SHOW_FINDER
     } else {
-        "Show in File Manager"
+        crate::wording::SHOW_FILE_MANAGER
     }
 }
 

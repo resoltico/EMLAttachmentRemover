@@ -97,16 +97,14 @@ extern "C" fn should_terminate(_: &AnyObject, _: Sel, _: &NSApplication) -> usiz
     0
 }
 pub(super) fn install() -> Result<(), Box<dyn std::error::Error>> {
-    let main = MainThreadMarker::new().ok_or("Quit adapter requires the main thread")?;
+    let main = MainThreadMarker::new().ok_or(crate::wording::QUIT_MAIN_THREAD)?;
     let app = NSApplication::sharedApplication(main);
-    let delegate = app
-        .delegate()
-        .ok_or("Winit application delegate is absent")?;
+    let delegate = app.delegate().ok_or(crate::wording::DELEGATE_MISSING)?;
     let object: &AnyObject = (*delegate).as_ref();
     let class = object.class();
     let selector = sel!(applicationShouldTerminate:);
     if class.name() != c"WinitApplicationDelegate" || class.instance_method(selector).is_some() {
-        return Err("Cannot install the Quit adapter on this application delegate".into());
+        return Err(crate::wording::QUIT_DELEGATE_UNSUPPORTED.into());
     }
     let types = CString::new(format!("{}@:@", usize::ENCODING))?;
     // SAFETY: exact NSUInteger-returning NSApplicationDelegate signature; the
@@ -128,11 +126,11 @@ pub(super) fn install() -> Result<(), Box<dyn std::error::Error>> {
     }
     .as_bool()
     {
-        return Err("Could not install the Quit adapter".into());
+        return Err(crate::wording::QUIT_INSTALL_FAILED.into());
     }
     let open_selector = sel!(application:openURLs:);
     if class.instance_method(open_selector).is_some() {
-        return Err("Cannot install document opening on this application delegate".into());
+        return Err(crate::wording::DOCUMENT_DELEGATE_UNSUPPORTED.into());
     }
     let open_types = CString::new(format!("{}@:@@", <()>::ENCODING_RETURN))?;
     // SAFETY: the absent selector is installed only on the pinned Winit delegate.
@@ -152,12 +150,12 @@ pub(super) fn install() -> Result<(), Box<dyn std::error::Error>> {
     }
     .as_bool()
     {
-        return Err("Could not install document opening".into());
+        return Err(crate::wording::DOCUMENT_INSTALL_FAILED.into());
     }
     let about_selector = sel!(emlShowAbout:);
-    let base = AnyClass::get(c"NSObject").ok_or("NSObject is unavailable")?;
+    let base = AnyClass::get(c"NSObject").ok_or(crate::wording::NSOBJECT_MISSING)?;
     let mut about_class = ClassBuilder::new(c"EmlAboutMenuTarget", base)
-        .ok_or("Cannot register the application About target")?;
+        .ok_or(crate::wording::ABOUT_TARGET_FAILED)?;
     // SAFETY: NSObject has no subclassing requirements; this new application-
     // owned class implements a void-returning object-sender action. No toolkit
     // class or method is replaced; ClassBuilder derives the matching encoding.
@@ -201,7 +199,12 @@ pub(super) fn refresh_menu() {
     }
     // Both pinned Winit and Slint/Muda place their standard About action first
     // in the application submenu. Do not retarget any unrelated menu command.
-    if !item.title().to_string().starts_with("About ") || item.action().is_none() {
+    if !item
+        .title()
+        .to_string()
+        .starts_with(crate::wording::ABOUT_PREFIX)
+        || item.action().is_none()
+    {
         return;
     }
     ABOUT_TARGET.with(|target| {

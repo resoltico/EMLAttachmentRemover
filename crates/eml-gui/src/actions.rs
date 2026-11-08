@@ -34,8 +34,10 @@ impl DesktopController {
                 State::Checking | State::Ready | State::Stopped
             )
             && (r.batch.state() == State::Checking
-                || present::rows(&r.batch)
-                    .is_some_and(|rows| rows.iter().any(|row| !wording::is_failed(row.status))))
+                || present::rows(&r.batch).is_some_and(|rows| {
+                    rows.iter()
+                        .any(|row| row.status.severity() != eml_core::vocabulary::Severity::Failure)
+                }))
             && !r
                 .batch
                 .check

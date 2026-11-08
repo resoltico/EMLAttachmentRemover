@@ -929,7 +929,7 @@ pub fn part_name<'a>(
     reason: crate::RemovalReason,
     content_type: &str,
 ) -> &'a str {
-    filename.unwrap_or_else(|| {
+    filename.filter(|name| !name.is_empty()).unwrap_or_else(|| {
         let kind = part_kind(reason, content_type);
         if kind.is_empty() { "Attachment" } else { kind }
     })

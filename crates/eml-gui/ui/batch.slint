@@ -46,7 +46,7 @@ export component BatchPane inherits Rectangle {
                 }
                 HorizontalBox { padding: 0px; spacing: 8px;
                     Label { text: root.view.summary; color: Theme.muted; overflow: elide; horizontal-stretch: 1; }
-                    if root.view.problems != "": Chip { text: root.view.filtered ? "Show all" : root.view.problems; selected: root.view.filtered; clicked => { root.filter(); } }
+                    if root.view.problems != "": Chip { text: root.view.filtered ? root.words.show-all : root.view.problems; selected: root.view.filtered; clicked => { root.filter(); } }
                 }
                 if root.view.banner != "": Label { text: "⚠ " + root.view.banner; color: Theme.warn; wrap: word-wrap; }
                 if root.view.notice != "": HorizontalBox { padding: 0px; spacing: 8px;
