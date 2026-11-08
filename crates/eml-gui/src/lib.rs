@@ -234,9 +234,22 @@ impl DesktopController {
         if !self.can_destination() {
             return;
         }
-        if destination.as_ref().is_some_and(|path| {
-            !path.is_absolute() || eml_core::validate_native_path(path).is_err() || !path.is_dir()
-        }) {
+        if let Some(path) = &destination
+            && let Err(violation) = eml_core::validate_native_path(path)
+        {
+            self.message(
+                &eml_core::RequestPathError::InvalidPath {
+                    path: eml_core::RequestPath::OutputDirectory,
+                    violation,
+                }
+                .to_string(),
+            );
+            return;
+        }
+        if destination
+            .as_ref()
+            .is_some_and(|path| !path.is_absolute() || !path.is_dir())
+        {
             self.message(wording::DESTINATION_UNAVAILABLE);
             return;
         }

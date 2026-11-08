@@ -6,6 +6,9 @@
 use crate::accessible_generated::*;
 use crate::qt_window::QtWindow;
 
+mod text;
+mod popups;
+
 use i_slint_core::SharedVector;
 use i_slint_core::accessibility::{
     AccessibilityAction, AccessibleStringProperty, SupportedAccessibilityAction,
@@ -20,6 +23,16 @@ use qttypes::QString;
 
 use core::ffi::c_void;
 use std::pin::Pin;
+use std::mem::ManuallyDrop;
+use std::rc::{Rc, Weak};
+
+/// Borrow an owned Weak::into_raw pointer without consuming its weak reference.
+/// The caller keeps that original raw weak ownership alive for this call.
+unsafe fn upgrade_borrowed_weak<T>(pointer: *const T) -> Option<Rc<T>> {
+    if pointer.is_null() { return None; }
+    let weak = ManuallyDrop::new(unsafe { Weak::from_raw(pointer) });
+    weak.upgrade()
+}
 
 // KEEP IN SYNC WITH CONSTANTS IN C++
 const NAME: u32 = QAccessible_Text_Name;
@@ -51,7 +64,8 @@ impl PropertyDirtyHandler for AccessibleItemPropertiesTracker {
                 if (!obj)
                     return;
 
-                auto accessible_item = static_cast<Slint_accessible_item*>(QAccessible::queryAccessibleInterface(obj));
+                auto accessible_item = live_accessible_item(obj);
+                if (!accessible_item) return;
                 auto data = accessible_item->data();
                 rust!(AccessibleItemPropertiesTracker_rearm [data: Pin<&SlintAccessibleItemData> as "void*"] {
                     data.arm_state_tracker();
@@ -75,14 +89,38 @@ impl PropertyDirtyHandler for ValuePropertyTracker {
                 if (!obj)
                     return;
 
-                auto accessible_item = static_cast<Slint_accessible_item*>(QAccessible::queryAccessibleInterface(obj));
+                auto accessible_item = live_accessible_item(obj);
+                if (!accessible_item) return;
                 auto data = accessible_item->data();
                 rust!(ValuePropertyTracker_rearm [data: Pin<&SlintAccessibleItemData> as "void*"] {
                     data.arm_value_tracker();
                 });
 
+                if (accessible_item->hasTextInterface()) return;
                 auto event = QAccessibleValueChangeEvent(obj, accessible_item->currentValue());
                 QAccessible::updateAccessibility(&event);
+            });
+        });
+    }
+}
+
+pub struct TextPropertyTracker {
+    obj: *mut c_void,
+}
+impl PropertyDirtyHandler for TextPropertyTracker {
+    fn notify(self: Pin<&Self>) {
+        let obj = self.obj;
+        cpp!(unsafe [obj as "QObject*"] {
+            QTimer::singleShot(0, [obj = QPointer(obj)]() {
+                if (!obj) return;
+                auto item = live_accessible_item(obj);
+                if (!item) return;
+                auto data = item->data();
+                rust!(TextPropertyTracker_rearm [data: Pin<&SlintAccessibleItemData> as "void*"] {
+                    data.arm_text_tracker();
+                });
+                item->sendTextChangeEvents();
+                item->sendStateChangeEvent();
             });
         });
     }
@@ -100,7 +138,8 @@ impl PropertyDirtyHandler for LabelPropertyTracker {
                 if (!obj)
                     return;
 
-                auto accessible_item = static_cast<Slint_accessible_item*>(QAccessible::queryAccessibleInterface(obj));
+                auto accessible_item = live_accessible_item(obj);
+                if (!accessible_item) return;
                 auto data = accessible_item->data();
                 rust!(LabelPropertyTracker_rearm [data: Pin<&SlintAccessibleItemData> as "void*"] {
                     data.arm_label_tracker();
@@ -124,7 +163,8 @@ impl PropertyDirtyHandler for DescriptionPropertyTracker {
                 if (!obj)
                     return;
 
-                auto accessible_item = static_cast<Slint_accessible_item*>(QAccessible::queryAccessibleInterface(obj));
+                auto accessible_item = live_accessible_item(obj);
+                if (!accessible_item) return;
                 auto data = accessible_item->data();
                 rust!(DescriptionPropertyTracker_rearm [data: Pin<&SlintAccessibleItemData> as "void*"] {
                     data.arm_description_tracker();
@@ -149,7 +189,8 @@ impl PropertyDirtyHandler for FocusDelegationPropertyTracker {
                 if (!obj)
                     return;
 
-                auto accessible_item = static_cast<Slint_accessible_item*>(QAccessible::queryAccessibleInterface(obj));
+                auto accessible_item = live_accessible_item(obj);
+                if (!accessible_item) return;
                 auto data = accessible_item->data();
                 rust!(FocusDelegationPropertyTracker_rearm [data: Pin<&SlintAccessibleItemData> as "void*"] {
                     data.arm_focus_delegation_tracker();
@@ -168,6 +209,8 @@ pub struct SlintAccessibleItemData {
     #[pin]
     value_tracker: PropertyTracker<false, ValuePropertyTracker>,
     #[pin]
+    text_tracker: PropertyTracker<false, TextPropertyTracker>,
+    #[pin]
     label_tracker: PropertyTracker<false, LabelPropertyTracker>,
     #[pin]
     description_tracker: PropertyTracker<false, DescriptionPropertyTracker>,
@@ -181,6 +224,7 @@ impl SlintAccessibleItemData {
         let state_tracker =
             PropertyTracker::new_with_dirty_handler(AccessibleItemPropertiesTracker { obj });
         let value_tracker = PropertyTracker::new_with_dirty_handler(ValuePropertyTracker { obj });
+        let text_tracker = PropertyTracker::new_with_dirty_handler(TextPropertyTracker { obj });
         let label_tracker = PropertyTracker::new_with_dirty_handler(LabelPropertyTracker { obj });
         let description_tracker =
             PropertyTracker::new_with_dirty_handler(DescriptionPropertyTracker { obj });
@@ -190,6 +234,7 @@ impl SlintAccessibleItemData {
         let result = Box::pin(Self {
             state_tracker,
             value_tracker,
+            text_tracker,
             label_tracker,
             description_tracker,
             focus_delegation_tracker,
@@ -198,6 +243,7 @@ impl SlintAccessibleItemData {
 
         result.as_ref().arm_state_tracker();
         result.as_ref().arm_value_tracker();
+        result.as_ref().arm_text_tracker();
         result.as_ref().arm_label_tracker();
         result.as_ref().arm_description_tracker();
         result.as_ref().arm_focus_delegation_tracker();
@@ -237,6 +283,13 @@ impl SlintAccessibleItemData {
         });
     }
 
+    fn arm_text_tracker(self: Pin<&Self>) {
+        let item = self.item.clone();
+        self.project_ref().text_tracker.evaluate_as_dependency_root(move || {
+            let _ = text::snapshot(&item);
+        });
+    }
+
     fn arm_label_tracker(self: Pin<&Self>) {
         let item = self.item.clone();
         let p = self.project_ref();
@@ -273,6 +326,9 @@ impl SlintAccessibleItemData {
 cpp! {{
     // Note: Do not include <QtWidgets> to avoid inclusion of gl.h (see #10989).
     #include <QtGui/QAccessible>
+    #include <QtCore/QTimer>
+    #include <QtCore/QPointer>
+    #include <QtCore/QTextBoundaryFinder>
     #include <QtWidgets/QWidget>
 
     #include <memory>
@@ -291,6 +347,8 @@ cpp! {{
     const uint32_t ITEM_SELECTED { ITEM_SELECTABLE + 1 };
     const uint32_t VISIBLE { ITEM_SELECTED + 1 };
     const uint32_t LIVE_REGION { VISIBLE + 1 };
+
+    struct SlintTextSelection { int start; int end; };
 
     // Pure native adapter mappings, also exercised without an OS accessibility service.
     static QAccessible::State slint_item_state(QAccessible::Role role, bool focused,
@@ -332,6 +390,8 @@ cpp! {{
         changed.readOnly = before.readOnly != after.readOnly;
         changed.selectable = before.selectable != after.selectable;
         changed.selected = before.selected != after.selected;
+        changed.selectableText = before.selectableText != after.selectableText;
+        changed.multiLine = before.multiLine != after.multiLine;
         return changed;
     }
 
@@ -347,12 +407,12 @@ cpp! {{
 
     class Descendents {
     public:
-        Descendents(void *root_item) {
-            rustDescendents = rust!(Descendents_ctor [root_item: *mut c_void as "void*"] ->
+        Descendents(void *root_item, bool popupRootsOnly = false) {
+            rustDescendents = rust!(Descendents_ctor [root_item: &ItemWeak as "void*", popupRootsOnly: bool as "bool"] ->
                     SharedVector<ItemRc> as "void*" {
-                i_slint_core::accessibility::accessible_descendents(
-                        unsafe { &*(root_item as *mut ItemRc) })
-                .collect()
+                root_item.upgrade().map_or_else(SharedVector::default, |root| {
+                    if popupRootsOnly { popups::popup_roots(&root) } else { popups::children(&root) }
+                })
             });
         }
 
@@ -424,11 +484,18 @@ cpp! {{
         void *rustDescendents;
     };
 
-    void *root_item_for_window(void *rustWindow) {
-        return rust!(root_item_for_window_ [rustWindow: &crate::qt_window::QtWindow as "void*"]
-                -> *mut c_void as "void*" {
-            let root_item = Box::new(ItemRc::new_root(WindowInner::from_pub(&rustWindow.window).component()).downgrade());
-            Box::into_raw(root_item) as _
+    void *root_item_for_window(void *rustWindow, void *existing) {
+        return rust!(root_item_for_window_ [rustWindow: *const crate::qt_window::QtWindow as "void*", existing: *mut ItemWeak as "void*"]
+                -> *mut ItemWeak as "void*" {
+            let window = unsafe { upgrade_borrowed_weak(rustWindow) };
+            let current = window.as_ref().and_then(|window| WindowInner::from_pub(&window.window).try_component())
+                .map(|component| ItemRc::new_root(component).downgrade()).unwrap_or_default();
+            if existing.is_null() {
+                Box::into_raw(Box::new(current))
+            } else {
+                unsafe { *existing = current; }
+                existing
+            }
         });
     }
 
@@ -488,6 +555,9 @@ cpp! {{
     // ------------------------------------------------------------------------------
 
     // Base object for accessibility support
+    class Slint_accessible_item;
+    static Slint_accessible_item *live_accessible_item(QObject *object);
+
     class Slint_accessible : public QAccessibleInterface {
     public:
         Slint_accessible(QAccessible::Role role, QAccessibleInterface *parent) :
@@ -551,7 +621,30 @@ cpp! {{
         }
 
         bool isValid() const override {
-            return true;
+            return m_attached;
+        }
+
+        void detach() {
+            if (!m_attached) return;
+            for (int i = 0; i < rawChildCount(); ++i) {
+                if (auto child = dynamic_cast<Slint_accessible*>(rawChild(i))) child->detach();
+            }
+            m_attached = false;
+        }
+
+        Slint_accessible *findItemInterface(void *item) const {
+            if (!isValid()) return nullptr;
+            auto mine = rustItem();
+            if (rust!(Slint_accessible_find_interface [item: &ItemWeak as "void*", mine: &ItemWeak as "void*"] -> bool as "bool" {
+                item == mine
+            })) return const_cast<Slint_accessible*>(this);
+            for (int i = rawChildCount() - 1; i >= 0; --i) {
+                auto child = dynamic_cast<Slint_accessible*>(rawChild(i));
+                if (child) {
+                    if (auto found = child->findItemInterface(item)) return found;
+                }
+            }
+            return nullptr;
         }
 
         // navigation, hierarchy
@@ -613,16 +706,7 @@ cpp! {{
             QRectF r = rust!(Slint_accessible_item_rect
                 [item: *const ItemWeak as "void*"] -> qttypes::QRectF as "QRectF" {
                     if let Some(item_rc) = unsafe { item.as_ref().unwrap().upgrade() } {
-                        let geometry = item_rc.geometry();
-
-                        let mapped = item_rc.map_to_window(geometry.origin);
-
-                        qttypes::QRectF {
-                            x: mapped.x as _,
-                            y: mapped.y as _,
-                            width: geometry.width() as _,
-                            height: geometry.height() as _,
-                        }
+                        popups::native_rect(&item_rc)
                     } else {
                         Default::default()
                     }
@@ -632,16 +716,31 @@ cpp! {{
             return QRect(topLeft, bottomRight);
         }
 
+        QRect hitRect() const {
+            if (!isValid() || !qwidget()->isVisible()) return QRect();
+            auto item = rustItem();
+            auto rect = rust!(Slint_accessible_hit_rect [item: &ItemWeak as "void*"] -> qttypes::QRectF as "QRectF" {
+                item.upgrade().map_or_else(Default::default, |item| popups::hit_rect(&item))
+            }).toAlignedRect();
+            if (!rect.isEmpty()) rect.moveTopLeft(mapToGlobal(rect.topLeft()));
+            return rect;
+        }
+
         QAccessibleInterface *childAt(int x, int y) const override {
-            for (int i = 0; i < childCount(); ++i)  {
+            if (!isValid() || !qwidget()->isVisible()) return nullptr;
+            for (int i = childCount() - 1; i >= 0; --i)  {
                 auto c = child(i);
-                auto r = c->rect();
-                if (r.contains(x, y)) return c;
+                if (!c || !c->isValid() || c->state().invisible) continue;
+                // An un-clipped invocation button may own an overflow popup.
+                // Search descendants before testing the parent's own bounds.
+                if (auto nested = c->childAt(x, y)) return nested;
+                auto slint = dynamic_cast<Slint_accessible*>(c);
+                if (slint && slint->hitRect().contains(x, y)) return c;
             }
             return nullptr;
         }
 
-        void updateAccessibilityTree() const;
+        void updateAccessibilityTree(bool announceNewSubtree = false) const;
 
     protected:
         mutable bool has_focus;
@@ -651,13 +750,18 @@ cpp! {{
         QAccessible::Role m_role = QAccessible::NoRole;
         QAccessibleInterface *m_parent = nullptr;
         mutable QList<QObject*> m_children;
+        mutable bool m_tree_initialized = false;
+        bool m_attached = true;
     };
 
     // ------------------------------------------------------------------------------
     // Slint_accessible_item:
     // ------------------------------------------------------------------------------
 
-    class Slint_accessible_item : public Slint_accessible, public QAccessibleValueInterface, public QAccessibleActionInterface
+}}
+
+cpp! {{
+    class Slint_accessible_item : public Slint_accessible, public QAccessibleValueInterface, public QAccessibleActionInterface, public QAccessibleTextInterface
 #if QT_VERSION >= QT_VERSION_CHECK(6, 11, 0)
         , public QAccessibleAttributesInterface
 #endif
@@ -674,6 +778,11 @@ cpp! {{
             });
             m_last_state = state();
             m_last_label = text(QAccessible::Name);
+            if (hasTextInterface()) {
+                m_last_text = text(0, -1);
+                m_last_cursor = cursorPosition();
+                m_last_selection = selectionState();
+            }
         }
 
         QAccessibleActionInterface *actionInterface() { return this; }
@@ -704,6 +813,13 @@ cpp! {{
             return m_data;
         }
 
+        bool isValid() const override {
+            if (!Slint_accessible::isValid() || !m_data) return false;
+            return rust!(Slint_accessible_item_valid [m_data: &SlintAccessibleItemData as "void*"] -> bool as "bool" {
+                m_data.item.upgrade().is_some()
+            });
+        }
+
         QWindow *window() const override {
             return parent()->window();
         }
@@ -730,9 +846,9 @@ cpp! {{
         }
 
         QAccessible::State state() const override {
-            return slint_item_state(role(), has_focus_delegation,
+            auto result = slint_item_state(role(), has_focus_delegation,
                 item_string_property(m_data, ENABLED) == "true",
-                item_string_property(m_data, VISIBLE) == "true",
+                isVisibleToAccessibility(),
                 item_string_property(m_data, CHECKABLE) == "true",
                 item_string_property(m_data, CHECKED) == "true",
                 item_string_property(m_data, EXPANDABLE) == "true",
@@ -740,9 +856,20 @@ cpp! {{
                 item_string_property(m_data, READ_ONLY) == "true",
                 item_string_property(m_data, ITEM_SELECTABLE) == "true",
                 item_string_property(m_data, ITEM_SELECTED) == "true");
+            if (hasTextInterface()) {
+                result.selectableText = true;
+                const auto flags = rust!(Slint_text_flags [m_data: &SlintAccessibleItemData as "void*"] -> u32 as "uint32_t" {
+                    text::snapshot(&m_data.item).map_or(0, |value| u32::from(value.read_only) | (u32::from(value.multi_line) << 1))
+                });
+                result.readOnly = flags & 1;
+                result.multiLine = (flags & 2) != 0;
+            }
+            result.invalid = !isValid();
+            return result;
         }
 
         void sendStateChangeEvent() {
+            if (!isValid()) return;
             const auto current = state();
             const auto changed = slint_changed_item_states(m_last_state, current);
             m_last_state = current;
@@ -751,12 +878,35 @@ cpp! {{
             QAccessible::updateAccessibility(&event);
         }
 
+        bool isVisibleToAccessibility() const {
+            return isValid() && qwidget()->isVisible() && item_string_property(m_data, VISIBLE) == "true";
+        }
+
+        void queueInsertedLiveAnnouncement() {
+            const auto live = item_string_property(m_data, LIVE_REGION);
+            const auto current = text(QAccessible::Name);
+            if (slint_announcement_kind(live, isVisibleToAccessibility(),
+                    QString(), current) == 0) return;
+            // This node was inserted after its parent's initial accessibility
+            // tree. Defer until every ancestor's child cache has been committed.
+            // A property notification may run first; the shared label cache
+            // makes the announcement exactly once in either ordering.
+            m_last_label.clear();
+            QTimer::singleShot(0, [obj = QPointer(m_object)]() {
+                if (!obj) return;
+                auto item = live_accessible_item(obj);
+                if (!item) return;
+                item->sendNameChangeEvent();
+            });
+        }
+
         void sendNameChangeEvent() {
+            if (!isValid()) return;
             const auto current = text(QAccessible::Name);
             if (current == m_last_label) return;
             const auto announcement = slint_announcement_kind(
                 item_string_property(m_data, LIVE_REGION),
-                item_string_property(m_data, VISIBLE) == "true", m_last_label, current);
+                isVisibleToAccessibility(), m_last_label, current);
             m_last_label = current;
             auto event = QAccessibleEvent(m_object, QAccessible::NameChanged);
             QAccessible::updateAccessibility(&event);
@@ -769,7 +919,10 @@ cpp! {{
         }
 
         void *interface_cast(QAccessible::InterfaceType t) override {
-            if (t == QAccessible::ValueInterface && !item_string_property(m_data, QAccessible::Value).isEmpty()) {
+            if (!isValid()) return nullptr;
+            if (t == QAccessible::TextInterface && hasTextInterface()) {
+                return static_cast<QAccessibleTextInterface*>(this);
+            } else if (t == QAccessible::ValueInterface && !hasTextInterface() && !item_string_property(m_data, QAccessible::Value).isEmpty()) {
                 return static_cast<QAccessibleValueInterface*>(this);
             } else if (t == QAccessible::ActionInterface) {
                 return static_cast<QAccessibleActionInterface*>(this);
@@ -803,6 +956,122 @@ cpp! {{
         }
 #endif
 
+        bool hasTextInterface() const {
+            if (!isValid() || role() != QAccessible::EditableText) return false;
+            return rust!(Slint_has_text [m_data: &SlintAccessibleItemData as "void*"] -> bool as "bool" {
+                text::snapshot(&m_data.item).is_some()
+            });
+        }
+
+        SlintTextSelection selectionState() const {
+            return rust!(Slint_text_selection [m_data: &SlintAccessibleItemData as "void*"] -> text::Selection as "SlintTextSelection" {
+                text::selection(&m_data.item)
+            });
+        }
+
+        void selection(int index, int *start, int *end) const override {
+            const auto value = selectionState();
+            if (index != 0 || value.start < 0 || value.start == value.end) { *start = *end = -1; return; }
+            *start = value.start; *end = value.end;
+        }
+        int selectionCount() const override {
+            const auto value = selectionState();
+            return value.start >= 0 && value.start != value.end ? 1 : 0;
+        }
+        void addSelection(int start, int end) override { setSelection(0, start, end); }
+        void removeSelection(int index) override {
+            if (index == 0 && selectionCount() != 0) setCursorPosition(cursorPosition());
+        }
+        void setSelection(int index, int start, int end) override {
+            if (index != 0) return;
+            rust!(Slint_text_set_selection [m_data: &SlintAccessibleItemData as "void*", start: i32 as "int", end: i32 as "int"] {
+                text::set_selection(&m_data.item, start, end);
+            });
+        }
+        int cursorPosition() const override {
+            return rust!(Slint_text_cursor [m_data: &SlintAccessibleItemData as "void*"] -> i32 as "int" {
+                text::snapshot(&m_data.item).map_or(-1, |value| value.cursor)
+            });
+        }
+        void setCursorPosition(int position) override { setSelection(0, position, position); }
+        QString text(int start, int end) const override {
+            return rust!(Slint_text_range [m_data: &SlintAccessibleItemData as "void*", start: i32 as "int", end: i32 as "int"] -> QString as "QString" {
+                text::range(&m_data.item, start, end).map_or_else(QString::default, |value| QString::from(value.as_str()))
+            });
+        }
+        QString textBeforeOffset(int offset, QAccessible::TextBoundaryType boundary, int *start, int *end) const override {
+            return QAccessibleTextInterface::textBeforeOffset(offset == -2 ? cursorPosition() : offset, boundary, start, end);
+        }
+        QString textAfterOffset(int offset, QAccessible::TextBoundaryType boundary, int *start, int *end) const override {
+            return QAccessibleTextInterface::textAfterOffset(offset == -2 ? cursorPosition() : offset, boundary, start, end);
+        }
+        QString textAtOffset(int offset, QAccessible::TextBoundaryType boundary, int *start, int *end) const override {
+            return QAccessibleTextInterface::textAtOffset(offset == -2 ? cursorPosition() : offset, boundary, start, end);
+        }
+        int characterCount() const override { return text(0, -1).size(); }
+        QString attributes(int offset, int *start, int *end) const override {
+            const auto count = characterCount();
+            if (offset == -1) offset = count;
+            if (offset == -2) offset = cursorPosition();
+            if (offset < 0 || offset > count) { *start = *end = -1; return QString(); }
+            *start = 0; *end = count;
+            return QString(); // No fabricated uniform font attributes.
+        }
+        QRect characterRect(int offset) const override {
+            const auto value = text(0, -1);
+            if (offset < 0 || offset > value.size()) return QRect();
+            QTextBoundaryFinder finder(QTextBoundaryFinder::Grapheme, value);
+            finder.setPosition(offset);
+            int start = finder.isAtBoundary() ? offset : finder.toPreviousBoundary();
+            finder.setPosition(start);
+            int end = finder.toNextBoundary();
+            if (end < 0) end = value.size();
+            auto rect = rust!(Slint_text_rect [m_data: &SlintAccessibleItemData as "void*", start: i32 as "int", end: i32 as "int"] -> qttypes::QRectF as "QRectF" {
+                text::character_rect(&m_data.item, start, end).unwrap_or_default()
+            }).toAlignedRect();
+            if (rect.isEmpty()) return QRect();
+            rect.moveTopLeft(mapToGlobal(rect.topLeft()));
+            return rect;
+        }
+        int offsetAtPoint(const QPoint &point) const override {
+            if (!isVisibleToAccessibility()) return -1;
+            const auto local = mapFromGlobal(point);
+            if (!qwidget()->rect().contains(local)) return -1;
+            float x = local.x(), y = local.y();
+            return rust!(Slint_text_hit [m_data: &SlintAccessibleItemData as "void*", x: f32 as "float", y: f32 as "float"] -> i32 as "int" {
+                text::offset_at_point(&m_data.item, x, y)
+            });
+        }
+        void scrollToSubstring(int start, int end) override {
+            rust!(Slint_text_scroll [m_data: &SlintAccessibleItemData as "void*", start: i32 as "int", end: i32 as "int"] {
+                text::scroll_to_range(&m_data.item, start, end);
+            });
+        }
+
+        void sendTextChangeEvents() {
+            if (!hasTextInterface()) return;
+            const auto current = text(0, -1);
+            const auto cursor = cursorPosition();
+            const auto selected = selectionState();
+            const auto before = m_last_text;
+            const auto beforeCursor = m_last_cursor;
+            const auto beforeSelection = m_last_selection;
+            m_last_text = current; m_last_cursor = cursor; m_last_selection = selected;
+            if (current != before) {
+                auto event = QAccessibleTextUpdateEvent(m_object, 0, before, current);
+                QAccessible::updateAccessibility(&event);
+            }
+            if (selected.start != beforeSelection.start || selected.end != beforeSelection.end) {
+                auto event = QAccessibleTextSelectionEvent(m_object, selected.start, selected.end);
+                event.setCursorPosition(cursor);
+                QAccessible::updateAccessibility(&event);
+            }
+            if (cursor != beforeCursor) {
+                auto event = QAccessibleTextCursorEvent(m_object, cursor);
+                QAccessible::updateAccessibility(&event);
+            }
+        }
+
         // AccessibleValueInterface:
         QVariant currentValue() const override {
             return item_string_property(m_data, QAccessible::Value);
@@ -833,6 +1102,9 @@ cpp! {{
                 m_data.item.upgrade().map(|i| i.supported_accessibility_actions()).unwrap_or_default()
             });
             QStringList actions;
+            const auto current = state();
+            if (isValid() && qwidget()->isVisible() && current.focusable && !current.disabled)
+                actions << QAccessibleActionInterface::setFocusAction();
             if (supported & rust!(Slint_accessible_item_an1 [] -> SupportedAccessibilityAction as "uint" { SupportedAccessibilityAction::Default }))
                 actions << QAccessibleActionInterface::pressAction();
             if (supported & rust!(Slint_accessible_item_an2 [] -> SupportedAccessibilityAction as "uint" { SupportedAccessibilityAction::Increment }))
@@ -845,7 +1117,20 @@ cpp! {{
         }
 
         void doAction(const QString &actionName) override {
-            if (actionName == QAccessibleActionInterface::pressAction()) {
+            if (!isValid() || state().disabled || !qwidget()->isVisible()) return;
+            if (actionName == QAccessibleActionInterface::setFocusAction()) {
+                if (!state().focusable) return;
+                qwidget()->activateWindow();
+                qwidget()->setFocus(Qt::OtherFocusReason);
+                rust!(Slint_accessible_set_focus [m_data: &SlintAccessibleItemData as "void*"] {
+                    if let Some(item) = m_data.item.upgrade() {
+                        if let Some(adapter) = item.window_adapter() {
+                            WindowInner::from_pub(adapter.window()).set_focus_item(
+                                &item, true, i_slint_core::input::FocusReason::PointerClick);
+                        }
+                    }
+                });
+            } else if (actionName == QAccessibleActionInterface::pressAction()) {
                 rust!(Slint_accessible_item_do_action1 [m_data: Pin<&SlintAccessibleItemData> as "void*"] {
                     let Some(item) = m_data.item.upgrade() else {return};
                     let supported_actions = item.supported_accessibility_actions();
@@ -877,9 +1162,20 @@ cpp! {{
         mutable void *m_data = nullptr;
         QAccessible::State m_last_state;
         QString m_last_label;
+        QString m_last_text;
+        int m_last_cursor = -1;
+        SlintTextSelection m_last_selection { -1, -1 };
     };
 
+    static Slint_accessible_item *live_accessible_item(QObject *object) {
+        auto item = dynamic_cast<Slint_accessible_item*>(QAccessible::queryAccessibleInterface(object));
+        return item && item->isValid() ? item : nullptr;
+    }
+
     // ------------------------------------------------------------------------------
+}}
+
+cpp! {{
     // Slint_accessible_window:
     // ------------------------------------------------------------------------------
 
@@ -893,6 +1189,11 @@ cpp! {{
 
         ~Slint_accessible_window()
         {
+            if (m_rootItem) {
+                rust!(Slint_accessible_root_item_dtor [m_rootItem: *mut ItemWeak as "void*"] {
+                    drop(unsafe { Box::from_raw(m_rootItem) });
+                });
+            }
             rust!(Slint_accessible_window_dtor [m_rustWindow: *mut c_void as "void*"] {
                 unsafe {
                     alloc::rc::Weak::from_raw(m_rustWindow as *const QtWindow); // Consume the Weak<QtWindow> we hold in our void*!
@@ -905,7 +1206,8 @@ cpp! {{
         }
 
         void *rustItem() const override {
-            return root_item_for_window(m_rustWindow);
+            m_rootItem = root_item_for_window(m_rustWindow, m_rootItem);
+            return m_rootItem;
         }
 
         QObject *object() const override {
@@ -926,6 +1228,26 @@ cpp! {{
             return Slint_accessible::childCount();
         }
 
+        QAccessibleInterface *childAt(int x, int y) const override {
+            if (!m_widget->isVisible() || !m_widget->rect().contains(m_widget->mapFromGlobal(QPoint(x, y)))) return nullptr;
+            is_used = true;
+            // Popups paint above the base scene even when their logical owner
+            // appears earlier in the accessibility tree (for example Help).
+            updateAccessibilityTree();
+            Descendents popups(rustItem(), true);
+            for (size_t i = popups.count(); i > 0; --i) {
+                auto item = popups.itemAt(i - 1);
+                auto popup = findItemInterface(item);
+                rust!(Slint_popup_hit_item_dtor [item: *mut ItemWeak as "void*"] {
+                    drop(unsafe { Box::from_raw(item) });
+                });
+                if (!popup || !popup->isValid() || popup->state().invisible) continue;
+                if (auto child = popup->childAt(x, y)) return child;
+                if (popup->hitRect().contains(x, y)) return popup;
+            }
+            return Slint_accessible::childAt(x, y);
+        }
+
         // properties and state
         QString text(QAccessible::Text t) const override {
             switch (t) {
@@ -936,14 +1258,18 @@ cpp! {{
 
         QAccessible::State state() const override {
             QAccessible::State state;
-            state.active = 1;
-            state.focusable = 1;
+            state.active = m_widget->isActiveWindow();
+            state.disabled = !m_widget->isEnabled();
+            state.invisible = !m_widget->isVisible();
+            state.focusable = m_widget->focusPolicy() != Qt::NoFocus;
+            state.focused = m_widget->hasFocus();
             return state;
         }
 
     private:
         QWidget *m_widget;
-        void *m_rustWindow; // *const QtWindow
+        void *m_rustWindow; // owned Weak<QtWindow>::into_raw data pointer, not &QtWindow
+        mutable void *m_rootItem = nullptr; // owned Box<ItemWeak>, refreshed in place
         mutable bool is_used = false;
     };
 
@@ -951,13 +1277,14 @@ cpp! {{
         // Delete no longer valid objects:
         current_children.erase(std::remove_if(current_children.begin(), current_children.end(), [](QObject *o) {
             auto ai = dynamic_cast<Slint_accessible_item *>(QAccessible::queryAccessibleInterface(o));
-            Q_ASSERT(ai);
+            if (!ai) { o->deleteLater(); return true; }
             auto data = ai->data();
 
             if (rust!(Slint_delete_stale_items
                     [data: Pin<&SlintAccessibleItemData> as "void*"] -> bool as "bool" {
                 data.item.upgrade().is_none()
             })) {
+                ai->detach();
                 o->deleteLater();
                 return true;
             } else {
@@ -971,6 +1298,7 @@ cpp! {{
     int indexOfItem(const QList<QObject *> &existing, void *item) {
         for (int i = 0; i < existing.count(); ++i) {
             auto data = dynamic_cast<Slint_accessible_item *>(QAccessible::queryAccessibleInterface(existing[i]));
+            if (!data) continue;
             if (rust!(Slint_indexOfItems [data: Pin<&SlintAccessibleItemData> as "void*", item: &ItemWeak as "void*"] -> bool as "bool" {
                 data.item == *item
             })) {
@@ -982,7 +1310,7 @@ cpp! {{
 
     QList<QObject *> updateItems(QList<QObject *> &&current_children,
                                  Descendents &descendents,
-                                 Slint_accessible *parent) {
+                                 Slint_accessible *parent, bool announceNewChildren) {
         QList<QObject *> children = {};
         children.reserve(descendents.count());
 
@@ -1010,26 +1338,81 @@ cpp! {{
             Q_ASSERT(ai);
             Q_ASSERT(object);
 
-            ai->updateAccessibilityTree();
+            const bool inserted = index == -1;
+            ai->updateAccessibilityTree(inserted && announceNewChildren);
 
             children.append(object);
+            if (inserted && announceNewChildren) ai->queueInsertedLiveAnnouncement();
+            // itemAt owns a temporary Box<ItemWeak>. The persistent item data
+            // cloned that weak reference; neither reused nor new nodes own this box.
+            rust!(Slint_descendents_item_dtor [item: *mut ItemWeak as "void*"] {
+                drop(unsafe { Box::from_raw(item) });
+            });
+        }
+
+        // A closed popup's model may remain cached by Slint. Membership in this
+        // accessibility tree, rather than model expiry alone, retires its nodes.
+        for (auto object : current_children) {
+            if (auto item = dynamic_cast<Slint_accessible*>(QAccessible::queryAccessibleInterface(object))) item->detach();
+            object->deleteLater();
         }
 
         return children;
     }
 
-    void Slint_accessible::updateAccessibilityTree() const {
+    void Slint_accessible::updateAccessibilityTree(bool announceNewSubtree) const {
+        if (!isValid()) return;
         QList<QObject *> valid_objects = deleteStaleItems(std::move(m_children));
         auto descendents = Descendents(rustItem());
 
         m_children = updateItems(std::move(valid_objects), descendents,
-                                 const_cast<Slint_accessible *>(this));
+                                 const_cast<Slint_accessible *>(this),
+                                 m_tree_initialized || announceNewSubtree);
+        m_tree_initialized = true;
     }
 }}
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn borrowed_raw_weak_preserves_ownership_and_rejects_expired_data() {
+        let window = Weak::<QtWindow>::new().into_raw();
+        assert!(unsafe { upgrade_borrowed_weak(window) }.is_none());
+        assert!(unsafe { upgrade_borrowed_weak(window) }.is_none());
+        let slot = cpp!(unsafe [window as "void*"] -> *mut ItemWeak as "void*" {
+            return root_item_for_window(window, nullptr);
+        });
+        let reused = cpp!(unsafe [window as "void*", slot as "void*"] -> *mut ItemWeak as "void*" {
+            return root_item_for_window(window, slot);
+        });
+        assert_eq!(slot, reused);
+        assert!(unsafe { &*slot }.upgrade().is_none());
+        drop(unsafe { Box::from_raw(slot) });
+        drop(unsafe { Weak::from_raw(window) });
+        assert!(unsafe { upgrade_borrowed_weak::<QtWindow>(std::ptr::null()) }.is_none());
+
+        let live = Rc::new(42_u32);
+        let raw = Rc::downgrade(&live).into_raw();
+        assert_eq!(*unsafe { upgrade_borrowed_weak(raw) }.unwrap(), 42);
+        assert_eq!(Rc::strong_count(&live), 1);
+        assert_eq!(Rc::weak_count(&live), 1);
+        drop(live);
+        assert!(unsafe { upgrade_borrowed_weak(raw) }.is_none());
+        drop(unsafe { Weak::from_raw(raw) });
+    }
+
+    #[test]
+    fn missing_model_root_has_an_empty_descendant_snapshot() {
+        let item = ItemWeak::default();
+        let root = &item;
+        let count = cpp!(unsafe [root as "void*"] -> usize as "size_t" {
+            Descendents descendants(root);
+            return descendants.count();
+        });
+        assert_eq!(count, 0);
+    }
 
     #[test]
     fn native_state_mapping_preserves_declared_capabilities_and_changes() {

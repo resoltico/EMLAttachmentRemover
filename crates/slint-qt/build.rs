@@ -54,6 +54,8 @@ fn main() {
     println!("cargo:rerun-if-changed=lib.rs");
     println!("cargo:rerun-if-changed=native_dialogs.rs");
     println!("cargo:rerun-if-changed=qt_accessible.rs");
+    println!("cargo:rerun-if-changed=qt_accessible/text.rs");
+    println!("cargo:rerun-if-changed=qt_accessible/popups.rs");
     println!("cargo:rerun-if-changed=qt_widgets.rs");
     println!("cargo:rerun-if-changed=qt_widgets/button.rs");
     println!("cargo:rerun-if-changed=qt_widgets/checkbox.rs");

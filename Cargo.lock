@@ -4382,8 +4382,6 @@ dependencies = [
 [[package]]
 name = "slint-build"
 version = "1.18.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3ea28d4e1ad47d829b91e227f17037fac07a8001668a93fee47ac04f88718ebc"
 dependencies = [
  "derive_more",
  "i-slint-compiler",
