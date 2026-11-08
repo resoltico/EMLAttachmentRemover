@@ -102,3 +102,10 @@ or Skia renderer.
 Retire this patch when a maintained upstream Slint release provides the required
 native byte handling, raw window handles and required-backend failure
 semantics. Do not remove the protections merely to remove the patch.
+
+Pinned Rust accessibility payloads use a distinct opaque C++ pointer type at
+accessors and callbacks. The C++ compiler rejects interface-object pointers where
+payloads are required. Rust-side captures still require explicit Rust types;
+item focus producers therefore bind an ItemWeak, not merely an opaque C++ tag.
+These compile-time controls supplement the actual native identity/interaction
+matrix; they do not establish general FFI safety by themselves.
