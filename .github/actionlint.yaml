@@ -1,0 +1,7 @@
+# actionlint 1.7.12 predates these hosted labels, generally available 2026-09-17.
+# https://github.blog/changelog/2026-09-17-ubuntu-26-generally-available-and-latest-migration/
+# Its custom-label setting extends the known-label set; other label checks remain.
+self-hosted-runner:
+  labels:
+    - ubuntu-26.04
+    - ubuntu-26.04-arm

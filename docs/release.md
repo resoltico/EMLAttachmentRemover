@@ -54,7 +54,7 @@ and a result representable as a u32. These bounds keep the mapping ordered and
 collision-free. Increase the release version before distributing changed builds;
 changing only the source hash does not increase the native bundle version.
 
-Linux x86_64/aarch64 CLI builds use Ubuntu 22.04 and tar.gz. Windows x86_64/aarch64
+Linux x86_64/aarch64 CLI builds use Ubuntu 26.04 and tar.gz. Windows x86_64/aarch64
 CLI builds use native MSVC with static CRT and ZIP. On Linux run
 `cargo xtask dist --cli --target <native-triple> --out <fresh-folder>`. On Windows
 run `cargo run --locked -p xtask --target <native-triple> -- dist --cli --target <native-triple> --out <fresh-folder>`

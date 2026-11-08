@@ -50,28 +50,13 @@ impl DropBatch {
 }
 
 /// Connect native drops and parented file panels to the same admission boundary.
-#[cfg(feature = "desktop")]
+#[cfg(feature = "native")]
 pub fn install_native(
     controller: &std::rc::Rc<crate::DesktopController>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    use slint::{
-        ComponentHandle,
-        winit_030::{EventResult, WinitWindowAccessor, winit::event::WindowEvent},
-    };
     use std::rc::Rc;
     let ui = controller.window();
-    let weak = Rc::downgrade(controller);
-    ui.window().on_winit_window_event(move |_, event| {
-        if let Some(c) = weak.upgrade() {
-            match event {
-                WindowEvent::HoveredFile(_) => c.hover_drop(true),
-                WindowEvent::DroppedFile(path) => c.deliver_drop(path.clone()),
-                WindowEvent::HoveredFileCancelled => c.cancel_drop(),
-                _ => {}
-            }
-        }
-        EventResult::Propagate
-    });
+    install_drops(controller);
     for kind in 0..3 {
         let weak = Rc::downgrade(controller);
         let choose = move || {
@@ -84,30 +69,12 @@ pub fn install_native(
             let epoch = c.panel_epoch();
             let ui = c.window();
             let _ = slint::spawn_local(async move {
-                let parent = match ui.window().winit_window().await {
-                    Ok(parent) => parent,
-                    Err(e) => {
-                        c.message(&e.to_string());
+                let paths = match super::native_dialogs::choose(&ui, kind == 0).await {
+                    Ok(paths) => paths,
+                    Err(error) => {
+                        c.message(&error);
                         return;
                     }
-                };
-                let dialog = rfd::AsyncFileDialog::new().set_parent(parent.as_ref());
-                let paths = if kind == 0 {
-                    dialog
-                        .add_filter(crate::wording::EML_FILTER, &["eml"])
-                        .pick_files()
-                        .await
-                        .map(|files| {
-                            files
-                                .into_iter()
-                                .map(|f| f.path().to_owned())
-                                .collect::<Vec<_>>()
-                        })
-                } else {
-                    dialog
-                        .pick_folder()
-                        .await
-                        .map(|folder| vec![folder.path().to_owned()])
                 };
                 if epoch != c.panel_epoch() || !c.inputs_enabled() {
                     return;
@@ -139,23 +106,22 @@ pub fn install_native(
         let on_error = c.clone();
         let failed = source.clone();
         if let Err(e) = slint::spawn_local(async move {
-            let parent = match ui.window().winit_window().await {
-                Ok(parent) => parent,
-                Err(e) => {
+            let file = match super::native_dialogs::save_report(
+                &ui,
+                &c.report_directory(),
+                &source.suggested_name(),
+            )
+            .await
+            {
+                Ok(file) => file,
+                Err(error) => {
                     c.cancel_export(&source);
-                    c.message(&e.to_string());
+                    c.message(&error);
                     return;
                 }
             };
-            let file = rfd::AsyncFileDialog::new()
-                .set_parent(parent.as_ref())
-                .set_directory(c.report_directory())
-                .set_file_name(source.suggested_name())
-                .add_filter(crate::wording::REPORT_FILTER, &["jsonl"])
-                .save_file()
-                .await;
             if let Some(file) = file {
-                c.start_captured_export(source, file.path().to_owned());
+                c.start_captured_export(source, file);
             } else {
                 c.cancel_export(&source);
             }
@@ -208,7 +174,7 @@ pub fn install_native(
                 c.open_advisory(
                     crate::OpenTarget::Main,
                     crate::wording::SHOW_EMAIL_FAILED,
-                    move || opener::reveal(path).map_err(|e| e.to_string()),
+                    move || super::native_dialogs::reveal(&path),
                 );
             }
         };
@@ -240,7 +206,7 @@ pub fn install_native(
             c.open_advisory(
                 crate::OpenTarget::Main,
                 crate::wording::SHOW_REPORT_FAILED,
-                move || opener::reveal(path).map_err(|e| e.to_string()),
+                move || super::native_dialogs::reveal(&path),
             );
         }
     });
@@ -264,11 +230,14 @@ pub fn install_native(
             );
         }
     });
+    #[cfg(target_os = "macos")]
     let notices = std::env::current_exe()?
         .parent()
         .and_then(Path::parent)
         .ok_or(crate::wording::BUNDLE_CONTENTS_MISSING)?
         .join("Resources/THIRD-PARTY-NOTICES.txt");
+    #[cfg(target_os = "linux")]
+    let notices = std::env::current_exe()?.with_file_name("THIRD-PARTY-NOTICES.txt");
     let weak = Rc::downgrade(controller);
     controller.license_window().on_third_party(move || {
         if let Some(c) = weak.upgrade() {
@@ -281,4 +250,102 @@ pub fn install_native(
         }
     });
     Ok(())
+}
+
+#[cfg(feature = "desktop-winit")]
+fn install_drops(controller: &std::rc::Rc<crate::DesktopController>) {
+    use slint::{
+        ComponentHandle,
+        winit_030::{EventResult, WinitWindowAccessor, winit::event::WindowEvent},
+    };
+    let weak = std::rc::Rc::downgrade(controller);
+    controller
+        .window()
+        .window()
+        .on_winit_window_event(move |_, event| {
+            if let Some(c) = weak.upgrade() {
+                match event {
+                    WindowEvent::HoveredFile(_) => c.hover_drop(true),
+                    WindowEvent::DroppedFile(path) => c.deliver_drop(path.clone()),
+                    WindowEvent::HoveredFileCancelled => c.cancel_drop(),
+                    _ => {}
+                }
+            }
+            EventResult::Propagate
+        });
+}
+
+#[cfg(feature = "desktop-qt")]
+fn install_drops(controller: &std::rc::Rc<crate::DesktopController>) {
+    let ui = controller.window();
+    ui.set_use_slint_drops(true);
+    let weak = std::rc::Rc::downgrade(controller);
+    ui.on_accept_drop(move |event| {
+        if weak.upgrade().is_some_and(|c| c.inputs_enabled()) && event.data.has_file_paths() {
+            i_slint_core::items::DragAction::Copy
+        } else {
+            i_slint_core::items::DragAction::None
+        }
+    });
+    let weak = std::rc::Rc::downgrade(controller);
+    ui.on_drop_files(move |event| {
+        let Some(c) = weak.upgrade() else {
+            return i_slint_core::items::DragAction::None;
+        };
+        if !c.inputs_enabled() {
+            return i_slint_core::items::DragAction::None;
+        }
+        let Ok(paths) = event.data.file_paths() else {
+            return i_slint_core::items::DragAction::None;
+        };
+        for path in paths {
+            c.deliver_drop(path.to_owned());
+        }
+        i_slint_core::items::DragAction::Copy
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    #[cfg(feature = "desktop-qt")]
+    #[test]
+    fn qt_drop_callbacks_keep_native_paths_and_reject_text_or_locked_inputs() {
+        use super::*;
+        use i_slint_core::{
+            DataTransfer,
+            items::{DragAction, DropEvent},
+        };
+        use std::{ffi::OsString, os::unix::ffi::OsStringExt};
+        i_slint_backend_testing::init_no_event_loop();
+        let root = tempfile::tempdir().unwrap();
+        let controller = crate::DesktopController::new(
+            root.path().join("unused-cli"),
+            root.path().to_owned(),
+            crate::preferences::Preferences::load(root.path().join("preferences.json")),
+        )
+        .unwrap();
+        install_drops(&controller);
+        let ui = controller.window();
+        let paths = vec![
+            root.path()
+                .join(OsString::from_vec(b"native-\xff.eml".to_vec())),
+            root.path().join("line\nbreak.eml"),
+        ];
+        let mut event = DropEvent::default();
+        event.data = DataTransfer::default();
+        event.data.set_file_paths(&paths);
+        assert_eq!(ui.invoke_accept_drop(event.clone()), DragAction::Copy);
+        assert_eq!(ui.invoke_drop_files(event.clone()), DragAction::Copy);
+        assert_eq!(controller.drops.borrow_mut().commit(), Some(paths));
+        let mut text = DropEvent::default();
+        text.data
+            .set_plain_text("/tmp/not-a-native-selection.eml".into());
+        assert_eq!(ui.invoke_accept_drop(text.clone()), DragAction::None);
+        assert_eq!(ui.invoke_drop_files(text), DragAction::None);
+        assert!(controller.drops.borrow_mut().commit().is_none());
+        controller.runtime.borrow_mut().quit = true;
+        assert_eq!(ui.invoke_accept_drop(event.clone()), DragAction::None);
+        assert_eq!(ui.invoke_drop_files(event), DragAction::None);
+        assert!(controller.drops.borrow_mut().commit().is_none());
+    }
 }

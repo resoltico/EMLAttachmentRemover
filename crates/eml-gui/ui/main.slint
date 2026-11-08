@@ -17,6 +17,9 @@ export component MainWindow inherits Window {
     in property <[string]> recent-destinations;
     in property <[string]> output-roots;
     in-out property <bool> drop-hovered;
+    in property <bool> use-slint-drops;
+    callback accept-drop(DropEvent) -> DragAction;
+    callback drop-files(DropEvent) -> DragAction;
     title: root.product-name; icon: @image-url("eml-icon.png"); background: Theme.surface;
     default-font-size: Theme.body;
     min-width: 760px; min-height: 520px; preferred-width: 1080px; preferred-height: 700px;
@@ -61,6 +64,12 @@ export component MainWindow inherits Window {
         reveal-report => { root.reveal-report(); }
         show-copy => { root.show-copy(); } show-original => { root.show-original(); } copy-details => { root.copy-details(); }
         destination => { destinations.show(); } output => { root.show-output(); }
+    }
+    if root.use-slint-drops: DropArea {
+        width: root.width; height: root.height; enabled: root.view.can-add;
+        changed has-drag => { root.drop-hovered = self.has-drag; }
+        can-drop(event) => { return root.accept-drop(event); }
+        dropped(event) => { return root.drop-files(event); }
     }
     destinations := PopupWindow { x: batch-pane.destination-anchor-x; y: batch-pane.destination-anchor-y - self.height; width: 340px;
         height: 88px + root.recent-destinations.length * 36px;

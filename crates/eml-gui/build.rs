@@ -1,6 +1,13 @@
 //! Compile platform-neutral Slint layout with embedded resources.
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let macos = std::env::var("CARGO_CFG_TARGET_OS")? == "macos";
+    let target = std::env::var("CARGO_CFG_TARGET_OS")?;
+    let macos = target == "macos";
+    let winit = std::env::var_os("CARGO_FEATURE_DESKTOP_WINIT").is_some();
+    let qt = std::env::var_os("CARGO_FEATURE_DESKTOP_QT").is_some();
+    let native = std::env::var_os("CARGO_FEATURE_NATIVE").is_some();
+    if (winit && (!macos || qt)) || (qt && target != "linux") || (native && !winit && !qt) {
+        return Err("Select desktop-winit on macOS or desktop-qt on Linux; native requires one supported backend".into());
+    }
     let out = std::path::PathBuf::from(std::env::var_os("OUT_DIR").ok_or("OUT_DIR missing")?);
     // Slint 1.18.1: Cupertino has a 2px frame and a 20px hover scrollbar;
     // Fluent has no frame and a 14px overlay scrollbar.

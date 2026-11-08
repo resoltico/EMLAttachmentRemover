@@ -37,7 +37,9 @@ defenses outside it without changing it first.
 
 ## Product constraints
 
-Slint is the GUI toolkit. Desktop library and headless development supports
-macOS and Linux; native desktop distribution targets macOS. Signing is ad hoc
-only. Intel Macs are supported. macOS-only integration is limited to
+Slint is the GUI toolkit. Desktop library, headless development and native GUI
+support macOS and Linux. macOS uses Winit; Linux uses Qt 6.12 or newer within Qt 6 with its native
+accessibility integration. Linux uses an Ubuntu 26.04 baseline on both CPU
+architectures. Native desktop distribution archives target macOS.
+Signing is ad hoc only. Intel Macs are supported. macOS-only integration is limited to
 application-menu About routing, the Quit shim and document opening.

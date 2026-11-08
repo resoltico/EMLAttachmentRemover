@@ -103,3 +103,6 @@ mod acceptance;
 
 #[path = "desktop/safety.rs"]
 mod safety;
+
+#[path = "desktop/source_guards.rs"]
+mod source_guards;

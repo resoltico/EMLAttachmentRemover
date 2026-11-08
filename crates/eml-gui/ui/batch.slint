@@ -135,7 +135,7 @@ export component BatchPane inherits Rectangle {
                     }
                 }
             }
-            Rectangle { width: parent.width; height: parent.height; visible: root.hovered; background: transparent; border-width: 2px; border-color: Theme.accent; }
+            Rectangle { width: parent.width; height: parent.height; visible: root.hovered; background: Theme.clear; border-width: 2px; border-color: Theme.accent; }
         }
         }
         if root.detail.visible: detail-pane := Rectangle {
