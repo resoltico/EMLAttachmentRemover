@@ -64,7 +64,7 @@ export component MainWindow inherits Window {
     }
     destinations := PopupWindow { x: batch-pane.destination-anchor-x; y: batch-pane.destination-anchor-y - self.height; width: 340px;
         height: 88px + root.recent-destinations.length * 36px;
-        Rectangle { background: Theme.raised; border-width: 1px; border-color: Theme.border;
+        Rectangle { background: Theme.raised; border-width: 1px; border-color: Theme.border; border-radius: Theme.radius-container;
             VerticalBox { padding: Theme.space-2; spacing: Theme.space-1;
                 ActionButton { text: root.words.next-to; clicked => { destinations.close(); root.beside-source(); } }
                 for folder[index] in root.recent-destinations: ActionButton { text: folder; clicked => { destinations.close(); root.recent-destination(index); } }
@@ -73,7 +73,7 @@ export component MainWindow inherits Window {
         }
     }
     outputs := PopupWindow { x: batch-pane.output-anchor-x + batch-pane.output-anchor-width - self.width; y: batch-pane.output-anchor-y - self.height; width: 420px; height: min(400px,16px + root.output-roots.length * 36px);
-        Rectangle { background: Theme.raised; border-width: 1px; border-color: Theme.border;
+        Rectangle { background: Theme.raised; border-width: 1px; border-color: Theme.border; border-radius: Theme.radius-container;
             ListView { x: 8px; y: 8px; width: parent.width - 16px; height: parent.height - 16px; content-width: self.visible-width;
                 for path[index] in root.output-roots: ActionButton { text: path; min-width: 0px; min-height: 36px; clicked => { outputs.close(); root.reveal-output(index); } }
             }
@@ -81,12 +81,12 @@ export component MainWindow inherits Window {
     }
     private property <bool> show-quit: root.view.quit;
     changed show-quit => { if root.show-quit { decision.show(); } else { decision.close(); } }
-    decision := PopupWindow { x: max(0px,(root.width - self.width) / 2); y: 70px; width: min(480px,root.width - 48px); height: content.preferred-height + 32px; close-policy: no-auto-close;
+    decision := PopupWindow { x: max(0px,(root.width - self.width) / 2); y: 70px; width: min(480px,root.width - Theme.space-6 * 2); height: content.preferred-height + 32px; close-policy: no-auto-close;
         Rectangle { background: Theme.raised; border-width: 1px; border-color: Theme.border; border-radius: Theme.radius-container;
             FocusScope { forward-focus: cancel;
                 init => { cancel.focus(); }
                 key-pressed(event) => { if event.text == Key.Escape { root.cancel-quit(); return accept; } return reject; }
-                content := VerticalBox { padding: Theme.space-4; spacing: 14px;
+                content := VerticalBox { padding: Theme.space-4; spacing: Theme.space-4;
                     Label { text: root.words.quit-title; font-size: Theme.title; font-weight: 700; }
                     Label { text: root.view.export-running ? root.words.export-body : root.words.quit-body; wrap: word-wrap; }
                     HorizontalBox { padding: 0px; spacing: Theme.space-2; alignment: end;

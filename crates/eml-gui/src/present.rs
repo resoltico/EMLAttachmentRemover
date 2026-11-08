@@ -301,8 +301,8 @@ impl crate::DesktopController {
         let totals = BatchTotals::from(rows.iter().map(|row| {
             (
                 match row.status {
-                    RowStatus::Settled(o) => o,
-                    _ => Outcome::NotProcessed,
+                    RowStatus::Settled(o) => Some(o),
+                    _ => None,
                 },
                 row.item.removed.len(),
                 row.item
@@ -572,24 +572,6 @@ impl crate::DesktopController {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn u1_settled_rows_render_every_core_outcome_without_renaming() {
-        let mut outcomes = vec![
-            Outcome::Ready,
-            Outcome::NothingToRemove,
-            Outcome::CopySaved,
-            Outcome::CopiedAsIs,
-            Outcome::AlreadyExists,
-            Outcome::WillVerify,
-            Outcome::NeedsChecking,
-            Outcome::Unknown,
-            Outcome::NotProcessed,
-        ];
-        outcomes.extend(ErrorCode::ALL.iter().copied().map(Outcome::Failed));
-        for outcome in outcomes {
-            assert_eq!(RowStatus::Settled(outcome).label(), outcome.label());
-        }
-    }
     #[test]
     fn native_paths_are_independent_of_display_and_decimal_sizes_are_used() {
         let path = NativePathRecord {

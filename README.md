@@ -45,7 +45,7 @@ Human output uses the same outcome labels as the app (JSON is unchanged):
 
 ```text
 Ready                    message.eml → message.no-attachments.eml · 1 attachment · 392 B → 183 B
-1 ready · 0 copies saved · 0 already existed · 0 can’t be copied · 0 not processed · 209 B would be removed. Exit 0
+1 ready · 0 can’t be copied · 0 not processed · 209 B would be removed. Exit 0
 ```
 
 Copies use `<stem>.no-attachments.eml`. Explicit files go directly into the chosen
@@ -75,7 +75,7 @@ are discovered immediately by a read-only check. Nothing is written until
 **Remove Attachments**. Changing the inputs or save folder refreshes the preview;
 you can press Remove Attachments while the check is still running.
 
-One batch stays in one naturally ordered list. Rows preview attachment names and
+One batch stays in one list in worker discovery order. Rows preview attachment names and
 source/copy sizes, then show the result in place. The problems pill filters to
 emails needing attention. Select a row for its explanation and attachment details;
 **Show Copy** requires a verified copy receipt, **Show Original** reveals its source,

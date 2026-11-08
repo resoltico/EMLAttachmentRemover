@@ -109,6 +109,10 @@ fn theme_tokens_keep_readable_contrast_in_both_schemes() {
             (name, colors)
         })
         .collect();
+    assert_eq!(tokens["on-accent"].len(), 2);
+    for (&front, &back) in tokens["on-accent"].iter().zip(&tokens["accent"]) {
+        assert!(ratio(front, back) >= 4.5);
+    }
     for background in ["surface", "raised", "accent-soft"] {
         for foreground in ["text", "muted", "accent", "ok", "warn", "bad"] {
             assert_eq!(tokens[foreground].len(), 2);

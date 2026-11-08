@@ -692,6 +692,7 @@ fn u3_plain_outcomes_and_diagnostics_preserve_process_exit_contract() {
     fs::write(root.path().join("empty.eml"), b"").unwrap();
     fs::write(root.path().join("garbage.eml"), b"garbage").unwrap();
     fs::write(root.path().join("notes.txt"), b"not an email").unwrap();
+    let mut observed = String::new();
     for (args, code, labels) in [
         (
             vec!["--dry-run", "--", "one.eml", "plain.eml"],
@@ -718,6 +719,7 @@ fn u3_plain_outcomes_and_diagnostics_preserve_process_exit_contract() {
         let output = invoke(root.path(), &args, None);
         assert_eq!(output.status.code(), Some(code));
         let text = String::from_utf8(output.stdout).unwrap();
+        observed += &format!("$ {}\n{text}", args.join(" "));
         for label in labels {
             assert!(text.contains(label), "{text}");
         }
@@ -730,10 +732,10 @@ fn u3_plain_outcomes_and_diagnostics_preserve_process_exit_contract() {
         ] {
             assert!(!text.contains(forbidden), "{text}");
         }
-        if text.contains("[MALFORMED") {
+        if text.contains("[Code: MALFORMED") {
             assert!(
                 text.find("This file isn't a valid email.").unwrap()
-                    < text.find("[MALFORMED").unwrap(),
+                    < text.find("[Code: MALFORMED").unwrap(),
                 "{text}"
             );
             assert!(text.contains("It may be empty or not an email at all"));
@@ -742,4 +744,11 @@ fn u3_plain_outcomes_and_diagnostics_preserve_process_exit_contract() {
         assert!(text.contains("can’t be copied"));
         assert!(text.contains("not processed"));
     }
+    assert_eq!(
+        observed,
+        include_str!("support/human-output.txt").replace(
+            "@VERSION@",
+            eml_core::product::VERSION_WITH_REVISION.as_str()
+        )
+    );
 }

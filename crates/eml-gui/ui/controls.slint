@@ -1,50 +1,34 @@
 // Copyright 2026 Ervins Strauhmanis
 // SPDX-License-Identifier: MPL-2.0
-import { Button, Palette, VerticalBox, HorizontalBox } from "std-widgets.slint";
 import { Theme } from "theme.slint";
 import { WidgetMetrics } from "widget-metrics.slint";
 
 // Application relationships, rather than independent per-window magic numbers.
 export global UiMetrics {
-    out property <bool> macos: WidgetMetrics.macos;
     out property <length> scroll-inset: WidgetMetrics.scroll-inset;
-    out property <length> overlay-scrollbar-width: WidgetMetrics.overlay-scrollbar-width;
 }
-export component ActionButton inherits Button {
-    min-height: Theme.control-height;
-    horizontal-stretch: 0;
-    vertical-stretch: 0;
-    preferred-width: self.min-width;
-    preferred-height: self.min-height;
-    max-height: self.min-height;
-}
-export component PrimaryButton inherits ActionButton { primary: true; }
-// Fluent has no borderless button variant. Keep the small utility/disclosure role
-// separate from committing buttons, with the same keyboard and AX activation.
+// One keyboard and accessibility implementation; command and link styles differ.
 export component TextButton inherits Rectangle {
     in property <string> text;
-    in property <bool> show-caption: true;
     in property <TextHorizontalAlignment> text-alignment: left;
-    in property <length> leading-inset;
-    in property <length> trailing-inset;
-    in property <length> horizontal-inset: 8px;
     in property <bool> enabled: true;
     in property <bool> expanded;
     in property <bool> expandable;
-    in property <bool> danger;
     in property <color> foreground: Theme.text;
     out property <bool> has-focus: keys.has-focus;
+    out property <bool> hovered: pointer.has-hover;
+    out property <bool> pressed: pointer.pressed;
     callback clicked();
-    min-width: (root.show-caption ? caption.preferred-width : 0px) + root.horizontal-inset * 2 + root.leading-inset + root.trailing-inset;
-    min-height: max(32px, root.show-caption ? caption.preferred-height + 10px : 32px);
+    min-width: caption.preferred-width + Theme.space-2 * 2;
+    min-height: max(Theme.control-height, caption.preferred-height + Theme.space-2);
     preferred-width: self.min-width;
     preferred-height: self.min-height;
     max-height: self.min-height;
     horizontal-stretch: 0; vertical-stretch: 0;
     border-radius: Theme.radius-control;
-    background: pointer.has-hover && root.enabled ? Palette.alternate-background : transparent;
+    background: pointer.has-hover && root.enabled ? Theme.raised : transparent;
     border-width: keys.has-focus && root.enabled ? 1px : 0px;
-    border-color: Palette.accent-background;
+    border-color: Theme.accent;
     accessible-role: button;
     accessible-label: root.text;
     accessible-enabled: root.enabled;
@@ -62,17 +46,27 @@ export component TextButton inherits Rectangle {
         }
     }
     caption := Text {
-        visible: root.show-caption;
-        text: root.text; overflow: elide; color: root.danger ? Theme.bad : root.foreground;
+        text: root.text; overflow: elide; color: root.foreground;
         opacity: root.enabled ? 1 : 0.5;
-        x: root.horizontal-inset + root.leading-inset;
-        width: max(0px, parent.width - root.horizontal-inset * 2 - root.leading-inset - root.trailing-inset); height: parent.height;
+        x: Theme.space-2;
+        width: max(0px, parent.width - Theme.space-2 * 2); height: parent.height;
         horizontal-alignment: root.text-alignment;
         vertical-alignment: center;
         accessible-role: none;
     }
     pointer := TouchArea { enabled: root.enabled; clicked => { keys.focus(); root.clicked(); } }
 }
+
+export component ActionButton inherits TextButton {
+    in property <bool> primary;
+    text-alignment: center;
+    background: root.primary && root.enabled ? Theme.accent : root.hovered && root.enabled ? Theme.raised : Theme.surface;
+    foreground: root.primary && root.enabled ? Theme.on-accent : Theme.text;
+    border-width: root.has-focus ? 2px : 1px;
+    border-color: root.has-focus || (root.primary && root.enabled) ? Theme.accent : Theme.border;
+    opacity: root.pressed ? 0.8 : 1;
+}
+export component PrimaryButton inherits ActionButton { primary: true; }
 
 export component Label inherits Text { vertical-stretch: 0; min-width: 0px; vertical-alignment: center; color: Theme.text; accessible-role: text; accessible-label: self.text; }
 export component Chip inherits TextButton {
@@ -86,10 +80,8 @@ export component Chip inherits TextButton {
 }
 export component ToneDot inherits Rectangle {
     in property <color> tone;
-    in property <bool> ring;
     width: 8px; height: 8px; border-radius: Theme.radius-control;
-    background: root.ring ? transparent : root.tone;
-    border-width: root.ring ? 1px : 0px; border-color: root.tone;
+    background: root.tone;
     accessible-role: none;
 }
 

@@ -125,23 +125,30 @@ file-synchronizes, and atomically renames over the approved target. Write failur
 preserves a prior target and attempts cleanup. Directory-entry survival across
 power loss is not promised; a crash can leave a private staging file.
 
-`wording.rs` owns the main window's product language, while core qualification
-and CLI vocabulary remain authoritative for processing facts. `view_model.rs`
-adapts accepted receipts to core meaning. `present.rs` unites check/create rows
-by lossless native source path, retaining create precedence and distinguishing
-Waiting, interrupted Not processed and completed No longer found. Missing rows after
-a worker launch failure remain failed; incomplete discovery leaves results unknown,
-rather than claiming the sources disappeared. Natural order
-uses display folder/name with native-path tie-breaking; selection remains native.
+`eml_core::vocabulary` owns `Outcome`, severity, explanations, run failures,
+part names, decimal byte formatting and `BatchTotals`. The CLI and GUI render
+these values; `wording.rs` holds only desktop interaction and layout wording.
+`view_model.rs` adapts accepted protocol receipts into core facts without changing
+protocol-1 JSON. `present.rs` unites check/create rows by lossless native source
+path. A current create item takes precedence; before it arrives, the previous
+create result or a known check failure remains visible. Otherwise the row waits.
+Interrupted work is Not processed. Completed missing sources are No longer found;
+worker or discovery failures do not establish that a source disappeared.
 Report lock contention preserves the previous projection instead of emptying it.
 
-The list uses fixed-height virtual rows, with row height derived from text size.
-New rows insert in natural order during streaming. Selection stays visible when
-insertion or the scrolling detail pane changes the viewport. Band backgrounds
-span the window; content stays in a centered column at most 980 px wide. Below
-900 px the Size column and naming hint are hidden. The detail pane is capped at
-40% of the window, scrolls internally, and keeps its actions visible. At minimum
-size two list rows remain visible, including with enlarged text and long details.
+Rows follow the worker's item indices. Core discovery owns folder traversal order;
+the GUI does not apply a second name sort. Check, create and Continue retain the
+same native input snapshot and destination layout. Selection remains native.
+
+`theme.slint` owns colours, the fixed 13 px body type scale, spacing, radii and tone
+mapping. No text-size input is exposed. The list uses fixed 44 px virtual rows,
+centred cells and separators. The header reserves a 32 px summary line even when
+there is no problems chip. Band backgrounds span the window; content stays in a
+centred column at most 980 px wide. Below 900 px the Size column and naming hint
+are hidden. The visible detail pane has a fixed preferred height of 240 px, capped
+at 40% of the window, scrolls internally and keeps its actions visible. Selecting
+another email does not resize the list. At minimum size two list rows remain
+visible, including with long details. Popups anchor to their command controls.
 Buttons, menus and controller boundaries share predicates in `actions.rs`.
 
 Slint uses Cupertino on macOS and Fluent on Linux. Native open/reveal requests run

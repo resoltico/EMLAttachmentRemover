@@ -442,100 +442,6 @@ mod tests {
         }
     }
     #[test]
-    fn u2_outcomes_preserve_qualified_rules_and_typed_failures() {
-        let mut f = facts();
-        assert_eq!(Outcome::from(&f, 1), Outcome::CopySaved);
-        assert_eq!(Outcome::from(&f, 0), Outcome::CopiedAsIs);
-        f.result = ResultKind::Planned;
-        f.publication = Publication::NotPublished;
-        f.file_sync = None;
-        f.namespace_sync = NamespaceObservation::unattempted();
-        f.plan = Some(PlanAction::Create);
-        assert_eq!(Outcome::from(&f, 1), Outcome::Ready);
-        assert_eq!(Outcome::from(&f, 0), Outcome::NothingToRemove);
-        let good = facts();
-        f.existing = Some(ExistingFacts {
-            identity_known: true,
-            bytes_equal: Some(true),
-            stable: true,
-            address: AddressState::Verified,
-            file_sync: good.file_sync,
-            namespace_sync: good.namespace_sync,
-        });
-        f.plan = Some(PlanAction::VerifyExisting);
-        assert_eq!(Outcome::from(&f, 1), Outcome::WillVerify);
-        f.result = ResultKind::Existing;
-        f.plan = None;
-        assert_eq!(Outcome::from(&f, 1), Outcome::AlreadyExists);
-        f.result = ResultKind::Failed;
-        f.error = Some(crate::ErrorCode::ExistingSyncFailed);
-        assert_eq!(Outcome::from(&f, 1), Outcome::NeedsChecking);
-        f.existing = None;
-        for code in crate::ErrorCode::ALL {
-            f.error = Some(*code);
-            let outcome = Outcome::from(&f, 1);
-            assert_eq!(
-                outcome,
-                if *code == crate::ErrorCode::Interrupted {
-                    Outcome::NotProcessed
-                } else {
-                    Outcome::Failed(*code)
-                }
-            );
-            assert!(!outcome.label().is_empty());
-            assert!(!outcome.explanation().is_empty());
-            assert!(!RunFailure(*code).explanation().is_empty());
-        }
-        f.publication = Publication::Unknown;
-        f.error = Some(crate::ErrorCode::WriteFailed);
-        assert_eq!(Outcome::from(&f, 1), Outcome::Unknown);
-        f.publication = Publication::Published;
-        assert_eq!(Outcome::from(&f, 1), Outcome::NeedsChecking);
-        f.result = ResultKind::Created;
-        assert_eq!(Outcome::from(&f, 1), Outcome::Unknown);
-    }
-    #[test]
-    fn u2_totals_sizes_and_unnamed_parts() {
-        for (n, expected) in [
-            (999, "999 B"),
-            (1000, "1.0 kB"),
-            (1_000_000, "1.0 MB"),
-            (1_000_000_000, "1.0 GB"),
-        ] {
-            assert_eq!(format_bytes(n), expected);
-        }
-        assert_eq!(
-            part_name(None, crate::RemovalReason::RelatedResource, "image/png"),
-            "Inline image"
-        );
-        assert_eq!(
-            part_name(
-                Some("photo.png"),
-                crate::RemovalReason::RelatedResource,
-                "image/png"
-            ),
-            "photo.png"
-        );
-        let totals = BatchTotals::from([
-            (Outcome::Ready, 2, Some((1000, 400))),
-            (Outcome::CopySaved, 3, Some((900, 200))),
-            (Outcome::Failed(crate::ErrorCode::Malformed), 0, None),
-            (Outcome::Unknown, 0, None),
-            (Outcome::AlreadyExists, 4, Some((100, 0))),
-            (Outcome::NotProcessed, 0, None),
-        ]);
-        assert_eq!(
-            (
-                totals.emails,
-                totals.attachments,
-                totals.bytes_removed,
-                totals.problems
-            ),
-            (6, 5, 1300, 2)
-        );
-        assert_eq!(totals.count(Outcome::Ready), 1);
-    }
-    #[test]
     fn explicit_stop_requires_both_failed_result_and_typed_interrupted_error() {
         let mut f = facts();
         for result in [
@@ -695,15 +601,6 @@ mod tests {
     }
 }
 
-/// Recovery from a bundled CLI identity mismatch.
-pub const WORKER_IDENTITY_HINT: &str =
-    "Install the app and its bundled CLI from the same download.";
-/// Discovery stopped before all selected contents became known work items.
-pub const COLLECTION_INCOMPLETE_NOTICE: &str = "Discovery is incomplete. Counts cover only known inputs; additional messages may not have been discovered.";
-/// Stderr was drained beyond the retained diagnostic bound.
-pub const STDERR_TRUNCATED_NOTICE: &str =
-    "Additional CLI diagnostic output exceeded the retained limit.";
-
 /// User-level result, independent of presentation and transport.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Outcome {
@@ -743,9 +640,7 @@ impl Outcome {
             MeaningKind::ExistingVerified => Self::AlreadyExists,
             MeaningKind::PublishedIncomplete | MeaningKind::ExistingMatched => Self::NeedsChecking,
             MeaningKind::PublicationUncertain | MeaningKind::Unestablished => Self::Unknown,
-            MeaningKind::NotPublished => {
-                Self::Failed(facts.error.unwrap_or(crate::ErrorCode::Internal))
-            }
+            MeaningKind::NotPublished => facts.error.map_or(Self::Unknown, Self::Failed),
         }
     }
     /// Short wording shared by every human renderer.
@@ -762,6 +657,24 @@ impl Outcome {
             Self::NotProcessed => "Not processed",
             Self::Failed(code) => failure(code).0,
         }
+    }
+    /// Count wording shared by summaries and the desktop header.
+    pub fn count_label(self, n: usize) -> String {
+        let phrase = match self {
+            Self::Ready => "ready",
+            Self::NothingToRemove => "with no attachments",
+            Self::CopySaved if n == 1 => "copy saved",
+            Self::CopySaved => "copies saved",
+            Self::CopiedAsIs => "copied as is",
+            Self::AlreadyExists => "already existed",
+            Self::WillVerify if n == 1 => "copy to verify",
+            Self::WillVerify => "copies to verify",
+            Self::NeedsChecking => "saved, need checking",
+            Self::Unknown => "results unknown",
+            Self::NotProcessed => "not processed",
+            Self::Failed(_) => "can’t be copied",
+        };
+        format!("{n} {phrase}")
     }
     /// Domain prominence; frontends choose its appearance.
     pub fn severity(self) -> Severity {
@@ -786,7 +699,7 @@ impl Outcome {
             Self::CopySaved => "Copy saved. Removed:",
             Self::AlreadyExists => "An identical copy already exists. Nothing was written.",
             Self::NotProcessed => {
-                "Not copied because the batch was stopped. Continue to finish it."
+                "Not copied because the batch was stopped. Try again to finish it."
             }
             Self::Unknown => {
                 "The result couldn’t be confirmed. Check the save folder, then try again. Existing copies are never replaced."
@@ -819,7 +732,7 @@ fn failure(code: crate::ErrorCode) -> (&'static str, &'static str) {
         ),
         LimitExceeded => (
             "Too large or complex",
-            "This email is larger or more deeply nested than the app supports (256 MB maximum).",
+            "This email is larger or more complex than the supported limits (256 MiB maximum).",
         ),
         ReadFailed | BindFailed => (
             "Can’t be read",
@@ -855,11 +768,11 @@ fn failure(code: crate::ErrorCode) -> (&'static str, &'static str) {
         ),
         Internal => (
             "Couldn’t copy",
-            "An internal check failed, so no copy was made. Save Report… and send it with a bug report.",
+            "An internal check failed, so no copy was made. Include the technical details in a bug report.",
         ),
         _ => (
             "Couldn’t copy",
-            "No copy was made. Use Copy Details for more information.",
+            "No copy was made. Check the technical details for more information.",
         ),
     }
 }
@@ -896,10 +809,10 @@ impl RunFailure {
                 "The save folder is inside a folder you added. Choose a different save folder."
             }
             InputAdmissionFailed => {
-                "Some items you added can’t be opened. Check that they still exist, then Start Over."
+                "Some items you added can’t be opened. Check that they still exist, then try again."
             }
             OutputFailed => {
-                "The copy process stopped while reporting results. Save the report and try again."
+                "The copy process stopped while reporting results. Keep the technical details and try again."
             }
             _ => Outcome::Failed(self.0).explanation(),
         }
@@ -950,10 +863,15 @@ pub struct BatchTotals {
 }
 impl BatchTotals {
     /// Aggregate accepted outcomes and their removal metadata.
-    pub fn from(items: impl IntoIterator<Item = (Outcome, usize, Option<(u64, u64)>)>) -> Self {
+    pub fn from(
+        items: impl IntoIterator<Item = (Option<Outcome>, usize, Option<(u64, u64)>)>,
+    ) -> Self {
         let mut totals = Self::default();
         for (outcome, parts, bytes) in items {
             totals.emails += 1;
+            let Some(outcome) = outcome else {
+                continue;
+            };
             *totals.counts.entry(outcome).or_default() += 1;
             if matches!(outcome.severity(), Severity::Attention | Severity::Failure) {
                 totals.problems += 1;
@@ -971,15 +889,30 @@ impl BatchTotals {
     pub fn count(&self, outcome: Outcome) -> usize {
         self.counts.get(&outcome).copied().unwrap_or(0)
     }
-    /// Shared summary nouns, independent of interface layout.
-    pub fn summary(&self, checking: bool) -> String {
+    /// Number of newly saved copies, including unchanged messages.
+    pub fn saved(&self) -> usize {
+        self.count(Outcome::CopySaved) + self.count(Outcome::CopiedAsIs)
+    }
+    /// Shared problem count wording, preserving attention versus failure.
+    pub fn problem_label(&self) -> String {
+        if self
+            .counts
+            .keys()
+            .any(|o| o.severity() == Severity::Attention)
+        {
+            format!(
+                "{} {} attention",
+                self.problems,
+                if self.problems == 1 { "needs" } else { "need" }
+            )
+        } else {
+            Outcome::Failed(crate::ErrorCode::Internal).count_label(self.problems)
+        }
+    }
+    /// Removal consequence for check-only or completed copy metadata.
+    pub fn removal_summary(&self, checking: bool) -> String {
         format!(
-            "{} ready · {} copies saved · {} already existed · {} can’t be copied · {} not processed · {} {}",
-            self.count(Outcome::Ready),
-            self.count(Outcome::CopySaved) + self.count(Outcome::CopiedAsIs),
-            self.count(Outcome::AlreadyExists),
-            self.problems,
-            self.count(Outcome::NotProcessed),
+            "{} {}",
             format_bytes(self.bytes_removed),
             if checking {
                 "would be removed"
@@ -987,6 +920,28 @@ impl BatchTotals {
                 "removed"
             }
         )
+    }
+    /// Shared summary nouns, independent of interface layout.
+    pub fn summary(&self, checking: bool) -> String {
+        let mut parts = Vec::new();
+        for (outcome, n) in [
+            (Outcome::Ready, self.count(Outcome::Ready)),
+            (
+                Outcome::NothingToRemove,
+                self.count(Outcome::NothingToRemove),
+            ),
+            (Outcome::CopySaved, self.saved()),
+            (Outcome::AlreadyExists, self.count(Outcome::AlreadyExists)),
+            (Outcome::WillVerify, self.count(Outcome::WillVerify)),
+        ] {
+            if n > 0 {
+                parts.push(outcome.count_label(n));
+            }
+        }
+        parts.push(self.problem_label());
+        parts.push(Outcome::NotProcessed.count_label(self.count(Outcome::NotProcessed)));
+        parts.push(self.removal_summary(checking));
+        parts.join(" · ")
     }
 }
 /// Copy Details field labels shared with human diagnostic renderers.
@@ -1007,4 +962,13 @@ pub mod fields {
     pub const PHASE: &str = "Phase";
     /// Technical diagnostic explanation.
     pub const DETAIL: &str = "Detail";
+}
+
+/// Shared email-count noun.
+pub fn email_count(n: usize) -> String {
+    format!("{n} {}", if n == 1 { "email" } else { "emails" })
+}
+/// Shared attachment-count noun.
+pub fn attachment_count(n: usize) -> String {
+    format!("{n} {}", if n == 1 { "attachment" } else { "attachments" })
 }

@@ -1,9 +1,6 @@
 //! One-list product language; protocol diagnostics remain verbatim in exports.
 use crate::state::{Batch, State};
-use eml_core::vocabulary::{BatchTotals, Outcome, Severity, format_bytes};
-pub(crate) fn plural(n: usize, one: &str, many: &str) -> String {
-    format!("{n} {}", if n == 1 { one } else { many })
-}
+use eml_core::vocabulary::{BatchTotals, Outcome, attachment_count, email_count, format_bytes};
 pub(super) struct Header {
     pub title: String,
     pub summary: String,
@@ -15,20 +12,13 @@ pub(super) fn header(
     total: Option<u32>,
     missing: usize,
 ) -> Header {
-    let count = |outcome| totals.count(outcome);
     let problems = totals.problems;
-    let has_warn = totals
-        .counts
-        .keys()
-        .any(|outcome| outcome.severity() == Severity::Attention);
     let pill = if problems == 0 {
         String::new()
-    } else if has_warn {
-        format!("{} attention", plural(problems, "needs", "need"))
     } else {
-        format!("{problems} can’t be copied")
+        totals.problem_label()
     };
-    let saved = count(Outcome::CopySaved) + count(Outcome::CopiedAsIs);
+    let saved = totals.saved();
     let attachments = totals.attachments;
     let removed = totals.bytes_removed;
     let (title, parts) = match batch.state() {
@@ -53,16 +43,13 @@ pub(super) fn header(
             let mut parts = if attachments == 0 {
                 vec!["No attachments to remove".into()]
             } else {
-                vec![
-                    plural(attachments, "attachment", "attachments"),
-                    format!("{} will be removed", format_bytes(removed)),
-                ]
+                vec![attachment_count(attachments), totals.removal_summary(true)]
             };
-            let existing = count(Outcome::WillVerify);
+            let existing = totals.count(Outcome::WillVerify);
             if existing > 0 {
-                parts.push(format!("{existing} already copied"));
+                parts.push(Outcome::WillVerify.count_label(existing));
             }
-            (plural(totals.emails, "email", "emails"), parts)
+            (email_count(totals.emails), parts)
         }
         State::Removing => (
             "Removing attachments…".into(),
@@ -71,29 +58,29 @@ pub(super) fn header(
         State::Stopped => (
             "Stopped".into(),
             vec![
-                plural(saved, "copy saved", "copies saved"),
-                format!("{} not processed", count(Outcome::NotProcessed)),
+                Outcome::CopySaved.count_label(saved),
+                Outcome::NotProcessed.count_label(totals.count(Outcome::NotProcessed)),
             ],
         ),
         State::Done => (
             if saved == 0 && problems > 0 {
                 "No copies saved".into()
             } else {
-                plural(saved, "copy saved", "copies saved")
+                Outcome::CopySaved.count_label(saved)
             },
             {
                 let mut parts = Vec::new();
                 if removed > 0 {
-                    parts.push(format!("{} removed", format_bytes(removed)));
+                    parts.push(totals.removal_summary(false));
                 }
-                for (n, phrase) in [
-                    (count(Outcome::CopiedAsIs), "copied as is"),
-                    (count(Outcome::AlreadyExists), "already existed"),
-                    (missing, "no longer found"),
-                ] {
+                for outcome in [Outcome::CopiedAsIs, Outcome::AlreadyExists] {
+                    let n = totals.count(outcome);
                     if n > 0 {
-                        parts.push(format!("{n} {phrase}"));
+                        parts.push(outcome.count_label(n));
                     }
+                }
+                if missing > 0 {
+                    parts.push(format!("{missing} no longer found"));
                 }
                 parts
             },
@@ -236,10 +223,7 @@ pub(super) fn request_error(_: &eml_app::RequestError) -> String {
 pub(super) fn row_description(folder: &str, count: Option<usize>, size: &str) -> String {
     format!(
         "{folder}; {}; {size}",
-        count.map_or_else(
-            || "attachments unknown".into(),
-            |n| plural(n, "attachment", "attachments")
-        )
+        count.map_or_else(|| "attachments unknown".into(), attachment_count)
     )
 }
 

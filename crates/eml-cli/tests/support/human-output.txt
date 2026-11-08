@@ -1,0 +1,37 @@
+$ --dry-run -- one.eml plain.eml
+emlattachmentremover @VERSION@ — 2 emails · check only, nothing is written
+Ready                    one.eml → one.no-attachments.eml · 1 attachment · 1.0 kB → 513 B
+No attachments           plain.eml → plain.no-attachments.eml · 0 attachments · 24 B → 24 B
+1 ready · 1 with no attachments · 0 can’t be copied · 0 not processed · 515 B would be removed. Exit 0
+$ -- one.eml plain.eml
+emlattachmentremover @VERSION@ — 2 emails
+Copy saved               one.eml → one.no-attachments.eml · 1 attachment · 1.0 kB → 513 B
+Copied as is             plain.eml → plain.no-attachments.eml · 0 attachments · 24 B → 24 B
+2 copies saved · 0 can’t be copied · 0 not processed · 515 B removed. Exit 0
+$ -- one.eml plain.eml
+emlattachmentremover @VERSION@ — 2 emails
+Copy already exists      one.eml → one.no-attachments.eml · 1 attachment · 1.0 kB → 513 B
+Copy already exists      plain.eml → plain.no-attachments.eml · 0 attachments · 24 B → 24 B
+2 already existed · 0 can’t be copied · 0 not processed · 0 B removed. Exit 0
+$ --dry-run -- empty.eml garbage.eml notes.txt
+emlattachmentremover @VERSION@ — 3 emails · check only, nothing is written
+Not a valid email        empty.eml → empty.no-attachments.eml
+                 This file isn't a valid email. It may be empty or not an email at all; if it came from your mail app, export it again.
+                 [Code: MALFORMED · Phase: prepare · Detail: Message root has no valid header fields]
+                 No new copy was published.
+Not a valid email        garbage.eml → garbage.no-attachments.eml
+                 This file isn't a valid email. It may be empty or not an email at all; if it came from your mail app, export it again.
+                 [Code: MALFORMED · Phase: prepare · Detail: Message root has no valid header fields]
+                 No new copy was published.
+Not a valid email        notes.txt → notes.txt.no-attachments.eml
+                 This file isn't a valid email. It may be empty or not an email at all; if it came from your mail app, export it again.
+                 [Code: MALFORMED · Phase: prepare · Detail: Message root has no valid header fields]
+                 No new copy was published.
+3 can’t be copied · 0 not processed · 0 B would be removed. Exit 1
+$ -- missing.eml
+emlattachmentremover @VERSION@ — 1 email · some selected paths could not be read
+Can’t be read            missing.eml
+                 The file couldn’t be read. Check that it still exists and that you have permission to open it.
+                 [Code: READ_FAILED · Phase: admission · Detail: Selected path could not be inspected or opened]
+                 No new copy was published.
+1 can’t be copied · 0 not processed · 0 B removed. Exit 1
