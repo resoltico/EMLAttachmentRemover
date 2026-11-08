@@ -350,10 +350,7 @@ fn s6_s7_headers_filter_and_selection_come_from_authoritative_rows() {
     let c = gate(root.path());
     let ui = c.window();
     assert_eq!(ui.get_view().title, "Removing attachments…");
-    assert_eq!(
-        ui.get_view().summary,
-        "0 of 3 done · your originals are not changed"
-    );
+    assert_eq!(ui.get_view().summary, "Your originals are not changed");
     assert!(ui.get_view().problems.is_empty());
     assert!(!ui.get_view().can_filter);
     assert!(
@@ -1739,4 +1736,82 @@ fn u10_check_failures_persist_until_the_create_result() {
     pump(&c, || !c.is_busy());
     assert_eq!(during, "Not a valid email");
     assert_eq!(problems, before);
+}
+
+#[test]
+fn u1_rust_words_have_one_owner() {
+    fn inspect(directory: &Path) {
+        for entry in fs::read_dir(directory).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                if path.file_name().unwrap() != "tests" {
+                    inspect(&path);
+                }
+                continue;
+            }
+            if path.extension().is_none_or(|e| e != "rs")
+                || ["wording.rs", "tests.rs"].contains(&path.file_name().unwrap().to_str().unwrap())
+            {
+                continue;
+            }
+            let source = fs::read_to_string(&path).unwrap();
+            let source = source.split("#[cfg(test)]\nmod tests").next().unwrap();
+            for line in source
+                .lines()
+                .filter(|l| !l.trim_start().starts_with("//") && !l.contains("reason ="))
+            {
+                for (i, literal) in line.split('"').enumerate() {
+                    if i % 2 == 0 {
+                        continue;
+                    }
+                    let readable: String = literal
+                        .split(['{', '}'])
+                        .enumerate()
+                        .filter(|(i, _)| i % 2 == 0)
+                        .map(|(_, s)| s)
+                        .collect();
+                    let readable = readable.replace("\\n", " ").replace("\\t", " ");
+                    let human = readable
+                        .split_whitespace()
+                        .filter(|w| w.chars().any(char::is_alphabetic))
+                        .count()
+                        > 1;
+                    assert!(
+                        !human,
+                        "Readable Rust literal in {}: {literal}",
+                        path.display()
+                    );
+                }
+            }
+        }
+    }
+    inspect(&Path::new(env!("CARGO_MANIFEST_DIR")).join("src"));
+}
+
+#[test]
+fn u9_unnamed_inline_image_is_named_by_kind() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let mut values: Vec<Value> = check_stream(root.path(), &["inline.eml"])
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    values[1]["removed"][0]["filename"] = Value::Null;
+    values[1]["removed"][0]["content_type"] = "image/png".into();
+    values[1]["removed"][0]["reason"] = "related_resource".into();
+    let check = values.iter().map(|v| format!("{v}\n")).collect::<String>();
+    let c = controller(root.path(), dual(root.path(), &check, ""));
+    c.stage(vec![root.path().join("inputs")]).unwrap();
+    pump(&c, || !c.is_busy());
+    select_first(&c);
+    assert_eq!(
+        c.window().get_rows().row_data(0).unwrap().chip1,
+        "Inline image"
+    );
+    assert_eq!(
+        c.window().get_detail().parts.row_data(0).unwrap().name,
+        "Inline image"
+    );
+    assert!(!labels(&c.window()).iter().any(|s| s.contains("image/png")));
+    assert!(c.clipboard_text().unwrap().contains("image/png"));
 }

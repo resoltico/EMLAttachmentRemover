@@ -22,7 +22,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let executable = std::env::current_exe()?;
     let cli = eml_app::bundled_cli(&executable)?;
     platform::validate_launch(&executable, &cli)?;
-    let home = dirs::home_dir().ok_or("Cannot locate your home folder")?;
+    let home = dirs::home_dir().ok_or(eml_gui::HOME_UNAVAILABLE)?;
     let preferences = Preferences::load(Preferences::default_path()?);
     let controller = DesktopController::new(cli, home, preferences)?;
     let ui = controller.window();

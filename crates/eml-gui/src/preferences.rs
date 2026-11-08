@@ -40,7 +40,7 @@ impl Preferences {
                     {
                         Ok(settings)
                     } else {
-                        Err("Saved folders must use absolute paths; at most three recent destinations are supported.".into())
+                        Err(crate::wording::INVALID_SAVED_FOLDERS.into())
                     }
                 }),
             Err(error)
@@ -62,10 +62,7 @@ impl Preferences {
         dirs::config_dir()
             .map(|p| p.join("EMLAttachmentRemover").join("preferences.json"))
             .ok_or_else(|| {
-                io::Error::new(
-                    io::ErrorKind::NotFound,
-                    "Cannot locate the configuration folder",
-                )
+                io::Error::new(io::ErrorKind::NotFound, crate::wording::CONFIG_UNAVAILABLE)
             })
     }
     /// Destination used for the next preview or create.
@@ -77,7 +74,7 @@ impl Preferences {
         if destination.as_ref().is_some_and(|p| !p.is_absolute()) {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "Choose an absolute destination folder",
+                crate::wording::ABSOLUTE_DESTINATION,
             ));
         }
         if let Some(path) = &destination {
@@ -103,7 +100,7 @@ impl Preferences {
         if !folder.is_absolute() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "Choose an absolute report folder",
+                crate::wording::ABSOLUTE_REPORT_FOLDER,
             ));
         }
         self.settings.last_report_folder = Some(folder);
@@ -112,7 +109,10 @@ impl Preferences {
     fn save(&self) -> io::Result<()> {
         let bytes = serde_json::to_vec_pretty(&self.settings).map_err(io::Error::other)?;
         let parent = self.path.parent().ok_or_else(|| {
-            io::Error::new(io::ErrorKind::InvalidInput, "Settings file has no parent")
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                crate::wording::SETTINGS_PARENT_MISSING,
+            )
         })?;
         fs::create_dir_all(parent)?;
         let mut staged = tempfile::NamedTempFile::new_in(parent)?;

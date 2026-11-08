@@ -85,7 +85,7 @@ fn cleanup(value: &wire::CleanupRecord) -> Option<CleanupReceipt> {
         native_code: value.native_code.value().copied(),
     })
 }
-fn facts(item: &wire::ItemRecord) -> Option<OutcomeFacts> {
+pub(super) fn facts(item: &wire::ItemRecord) -> Option<OutcomeFacts> {
     let existing = match item.existing_observation.value() {
         Some(value) => Some(ExistingFacts {
             identity_known: value.identity.value().is_some(),
@@ -130,6 +130,8 @@ fn facts(item: &wire::ItemRecord) -> Option<OutcomeFacts> {
             .any(|part| part.reason == wire::Removal::RelatedResource),
     })
 }
-pub(super) fn meaning(item: &wire::ItemRecord) -> Option<vocabulary::OutcomeMeaning> {
-    facts(item).map(|facts| vocabulary::classify(&facts))
+pub(super) fn outcome(item: &wire::ItemRecord) -> vocabulary::Outcome {
+    facts(item).map_or(vocabulary::Outcome::Unknown, |facts| {
+        vocabulary::Outcome::from(&facts, item.removed.len())
+    })
 }
