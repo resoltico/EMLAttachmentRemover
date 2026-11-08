@@ -2,8 +2,10 @@
 mod archive;
 mod ci;
 mod dist;
+mod lint;
 mod notices;
 mod source;
+mod tools;
 
 use clap::{Parser, Subcommand};
 use std::{
@@ -41,6 +43,10 @@ enum Task {
         #[arg(long)]
         out: PathBuf,
     },
+    /// Check source/configuration lint without building distribution archives.
+    Lint,
+    /// Print exact developer-tool pins as key=value lines.
+    ToolVersions,
     /// Run the host merge gate. --rust-only runs the native matrix portion.
     Ci {
         #[arg(long)]
@@ -65,6 +71,8 @@ fn execute() -> Result<()> {
         } => dist::build(cli, app, universal, target, &out),
         Task::Notices { app, target, out } => notices::write(app, &target, &out),
         Task::Ci { rust_only } => ci::run(rust_only),
+        Task::Lint => lint::run(),
+        Task::ToolVersions => tools::print(),
     }
 }
 fn workspace_root(from: &Path) -> Result<PathBuf> {
@@ -108,15 +116,10 @@ fn host() -> Result<String> {
         .ok_or_else(|| "rustc did not report its host triple".into())
 }
 fn tool(name: &str, key: &str) -> Result<()> {
-    let versions: toml::Value = toml::from_str(include_str!("../tools.toml"))?;
-    let expected = versions["versions"][key]
-        .as_str()
-        .ok_or("missing tool version")?;
+    let versions = tools::read()?;
+    let expected = versions.get(key).ok_or("missing tool version")?;
     let actual = capture(Command::new(name).arg("--version"))?;
-    if !actual
-        .split_whitespace()
-        .any(|word| word.trim_start_matches('v') == expected)
-    {
+    if tools::reported_version(name, &actual) != Some(expected.as_str()) {
         return Err(format!("Install {name} {expected} (xtask/tools.toml); found {actual}").into());
     }
     Ok(())

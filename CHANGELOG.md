@@ -5,6 +5,9 @@
 Use concise bullets without category labels or subheadings, grouping related changes and putting breaking changes and required actions first. Each bullet occupies one physical line, at most 200 characters including Markdown but excluding its `- ` marker: a ceiling, not a target. Shorten or split without losing material consequences. Use technical names when helpful; link to existing relevant documentation, without assuming paths or creating documents merely to satisfy this rule.
 ## [Unreleased]
 
+- Check dirty and newly added source in the verification budget and shell lint; include verification scripts in harness size and fail on empty/missing inputs.
+- Share local/hosted lint commands, read tool pins from the invoking workspace and reuse trusted CI caches for release builds. Remove obsolete Windows sentinel artifacts.
+
 - Share receipt qualification across execution, outcome interpretation and report reading; reject inconsistent successful sync, cleanup and read-only plan claims.
 - Use core phase/removal vocabularies and capability decisions in adapters; reject known code/phase mismatches and incompatible native-worker paths. Valid protocol-1 JSON stays unchanged.
 - Keep Continue available after stopping before observations; count known launch failures without inventing a core outcome.

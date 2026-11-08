@@ -13,9 +13,8 @@ ignore = [
 # Repository/tool approval is distinct from the shipped target notice closure.
 # BSL-1.0 is already accepted for shipped binaries in legal/about.toml.
 [licenses]
-allow = ["MPL-2.0", "MIT", "Apache-2.0", "BSD-3-Clause", "Unicode-3.0", "ISC", "Zlib", "Apache-2.0 WITH LLVM-exception", "CDLA-Permissive-2.0", "BSL-1.0"]
+allow = ["MPL-2.0", "MIT", "Apache-2.0", "BSD-3-Clause", "Unicode-3.0", "ISC", "Zlib", "Apache-2.0 WITH LLVM-exception", "BSL-1.0"]
 exceptions = [
-  { crate = "i-slint-backend-testing@1.18.1", allow = ["LicenseRef-Slint-Royalty-free-2.0"] },
   # The macOS About screen displays AboutSlint under the royalty-free desktop license.
   { crate = "arrayref@0.3.9", allow = ["BSD-2-Clause"] },
   { crate = "i-slint-backend-selector@1.18.1", allow = ["LicenseRef-Slint-Royalty-free-2.0"] },
@@ -30,7 +29,6 @@ exceptions = [
   { crate = "slint-build@1.18.1", allow = ["LicenseRef-Slint-Royalty-free-2.0"] },
   { crate = "slint-macros@1.18.1", allow = ["LicenseRef-Slint-Royalty-free-2.0"] },
   { crate = "libfuzzer-sys@0.4.13", allow = ["NCSA"] },
-  { crate = "nextest-workspace-hack@0.1.0", allow = ["CC0-1.0"] },
 ]
 
 [sources]

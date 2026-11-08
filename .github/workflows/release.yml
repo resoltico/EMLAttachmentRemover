@@ -29,6 +29,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         id: cache
         with:
@@ -36,17 +38,12 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: cargo-release-cli-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml') }}
-          restore-keys: cargo-release-cli-${{ runner.os }}-${{ runner.arch }}-
+          key: cargo-test-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml') }}
+          restore-keys: cargo-test-${{ runner.os }}-${{ runner.arch }}-
       - name: Read tool versions
         id: tools
         shell: bash
-        run: |
-          for key in cargo_deny cargo_about cargo_fuzz fuzz_compiler actionlint shellcheck; do
-            value=$(awk -F '"' -v key="$key" '$1 ~ "^" key " = " {print $2}' xtask/tools.toml)
-            test -n "$value"
-            echo "$key=$value" >> "$GITHUB_OUTPUT"
-          done
+        run: cargo xtask tool-versions >> "$GITHUB_OUTPUT"
       - uses: taiki-e/install-action@b80e2bb2635f28eb98b9fce1e2f0887e1535c6b2
         with:
           tool: cargo-about@${{ steps.tools.outputs.cargo_about }}
@@ -71,6 +68,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         id: cache
         with:
@@ -78,17 +77,12 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: cargo-release-app-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml') }}
-          restore-keys: cargo-release-app-${{ runner.os }}-${{ runner.arch }}-
+          key: cargo-app-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml') }}
+          restore-keys: cargo-app-${{ runner.os }}-${{ runner.arch }}-
       - name: Read tool versions
         id: tools
         shell: bash
-        run: |
-          for key in cargo_deny cargo_about cargo_fuzz fuzz_compiler actionlint shellcheck; do
-            value=$(awk -F '"' -v key="$key" '$1 ~ "^" key " = " {print $2}' xtask/tools.toml)
-            test -n "$value"
-            echo "$key=$value" >> "$GITHUB_OUTPUT"
-          done
+        run: cargo xtask tool-versions >> "$GITHUB_OUTPUT"
       - uses: taiki-e/install-action@b80e2bb2635f28eb98b9fce1e2f0887e1535c6b2
         with:
           tool: cargo-about@${{ steps.tools.outputs.cargo_about }}
@@ -109,6 +103,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: macos-universal
@@ -147,6 +143,8 @@ jobs:
       attestations: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Extract the tagged version's changelog entry
         env:
           TAG: ${{ github.ref_name }}

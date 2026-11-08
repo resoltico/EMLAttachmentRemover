@@ -8,7 +8,7 @@ changes them.
 
 1. Harness code stays smaller than product code. `scripts/check-budget.sh` measures
    it (product: `crates/*/src`, `crates/*/ui`; harness: `xtask/`, `tests/`,
-   `crates/*/tests/`, `.github/`). CI fails when harness ≥ product.
+   `crates/*/tests/`, `scripts/`, `.github/`). CI fails when harness ≥ product.
 2. The merge gate finishes in about 20 minutes or less with a warm cache.
 3. Every gate names the property it protects and has a case it must reject
    (a negative control, regression test or guard test).
