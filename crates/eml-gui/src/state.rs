@@ -277,45 +277,6 @@ mod tests {
     }
 }
 
-/// ASCII digit runs compare without integer conversion; byte order breaks equal numeric keys.
-pub(super) fn natural_cmp(a: &std::ffi::OsStr, b: &std::ffi::OsStr) -> std::cmp::Ordering {
-    use std::{cmp::Ordering, os::unix::ffi::OsStrExt};
-    let (a, b) = (a.as_bytes(), b.as_bytes());
-    let (mut i, mut j) = (0, 0);
-    while i < a.len() && j < b.len() {
-        if a[i].is_ascii_digit() && b[j].is_ascii_digit() {
-            let (mut ae, mut be) = (i, j);
-            while ae < a.len() && a[ae].is_ascii_digit() {
-                ae += 1;
-            }
-            while be < b.len() && b[be].is_ascii_digit() {
-                be += 1;
-            }
-            while i < ae && a[i] == b'0' {
-                i += 1;
-            }
-            while j < be && b[j] == b'0' {
-                j += 1;
-            }
-            let order = (ae - i)
-                .cmp(&(be - j))
-                .then_with(|| a[i..ae].cmp(&b[j..be]));
-            if order != Ordering::Equal {
-                return order;
-            }
-            (i, j) = (ae, be);
-        } else {
-            let order = a[i].cmp(&b[j]);
-            if order != Ordering::Equal {
-                return order;
-            }
-            i += 1;
-            j += 1;
-        }
-    }
-    (a.len() - i).cmp(&(b.len() - j)).then_with(|| a.cmp(b))
-}
-
 #[derive(Default)]
 pub(super) struct ProgressEstimate {
     started: u64,

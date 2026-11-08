@@ -294,7 +294,7 @@ fn s4_s15_adds_are_refused_during_create_and_documents_start_a_new_batch_afterwa
     pump(&c, || !c.is_busy());
 }
 #[test]
-fn s5_all_receipt_statuses_and_natural_stream_order_use_native_selection() {
+fn s5_all_receipt_statuses_and_worker_stream_order_use_native_selection() {
     init_no_event_loop();
     let root = tempfile::tempdir().unwrap();
     let cases = [
@@ -316,12 +316,12 @@ fn s5_all_receipt_statuses_and_natural_stream_order_use_native_selection() {
     );
     c.stage(vec![root.path().join("input")]).unwrap();
     pump(&c, || !c.is_busy());
-    assert_eq!(c.window().get_rows().row_data(0).unwrap().name, "mail1.eml");
-    assert_eq!(c.window().get_rows().row_data(1).unwrap().name, "mail2.eml");
     assert_eq!(
-        c.window().get_rows().row_data(2).unwrap().name,
+        c.window().get_rows().row_data(0).unwrap().name,
         "mail10.eml"
     );
+    assert_eq!(c.window().get_rows().row_data(1).unwrap().name, "mail2.eml");
+    assert_eq!(c.window().get_rows().row_data(2).unwrap().name, "mail1.eml");
     c.start_selection();
     pump(&c, || !c.is_busy());
     let actual: Vec<_> = c
@@ -333,13 +333,13 @@ fn s5_all_receipt_statuses_and_natural_stream_order_use_native_selection() {
     assert_eq!(
         actual,
         vec![
-            "Copied as is",
+            "Copy saved",
             "Copy already exists",
+            "Copied as is",
             "Saved, needs checking",
             "Saved, needs checking",
             "Result unknown",
-            "Not a valid email",
-            "Copy saved"
+            "Not a valid email"
         ]
     );
 }
@@ -899,7 +899,7 @@ fn s5_streamed_insertion_retains_native_selection_and_the_visible_selected_row()
     let before = label(&ui, "mail29.eml, Ready").absolute_position().y;
     fs::write(root.path().join("insert"), b"go").unwrap();
     pump(&c, || ui.get_rows().row_count() == 21);
-    assert_eq!(ui.get_rows().row_data(0).unwrap().name, "mail2.eml");
+    assert_eq!(ui.get_rows().row_data(20).unwrap().name, "mail2.eml");
     assert_eq!(ui.get_rows().iter().find(|r| r.selected).unwrap().key, key);
     mock_elapsed_time(Duration::from_millis(1));
     let after = label(&ui, "mail29.eml, Ready").absolute_position().y;
@@ -969,11 +969,11 @@ fn s5_missing_unprocessed_waiting_and_preview_statuses_are_distinct() {
     pump(&c, || !c.is_busy());
     assert_eq!(
         c.window().get_rows().row_data(0).unwrap().status,
-        "Copy exists, will verify"
+        "No attachments"
     );
     assert_eq!(
         c.window().get_rows().row_data(1).unwrap().status,
-        "No attachments"
+        "Copy exists, will verify"
     );
     assert!(!c.window().get_view().can_filter);
 }
@@ -1962,4 +1962,93 @@ fn u12_destination_popup_tracks_control_at_all_widths() {
         label(&ui, "Next to originals")
             .mock_single_click(slint::platform::PointerEventButton::Left);
     }
+}
+
+#[test]
+fn u11_create_results_follow_displayed_worker_index_order() {
+    use base64::Engine;
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let names = ["mail10.eml", "mail2.eml", "mail1.eml"];
+    let check = check_stream(root.path(), &names);
+    let held = |names: &[&str]| {
+        let records = stream(
+            root.path(),
+            &names
+                .iter()
+                .map(|n| (*n, "created-attachment"))
+                .collect::<Vec<_>>(),
+            false,
+        );
+        let lines: Vec<_> = records.lines().collect();
+        print(&(lines[..2].join("\n") + "\n"))
+            + "while [ ! -f first ]; do :; done\n"
+            + &print(&(lines[2].to_owned() + "\n"))
+            + "while [ ! -f second ]; do :; done\n"
+            + &emit(&(lines[3..].join("\n") + "\n"))
+    };
+    let encoded: Vec<_> = names
+        .iter()
+        .map(|n| {
+            base64::engine::general_purpose::STANDARD
+                .encode(root.path().join(n).as_os_str().as_encoded_bytes())
+        })
+        .collect();
+    let cli = script(
+        root.path(),
+        &format!(
+            "request=$(cat)\ncase \"$request\" in *'\"dry_run\":true'*) {};; *) case \"$request\" in *{}*{}*{}*) {};; *) {};; esac;; esac",
+            emit(&check),
+            quote(&encoded[0]),
+            quote(&encoded[1]),
+            quote(&encoded[2]),
+            held(&names),
+            held(&[names[2], names[1], names[0]])
+        ),
+    );
+    let c = controller(root.path(), cli);
+    c.stage(names.iter().map(|n| root.path().join(n)).collect())
+        .unwrap();
+    pump(&c, || !c.is_busy());
+    let before: Vec<_> = c
+        .window()
+        .get_rows()
+        .iter()
+        .map(|r| r.name.to_string())
+        .collect();
+    assert_eq!(before, names);
+    c.start_selection();
+    pump(&c, || {
+        c.window()
+            .get_rows()
+            .iter()
+            .any(|r| r.status == "Copy saved")
+    });
+    let first = c
+        .window()
+        .get_rows()
+        .iter()
+        .find(|r| r.name == before[0])
+        .unwrap()
+        .status;
+    fs::write(root.path().join("first"), "").unwrap();
+    pump(&c, || {
+        c.window()
+            .get_rows()
+            .iter()
+            .filter(|r| r.status == "Copy saved")
+            .count()
+            == 2
+    });
+    let second = c
+        .window()
+        .get_rows()
+        .iter()
+        .find(|r| r.name == before[1])
+        .unwrap()
+        .status;
+    fs::write(root.path().join("second"), "").unwrap();
+    pump(&c, || !c.is_busy());
+    assert_eq!(first, "Copy saved");
+    assert_eq!(second, "Copy saved");
 }
