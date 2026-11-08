@@ -679,3 +679,67 @@ fn root_admission_agrees_across_create_check_and_request_without_touching_existi
         }
     }
 }
+
+#[test]
+fn u3_plain_outcomes_and_diagnostics_preserve_process_exit_contract() {
+    let root = root();
+    fs::write(root.path().join("one.eml"), INPUT).unwrap();
+    fs::write(
+        root.path().join("plain.eml"),
+        b"Subject: Plain\r\n\r\nBody\r\n",
+    )
+    .unwrap();
+    fs::write(root.path().join("empty.eml"), b"").unwrap();
+    fs::write(root.path().join("garbage.eml"), b"garbage").unwrap();
+    fs::write(root.path().join("notes.txt"), b"not an email").unwrap();
+    for (args, code, labels) in [
+        (
+            vec!["--dry-run", "--", "one.eml", "plain.eml"],
+            0,
+            vec!["Ready", "No attachments"],
+        ),
+        (
+            vec!["--", "one.eml", "plain.eml"],
+            0,
+            vec!["Copy saved", "Copied as is"],
+        ),
+        (
+            vec!["--", "one.eml", "plain.eml"],
+            0,
+            vec!["Copy already exists"],
+        ),
+        (
+            vec!["--dry-run", "--", "empty.eml", "garbage.eml", "notes.txt"],
+            1,
+            vec!["Not a valid email"],
+        ),
+        (vec!["--", "missing.eml"], 1, vec!["Can’t be read"]),
+    ] {
+        let output = invoke(root.path(), &args, None);
+        assert_eq!(output.status.code(), Some(code));
+        let text = String::from_utf8(output.stdout).unwrap();
+        for label in labels {
+            assert!(text.contains(label), "{text}");
+        }
+        for forbidden in [
+            "Known items",
+            "Prepared only",
+            "No new copy published",
+            "[0]",
+            "INPUT_ADMISSION_FAILED",
+        ] {
+            assert!(!text.contains(forbidden), "{text}");
+        }
+        if text.contains("[MALFORMED") {
+            assert!(
+                text.find("This file isn't a valid email.").unwrap()
+                    < text.find("[MALFORMED").unwrap(),
+                "{text}"
+            );
+            assert!(text.contains("It may be empty or not an email at all"));
+        }
+        assert!(text.contains(&format!("Exit {code}")));
+        assert!(text.contains("can’t be copied"));
+        assert!(text.contains("not processed"));
+    }
+}
