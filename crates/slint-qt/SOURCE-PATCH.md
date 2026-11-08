@@ -36,6 +36,18 @@ Local changes:
    disabled by `SLINT_NO_QT`, or built for WebAssembly. It cannot silently
    produce a nonfunctional native desktop backend.
 
+4. The native accessibility bridge maps Slint's enabled, selectable, selected
+   and visibility facts into Qt state flags and observes their changes. Static
+   text is not advertised as focusable; interactive roles retain focusability.
+   State notifications carry only actual changed flags. Declared live-label
+   changes keep NameChanged events and emit Qt announcements with the declared
+   politeness, excluding hidden, empty and unchanged text. Existing checked,
+   expandable, expanded, read-only and focus state meanings are retained.
+
+Tests in `qt_accessible.rs` exercise the production pure Qt state mapping,
+state-change masks and announcement conditions without an OS accessibility
+service. Native AT-SPI tests remain external field evidence.
+
 Tests in `file_transfer.rs` exercise URL rejection, empty transfer results,
 non-UTF8 bytes and newline filenames. The Qt conversion test includes the old
 lossy conversion as a negative control. The Linux `cargo xtask ci` profile explicitly runs these library tests together

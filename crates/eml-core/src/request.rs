@@ -159,7 +159,7 @@ impl RunRequest {
 }
 
 fn validate_path(path: &Path, location: RequestPath) -> Result<usize, RequestPathError> {
-    path_limits(path).map_err(|violation| RequestPathError::InvalidPath {
+    validate_native_path(path).map_err(|violation| RequestPathError::InvalidPath {
         path: location,
         violation,
     })
@@ -175,7 +175,11 @@ pub(crate) fn native_bytes(path: &Path) -> usize {
         path.as_os_str().encode_wide().count() * 2
     }
 }
-pub(crate) fn path_limits(path: &Path) -> Result<usize, PathViolation> {
+/// Validate a native path's NUL, unit and raw-component bounds without I/O.
+///
+/// Returns its charged native byte count. Relative and empty paths are allowed;
+/// callers enforce location-specific requirements such as absolute folders.
+pub fn validate_native_path(path: &Path) -> Result<usize, PathViolation> {
     #[cfg(unix)]
     let (units, prefix_units, bytes_per_unit) = {
         use std::os::unix::ffi::OsStrExt;

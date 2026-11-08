@@ -33,6 +33,11 @@ const CHECKABLE: u32 = VALUE_STEP + 1;
 const EXPANDABLE: u32 = CHECKABLE + 1;
 const EXPANDED: u32 = EXPANDABLE + 1;
 const READ_ONLY: u32 = EXPANDED + 1;
+const ENABLED: u32 = READ_ONLY + 1;
+const ITEM_SELECTABLE: u32 = ENABLED + 1;
+const ITEM_SELECTED: u32 = ITEM_SELECTABLE + 1;
+const VISIBLE: u32 = ITEM_SELECTED + 1;
+const LIVE_REGION: u32 = VISIBLE + 1;
 
 pub struct AccessibleItemPropertiesTracker {
     obj: *mut c_void,
@@ -52,10 +57,7 @@ impl PropertyDirtyHandler for AccessibleItemPropertiesTracker {
                     data.arm_state_tracker();
                 });
 
-                QAccessible::State s = {};
-                s.checked = true; // Mark checked as changed!
-                auto event = QAccessibleStateChangeEvent(obj, s);
-                QAccessible::updateAccessibility(&event);
+                accessible_item->sendStateChangeEvent();
             });
         });
     }
@@ -104,8 +106,7 @@ impl PropertyDirtyHandler for LabelPropertyTracker {
                     data.arm_label_tracker();
                 });
 
-                auto event = QAccessibleEvent(obj, QAccessible::NameChanged);
-                QAccessible::updateAccessibility(&event);
+                accessible_item->sendNameChangeEvent();
             });
         });
     }
@@ -209,6 +210,10 @@ impl SlintAccessibleItemData {
         let p = self.project_ref();
         p.state_tracker.evaluate_as_dependency_root(move || {
             if let Some(item_rc) = item.upgrade() {
+                item_rc.accessible_string_property(AccessibleStringProperty::Enabled);
+                item_rc.accessible_string_property(AccessibleStringProperty::ItemSelectable);
+                item_rc.accessible_string_property(AccessibleStringProperty::ItemSelected);
+                item_rc.is_visible();
                 item_rc.accessible_string_property(AccessibleStringProperty::Checkable);
                 item_rc.accessible_string_property(AccessibleStringProperty::Checked);
                 item_rc.accessible_string_property(AccessibleStringProperty::Expandable);
@@ -238,6 +243,8 @@ impl SlintAccessibleItemData {
         p.label_tracker.evaluate_as_dependency_root(move || {
             if let Some(item_rc) = item.upgrade() {
                 item_rc.accessible_string_property(AccessibleStringProperty::Label);
+                item_rc.accessible_string_property(AccessibleStringProperty::LiveRegion);
+                item_rc.is_visible();
             }
         });
     }
@@ -279,6 +286,60 @@ cpp! {{
     const uint32_t EXPANDABLE { CHECKABLE + 1 };
     const uint32_t EXPANDED { EXPANDABLE + 1 };
     const uint32_t READ_ONLY { EXPANDED + 1 };
+    const uint32_t ENABLED { READ_ONLY + 1 };
+    const uint32_t ITEM_SELECTABLE { ENABLED + 1 };
+    const uint32_t ITEM_SELECTED { ITEM_SELECTABLE + 1 };
+    const uint32_t VISIBLE { ITEM_SELECTED + 1 };
+    const uint32_t LIVE_REGION { VISIBLE + 1 };
+
+    // Pure native adapter mappings, also exercised without an OS accessibility service.
+    static QAccessible::State slint_item_state(QAccessible::Role role, bool focused,
+        bool enabled, bool visible, bool checkable, bool checked,
+        bool expandable, bool expanded, bool readOnly, bool selectable, bool selected) {
+        QAccessible::State state;
+        state.active = true;
+        state.disabled = !enabled;
+        state.invisible = !visible;
+        state.focusable = role == QAccessible::Button || role == QAccessible::CheckBox
+            || role == QAccessible::ComboBox || role == QAccessible::ListItem
+            || role == QAccessible::EditableText || role == QAccessible::Slider
+            || role == QAccessible::SpinBox || role == QAccessible::PageTab
+            || role == QAccessible::RadioButton;
+        state.focused = focused;
+        state.checkable = checkable;
+        state.checked = checked;
+        state.expandable = expandable;
+        state.expanded = expandable && expanded;
+        state.collapsed = expandable && !expanded;
+        state.readOnly = readOnly;
+        state.selectable = selectable;
+        state.selected = selectable && selected;
+        return state;
+    }
+
+    static QAccessible::State slint_changed_item_states(const QAccessible::State &before,
+        const QAccessible::State &after) {
+        QAccessible::State changed;
+        changed.disabled = before.disabled != after.disabled;
+        changed.invisible = before.invisible != after.invisible;
+        changed.focusable = before.focusable != after.focusable;
+        changed.focused = before.focused != after.focused;
+        changed.checkable = before.checkable != after.checkable;
+        changed.checked = before.checked != after.checked;
+        changed.expandable = before.expandable != after.expandable;
+        changed.expanded = before.expanded != after.expanded;
+        changed.collapsed = before.collapsed != after.collapsed;
+        changed.readOnly = before.readOnly != after.readOnly;
+        changed.selectable = before.selectable != after.selectable;
+        changed.selected = before.selected != after.selected;
+        return changed;
+    }
+
+    static int slint_announcement_kind(const QString &live, bool visible,
+        const QString &before, const QString &after) {
+        if (!visible || after.isEmpty() || before == after) return 0;
+        return live == "polite" ? 1 : live == "assertive" ? 2 : 0;
+    }
 
     // ------------------------------------------------------------------------------
     // Helper:
@@ -406,6 +467,12 @@ cpp! {{
                     EXPANDABLE => item.accessible_string_property(AccessibleStringProperty::Expandable),
                     EXPANDED => item.accessible_string_property(AccessibleStringProperty::Expanded),
                     READ_ONLY => item.accessible_string_property(AccessibleStringProperty::ReadOnly),
+                    ENABLED => Some(item.accessible_string_property(AccessibleStringProperty::Enabled)
+                        .unwrap_or_else(|| "true".into())),
+                    ITEM_SELECTABLE => item.accessible_string_property(AccessibleStringProperty::ItemSelectable),
+                    ITEM_SELECTED => item.accessible_string_property(AccessibleStringProperty::ItemSelected),
+                    VISIBLE => Some(if item.is_visible() { "true".into() } else { "false".into() }),
+                    LIVE_REGION => item.accessible_string_property(AccessibleStringProperty::LiveRegion),
                     _ => None,
                 };
                 if let Some(string) = string {
@@ -605,6 +672,8 @@ cpp! {{
                         let data = SlintAccessibleItemData::new_pin_box(obj, item);
                         unsafe { Box::into_raw(Pin::into_inner_unchecked(data)) }
             });
+            m_last_state = state();
+            m_last_label = text(QAccessible::Name);
         }
 
         QAccessibleActionInterface *actionInterface() { return this; }
@@ -661,24 +730,42 @@ cpp! {{
         }
 
         QAccessible::State state() const override {
-            auto checked = item_string_property(m_data, CHECKED);
+            return slint_item_state(role(), has_focus_delegation,
+                item_string_property(m_data, ENABLED) == "true",
+                item_string_property(m_data, VISIBLE) == "true",
+                item_string_property(m_data, CHECKABLE) == "true",
+                item_string_property(m_data, CHECKED) == "true",
+                item_string_property(m_data, EXPANDABLE) == "true",
+                item_string_property(m_data, EXPANDED) == "true",
+                item_string_property(m_data, READ_ONLY) == "true",
+                item_string_property(m_data, ITEM_SELECTABLE) == "true",
+                item_string_property(m_data, ITEM_SELECTED) == "true");
+        }
 
-            QAccessible::State state;
-            state.active = 1;
-            state.focusable = 1;
-            state.focused = has_focus_delegation;
-            state.checked = (checked == "true") ? 1 : 0;
-            state.checkable = (item_string_property(m_data, CHECKABLE) == "true") ? 1 : 0;
-            if (item_string_property(m_data, EXPANDABLE) == "true") {
-                state.expandable = 1;
-                if (item_string_property(m_data, EXPANDED) == "true") {
-                    state.expanded = 1;
-                } else {
-                    state.collapsed = 1;
-                }
+        void sendStateChangeEvent() {
+            const auto current = state();
+            const auto changed = slint_changed_item_states(m_last_state, current);
+            m_last_state = current;
+            if (changed == QAccessible::State()) return;
+            auto event = QAccessibleStateChangeEvent(m_object, changed);
+            QAccessible::updateAccessibility(&event);
+        }
+
+        void sendNameChangeEvent() {
+            const auto current = text(QAccessible::Name);
+            if (current == m_last_label) return;
+            const auto announcement = slint_announcement_kind(
+                item_string_property(m_data, LIVE_REGION),
+                item_string_property(m_data, VISIBLE) == "true", m_last_label, current);
+            m_last_label = current;
+            auto event = QAccessibleEvent(m_object, QAccessible::NameChanged);
+            QAccessible::updateAccessibility(&event);
+            if (announcement != 0) {
+                auto event = QAccessibleAnnouncementEvent(m_object, current);
+                event.setPoliteness(announcement == 2 ? QAccessible::AnnouncementPoliteness::Assertive
+                    : QAccessible::AnnouncementPoliteness::Polite);
+                QAccessible::updateAccessibility(&event);
             }
-            state.readOnly = (item_string_property(m_data, READ_ONLY) == "true") ? 1 : 0;
-            return state; /* FIXME */
         }
 
         void *interface_cast(QAccessible::InterfaceType t) override {
@@ -788,6 +875,8 @@ cpp! {{
     private:
         QObject *m_object = nullptr;
         mutable void *m_data = nullptr;
+        QAccessible::State m_last_state;
+        QString m_last_label;
     };
 
     // ------------------------------------------------------------------------------
@@ -937,3 +1026,51 @@ cpp! {{
                                  const_cast<Slint_accessible *>(this));
     }
 }}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn native_state_mapping_preserves_declared_capabilities_and_changes() {
+        let correct = cpp!(unsafe [] -> bool as "bool" {
+            const auto label = slint_item_state(QAccessible::StaticText, false,
+                true, true, false, false, false, false, false, false, false);
+            const auto disabled = slint_item_state(QAccessible::Button, false,
+                false, true, false, false, false, false, false, false, false);
+            const auto selected = slint_item_state(QAccessible::ListItem, true,
+                true, true, false, false, false, false, false, true, true);
+            const auto unselectable = slint_item_state(QAccessible::ListItem, false,
+                true, true, false, false, false, false, false, false, true);
+            const auto hidden = slint_item_state(QAccessible::Button, false,
+                true, false, true, true, true, false, true, false, false);
+            const auto expanded = slint_item_state(QAccessible::Button, false,
+                true, true, true, true, true, true, true, false, false);
+            const auto changed = slint_changed_item_states(label, disabled);
+            return !label.disabled && !label.invisible && !label.focusable
+                && disabled.disabled && disabled.focusable
+                && selected.selectable && selected.selected && selected.focused
+                && !unselectable.selectable && !unselectable.selected
+                && hidden.invisible && hidden.checked && hidden.checkable
+                && hidden.expandable && hidden.collapsed && !hidden.expanded && hidden.readOnly
+                && expanded.expanded && !expanded.collapsed
+                && changed.disabled && changed.focusable && !changed.selected
+                && slint_changed_item_states(selected, selected) == QAccessible::State();
+        });
+        assert!(correct, "Qt states must preserve Slint properties, role focusability and real change masks");
+    }
+
+    #[test]
+    fn announcements_require_changed_visible_nonempty_declared_live_text() {
+        let correct = cpp!(unsafe [] -> bool as "bool" {
+            return slint_announcement_kind("polite", true, "Checking", "Ready") == 1
+                && slint_announcement_kind("assertive", true, "Checking", "Error") == 2
+                && slint_announcement_kind("off", true, "Checking", "Ready") == 0
+                && slint_announcement_kind("", true, "Checking", "Ready") == 0
+                && slint_announcement_kind("polite", false, "Checking", "Ready") == 0
+                && slint_announcement_kind("polite", true, "Ready", "Ready") == 0
+                && slint_announcement_kind("polite", true, "Ready", "") == 0;
+        });
+        assert!(correct, "Qt announcements must honor explicit liveness without hidden, duplicate or empty messages");
+    }
+}

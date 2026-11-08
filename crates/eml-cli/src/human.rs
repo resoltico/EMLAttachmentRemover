@@ -109,7 +109,7 @@ fn write_cleanup(writer: &mut impl Write, cleanup: &eml_core::CleanupReceipt) ->
             writer,
             " · {}: {}",
             fields::RESIDUAL_RESOURCE,
-            eml_protocol::TerminalPath::new(std::path::Path::new(name))
+            eml_protocol::DisplayPath::new(std::path::Path::new(name))
         )?;
     }
     writeln!(writer, "]")
@@ -188,7 +188,7 @@ fn write_item(writer: &mut impl Write, value: &eml_core::ItemEvent<'_>) -> io::R
         write!(
             writer,
             " → {}",
-            eml_protocol::TerminalPath::new(path.display)
+            eml_protocol::DisplayPath::new(path.display)
         )?;
     }
     if let Some(data) = data {
@@ -414,7 +414,7 @@ fn write_label(
         writer,
         "{:<24} {}",
         outcome.label(),
-        eml_protocol::TerminalPath::new(source)
+        eml_protocol::DisplayPath::new(source)
     )
 }
 #[cfg(test)]

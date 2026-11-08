@@ -107,7 +107,8 @@ waiting, **Quit Now** can force the worker; quitting still waits for child reapi
 and report exports. Read-only checks are cancelled automatically, without a dialog.
 The app remembers three recent save folders, the last destination and the last
 report folder. Invalid or unreadable settings silently use defaults and are
-replaced on the next successful save. About and Licenses are in the menus.
+replaced on the next successful save. Folder settings now use native encoding;
+earlier string settings reset to defaults. About and Licenses are in the menus.
 Finder Services remain unsupported. Open With uses rank Alternate, keeping the
 existing default mail application.
 

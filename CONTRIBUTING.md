@@ -67,7 +67,11 @@ portal setup or parent-export failures are shown as errors. There is no Zenity
 fallback. Accessibility uses Qt's platform integration. Missing Qt or `SLINT_NO_QT` is an error for the Linux
 native profile. On Windows, exclude `eml-app` and `eml-gui` from workspace commands
 and use `--target` with your native MSVC triple so host
-procedural macros are built independently of static-CRT target flags.
+procedural macros are built independently of static-CRT target flags. Windows CI
+copies its freshly built xtask executable to the runner's temporary directory
+before running checks: Windows cannot replace that executable while Cargo tests
+rebuild it. The native MSVC step in [CI](.github/workflows/ci.yml) uses Cargo's
+reported artifact path, including configured target directories.
 
 ## Checks
 
@@ -84,7 +88,7 @@ cargo xtask ci
 
 Obtain actionlint and shellcheck from their upstream releases or a package manager,
 using the versions in tools.toml. `cargo xtask ci` checks tool versions, formatting,
-dependency policy for the headless graph, both macOS native renderers, the Linux
+dependency policy for the headless graph, macOS native renderers alone/together, the Linux
 Qt graph and the separate fuzz lockfile, workflows, shell scripts and the
 working-tree verification budget;
 then runs Clippy and tests. On macOS it also builds the signed universal app in a

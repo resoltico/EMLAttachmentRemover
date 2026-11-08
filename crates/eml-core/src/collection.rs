@@ -3,7 +3,7 @@ use crate::fs::{BoundDirectory, EntryKind, FileSignature, Identity};
 use crate::{
     COPY_SUFFIX, ErrorCode, ErrorPhase, MAX_PATH_UNITS, OperationFailure, OutputLocation,
     RequestPathError, RunControl, RunRequest,
-    request::{native_bytes, path_limits},
+    request::{native_bytes, validate_native_path},
     selection::{SelectionError, WorkingContext, append},
 };
 use std::{
@@ -595,7 +595,7 @@ impl<'a, F: Fn(&OsStr) -> u64> Collector<'a, '_, F> {
         }
         let expression = self.expression(root);
         let display = append(expression, &suffix);
-        if path_limits(&display).is_err() {
+        if validate_native_path(&display).is_err() {
             self.limit("Discovered path exceeds native spelling bounds");
             return;
         }

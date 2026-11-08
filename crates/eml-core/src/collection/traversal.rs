@@ -100,7 +100,7 @@ impl<'a, F: Fn(&OsStr) -> u64> Collector<'a, '_, F> {
             return;
         }
         let child_suffix = append(suffix, Path::new(&name));
-        if path_limits(&append(self.expression(root), &child_suffix)).is_err() {
+        if validate_native_path(&append(self.expression(root), &child_suffix)).is_err() {
             self.limit("Discovered path exceeds native spelling bounds");
             return;
         }
