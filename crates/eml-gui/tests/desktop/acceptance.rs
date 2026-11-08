@@ -1700,6 +1700,16 @@ fn u8_selection_does_not_resize_list() {
         heights.iter().all(|h| (h - heights[0]).abs() <= 1.0),
         "list heights: {heights:?}"
     );
+    let source =
+        fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("ui/batch.slint")).unwrap();
+    let detail = source
+        .split("if root.detail.visible:")
+        .nth(1)
+        .unwrap()
+        .split("accessible-role:")
+        .next()
+        .unwrap();
+    assert!(!detail.contains("border-width:"));
 }
 
 #[test]
@@ -1875,5 +1885,81 @@ fn u4_visual_literals_and_unused_tokens_are_rejected() {
             .unwrap()
             .trim();
         assert!(all.matches(name).count() > 1, "Unused Theme token: {name}");
+    }
+}
+
+#[test]
+fn u7_secondary_commands_and_soft_selected_chip() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let c = gate(root.path());
+    let ui = c.window();
+    assert_eq!(
+        ElementHandle::find_by_element_type_name(&ui, "PrimaryButton").count(),
+        0
+    );
+    fs::write(root.path().join("release"), "").unwrap();
+    pump(&c, || !c.is_busy());
+    assert_eq!(
+        ElementHandle::find_by_element_type_name(&ui, "PrimaryButton").count(),
+        1
+    );
+    assert_eq!(
+        label(&ui, "Start Over").type_name().unwrap(),
+        "ActionButton"
+    );
+    select_first(&c);
+    assert_eq!(
+        label(&ui, "Copy Details").type_name().unwrap(),
+        "ActionButton"
+    );
+    ui.invoke_toggle_problems();
+    let controls =
+        fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("ui/controls.slint"))
+            .unwrap();
+    assert!(controls.contains("background: root.selected ? Theme.accent-soft : Theme.surface"));
+    c.start_over();
+    c.stage(vec![root.path().join("inputs")]).unwrap();
+    pump(&c, || !c.is_busy());
+    assert_eq!(
+        label(&ui, "Start Over").type_name().unwrap(),
+        "ActionButton"
+    );
+    assert_eq!(
+        ElementHandle::find_by_element_type_name(&ui, "PrimaryButton").count(),
+        1
+    );
+}
+
+#[test]
+fn u12_destination_popup_tracks_control_at_all_widths() {
+    use i_slint_core::window::{PopupWindowLocation, WindowInner};
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let check = check_stream(root.path(), &["one.eml"]);
+    let c = controller(root.path(), dual(root.path(), &check, ""));
+    c.stage(vec![root.path().join("inputs")]).unwrap();
+    pump(&c, || !c.is_busy());
+    let ui = c.window();
+    for width in [760.0, 1080.0, 1920.0] {
+        ui.window().set_size(slint::LogicalSize::new(width, 700.0));
+        mock_elapsed_time(Duration::from_millis(1));
+        let button = label(&ui, "Next to originals ▾");
+        let x = button.absolute_position().x;
+        button.mock_single_click(slint::platform::PointerEventButton::Left);
+        mock_elapsed_time(Duration::from_millis(1));
+        let inner = WindowInner::from_pub(ui.window());
+        let popups = inner.active_popups();
+        let PopupWindowLocation::ChildWindow(position) = &popups.last().unwrap().location else {
+            panic!("Testing popup must be in the window");
+        };
+        assert!(
+            (position.x - x).abs() <= 1.0,
+            "width {width}: popup x={}, button x={x}",
+            position.x
+        );
+        drop(popups);
+        label(&ui, "Next to originals")
+            .mock_single_click(slint::platform::PointerEventButton::Left);
     }
 }
