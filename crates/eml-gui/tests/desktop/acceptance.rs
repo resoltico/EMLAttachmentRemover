@@ -566,7 +566,7 @@ fn inside(element: &ElementHandle, width: f32, height: f32) {
     );
 }
 // The contract is two complete rows in the clipping viewport, not a skin's frame height.
-fn assert_two_complete_rows(ui: &MainWindow, font: f32) -> ElementHandle {
+fn assert_two_complete_rows(ui: &MainWindow) -> ElementHandle {
     let list = ElementHandle::find_by_accessible_label(ui, "Emails")
         .find(|element| {
             element.accessible_role() == Some(i_slint_backend_testing::AccessibleRole::List)
@@ -607,7 +607,7 @@ fn assert_two_complete_rows(ui: &MainWindow, font: f32) -> ElementHandle {
         complete.len() >= 2,
         "Two complete rows must fit: viewport={origin:?} {size:?}, rows={rows:?}"
     );
-    let expected_height = 44.0_f32.max(font * 2.0 + 12.0);
+    let expected_height = 44.0;
     for (_, row_size) in &complete {
         assert!(
             (row_size.height - expected_height).abs() <= 0.1,
@@ -668,8 +668,7 @@ fn s13_geometry_retains_two_rows_and_visible_actions_at_minimum_and_fullscreen()
     );
     assert_eq!(ui.get_detail().parts.row_count(), 40);
     for (width, height) in [(760.0, 520.0), (2560.0, 1440.0)] {
-        for font in [13.0, 18.0] {
-            ui.set_ui_size(font);
+        {
             ui.window().set_size(slint::LogicalSize::new(width, height));
             mock_elapsed_time(Duration::from_millis(1));
             for text in [
@@ -681,7 +680,7 @@ fn s13_geometry_retains_two_rows_and_visible_actions_at_minimum_and_fullscreen()
             ] {
                 inside(&label(&ui, text), width, height);
             }
-            let list = assert_two_complete_rows(&ui, font);
+            let list = assert_two_complete_rows(&ui);
             assert!(list.size().width <= 980.1);
             assert!(
                 label(&ui, "Email details").size().height <= height * 0.4 + 0.1,
@@ -1331,7 +1330,7 @@ fn s13_banner_and_long_notice_leave_two_rows_and_detail_actions_visible() {
     c.start_selection();
     pump(&c, || !c.is_busy());
     let ui = c.window();
-    ui.set_ui_size(18.0);
+
     ui.window().set_size(slint::LogicalSize::new(760.0, 520.0));
     select_first(&c);
     c.message(&format!(
@@ -1348,7 +1347,7 @@ fn s13_banner_and_long_notice_leave_two_rows_and_detail_actions_visible() {
     ] {
         inside(&label(&ui, text), 760.0, 520.0);
     }
-    assert_two_complete_rows(&ui, 18.0);
+    assert_two_complete_rows(&ui);
 }
 
 #[test]
@@ -1441,13 +1440,13 @@ fn t3_deep_folder_keeps_its_end_and_full_accessible_label() {
 #[test]
 fn t5_detail_header_columns_and_footer_share_one_left_edge() {
     init_no_event_loop();
-    for font in [13.0, 18.0] {
+    {
         let root = tempfile::tempdir().unwrap();
         let check = check_stream(root.path(), &["one.eml", "two.eml", "three.eml"]);
         let create = stream(root.path(), &[("one.eml", "created-attachment")], false);
         let c = controller(root.path(), dual(root.path(), &check, &create));
         let ui = c.window();
-        ui.set_ui_size(font);
+
         ui.window().set_size(slint::LogicalSize::new(760.0, 520.0));
         c.stage(vec![root.path().join("inputs")]).unwrap();
         pump(&c, || !c.is_busy());
@@ -1814,4 +1813,50 @@ fn u9_unnamed_inline_image_is_named_by_kind() {
     );
     assert!(!labels(&c.window()).iter().any(|s| s.contains("image/png")));
     assert!(c.clipboard_text().unwrap().contains("image/png"));
+}
+
+#[test]
+fn u4_visual_literals_and_unused_tokens_are_rejected() {
+    let directory = Path::new(env!("CARGO_MANIFEST_DIR")).join("ui");
+    let mut all = String::new();
+    let theme = fs::read_to_string(directory.join("theme.slint")).unwrap();
+    for entry in fs::read_dir(directory).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().is_none_or(|e| e != "slint") {
+            continue;
+        }
+        let source = fs::read_to_string(&path).unwrap();
+        assert!(!source.contains(concat!("ui", "-size")));
+        if path.file_name().unwrap() != "theme.slint" {
+            for line in source.lines() {
+                for property in ["font-size:", "border-radius:"] {
+                    if let Some((_, value)) = line.split_once(property) {
+                        assert!(
+                            !value.trim_start().starts_with(|c: char| c.is_ascii_digit()),
+                            "Visual literal: {line}"
+                        );
+                    }
+                }
+                assert!(
+                    !line
+                        .as_bytes()
+                        .windows(7)
+                        .any(|w| w[0] == b'#' && w[1..].iter().all(u8::is_ascii_hexdigit)),
+                    "Colour literal: {line}"
+                );
+            }
+        }
+        all.push_str(&source);
+    }
+    for line in theme.lines().filter(|l| l.contains("out property")) {
+        let name = line
+            .split('>')
+            .nth(1)
+            .unwrap()
+            .split(':')
+            .next()
+            .unwrap()
+            .trim();
+        assert!(all.matches(name).count() > 1, "Unused Theme token: {name}");
+    }
 }
