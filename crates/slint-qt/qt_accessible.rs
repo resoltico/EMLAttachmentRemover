@@ -587,7 +587,7 @@ cpp! {{
             has_focus_delegation = false;
 
             for (int i = 0; i < rawChildCount(); ++i) {
-                static_cast<Slint_accessible *>(child(i))->clearFocus();
+                if (auto current = dynamic_cast<Slint_accessible *>(child(i))) current->clearFocus();
             }
         }
 
@@ -848,7 +848,7 @@ cpp! {{
         }
 
         QAccessible::State state() const override {
-            auto result = slint_item_state(role(), has_focus_delegation,
+            auto result = slint_item_state(role(), has_focus_delegation && qwidget()->isVisible() && qwidget()->hasFocus(),
                 item_string_property(m_data, ENABLED) == "true",
                 isVisibleToAccessibility(),
                 item_string_property(m_data, CHECKABLE) == "true",

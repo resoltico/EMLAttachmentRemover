@@ -45,6 +45,9 @@ Local changes:
    Valid enabled focusable items expose Qt's focus action, forwarding to the
    same selection-preserving Slint focus path used by the Winit bridge.
    Focus is appended after existing activation actions, preserving default Press.
+   Logical focus changes clear old accessible focus even when the new target is
+   not accessible; a child is focused only while its native widget is visible
+   and actually holds keyboard focus.
    State notifications carry only actual changed flags. Declared live-label
    changes keep NameChanged events and emit Qt announcements with the declared
    politeness, excluding hidden, empty and unchanged text. The initial tree
@@ -81,6 +84,10 @@ Local changes:
    recurses through overflow descendants and intersects actual ancestor clips.
    Nodes removed from the current tree are detached before deferred QObject
    deletion; queued callbacks and actions cannot reuse retired nodes.
+   This project's Linux Popup/Menu factory returns no separate native adapter,
+   selecting Slint's existing embedded path. Its used popup anchors fit inside
+   their parent; tooltip handling and other platforms retain the upstream path.
+   This is a project-scoped backend choice, not a general Qt popup policy.
 
 Tests in `qt_accessible.rs` exercise the production pure Qt state mapping,
 state-change masks and announcement conditions; text helper tests cover independent
