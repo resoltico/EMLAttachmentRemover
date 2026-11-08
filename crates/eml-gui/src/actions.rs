@@ -28,37 +28,21 @@ impl DesktopController {
             return false;
         }
         let r = self.runtime.borrow();
-        !r.batch.inputs.is_empty()
-            && matches!(
-                r.batch.state(),
-                State::Checking | State::Ready | State::Stopped
-            )
-            && (r.batch.state() == State::Checking
-                || present::rows(&r.batch).is_some_and(|rows| {
-                    rows.iter()
-                        .any(|row| row.status.severity() != eml_core::vocabulary::Severity::Failure)
-                }))
-            && !r
+        if r.batch.inputs.is_empty() {
+            return false;
+        }
+        match r.batch.state() {
+            // A stopped request is repeatable even before any preview/item exists.
+            State::Checking | State::Stopped => true,
+            State::Ready => r
                 .batch
                 .check
                 .as_ref()
-                .filter(|s| s.settled())
-                .and_then(|s| s.report.as_ref())
-                .and_then(|h| {
-                    h.with_report(|report| {
-                        report
-                            .summary()
-                            .and_then(|s| s.run_error.value())
-                            .is_some_and(|e| {
-                                matches!(
-                                    e.code.as_str(),
-                                    "NO_INPUTS" | "INPUT_LIMIT_EXCEEDED" | "OUTPUT_OVERLAP"
-                                ) || (e.code == "INPUT_ADMISSION_FAILED"
-                                    && report.items().is_empty())
-                            })
-                    })
-                })
-                .unwrap_or(false)
+                .and_then(|slot| slot.report.as_ref())
+                .and_then(|handle| handle.with_report(eml_app::RunReport::can_offer_copy))
+                .unwrap_or(false),
+            State::Empty | State::Removing | State::Done => false,
+        }
     }
     pub(super) fn can_stop(&self) -> bool {
         !self.locked()

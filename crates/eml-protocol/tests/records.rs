@@ -52,8 +52,13 @@ fn every_known_field_is_required_across_all_scenarios_including_present_nullable
         {
             scenarios += 1;
             for line in std::fs::read_to_string(path).unwrap().lines() {
-                decode_record(line.as_bytes()).unwrap();
-                let record = serde_json::from_str(line).unwrap();
+                let decoded = decode_record(line.as_bytes()).unwrap();
+                let record: serde_json::Value = serde_json::from_str(line).unwrap();
+                assert_eq!(
+                    serde_json::to_value(decoded).unwrap(),
+                    record,
+                    "Known wire values changed"
+                );
                 visit(&record, "", &record);
             }
         }

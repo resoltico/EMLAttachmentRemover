@@ -233,7 +233,7 @@ pub(super) fn progress(done: usize, total: u32, remaining: Option<u64>) -> Strin
     format!("{done} of {total} done · {}", estimate(remaining))
 }
 pub(super) fn attachment(part: &eml_protocol::records::RemovedRecord) -> crate::AttachmentView {
-    let kind = eml_core::vocabulary::part_kind(part_reason(part.reason), &part.content_type);
+    let kind = eml_core::vocabulary::part_kind(part.reason, &part.content_type);
     crate::AttachmentView {
         name: attachment_name(part).into(),
         kind: kind.into(),
@@ -263,17 +263,10 @@ pub(super) const OPEN_FAILED: &str = "The native open operation did not complete
 pub(super) fn attachment_name(part: &eml_protocol::records::RemovedRecord) -> String {
     eml_protocol::DisplayText::new(eml_core::vocabulary::part_name(
         part.filename.value().map(String::as_str),
-        part_reason(part.reason),
+        part.reason,
         &part.content_type,
     ))
     .to_string()
-}
-fn part_reason(reason: eml_protocol::records::Removal) -> eml_core::RemovalReason {
-    match reason {
-        eml_protocol::records::Removal::Attachment => eml_core::RemovalReason::Attachment,
-        eml_protocol::records::Removal::RelatedResource => eml_core::RemovalReason::RelatedResource,
-        eml_protocol::records::Removal::NonBodyPart => eml_core::RemovalReason::NonBodyPart,
-    }
 }
 pub(super) const WAITING: &str = "Waiting";
 pub(super) const WAITING_DETAIL: &str = "Waiting to be copied.";

@@ -2,7 +2,7 @@
 use base64::{Engine, engine::general_purpose::STANDARD};
 use eml_core::{
     MAX_COLLECTED_ITEMS, MAX_COLLECTED_PATH_BYTES, MAX_MESSAGE_BYTES, MAX_MESSAGE_PARTS,
-    MAX_REMOVAL_ENTRIES,
+    MAX_NAMESPACE_EDGES, MAX_REMOVAL_ENTRIES,
 };
 use eml_protocol::{PROGRAM_ID, records::*};
 use serde::Serialize;
@@ -114,11 +114,11 @@ impl RunReport {
     /// requalify current identity/address. Relative or foreign-host paths refuse.
     pub fn reveal_path(&self, position: usize) -> Option<std::path::PathBuf> {
         let item = self.items.get(position)?;
-        if !usable_publication(&item.publication)
+        if !item.publication.is_qualified()
             && !item
                 .existing_observation
                 .value()
-                .is_some_and(usable_existing)
+                .is_some_and(ExistingRecord::is_qualified)
         {
             return None;
         }
@@ -126,40 +126,54 @@ impl RunReport {
     }
     /// Native intended source path, without claiming current existence or identity.
     pub fn source_path(&self, position: usize) -> Option<std::path::PathBuf> {
-        Self::native_absolute_path(&self.items.get(position)?.source)
+        self.items.get(position)?.source.native_absolute_path()
     }
     /// Native intended destination, independent of publication/reveal qualification.
     pub fn destination_path(&self, position: usize) -> Option<std::path::PathBuf> {
-        Self::native_absolute_path(self.items.get(position)?.destination.value()?)
+        self.items
+            .get(position)?
+            .destination
+            .value()?
+            .native_absolute_path()
     }
-    fn native_absolute_path(
-        path: &eml_protocol::records::ReportPathRecord,
-    ) -> Option<std::path::PathBuf> {
-        let native = &path.native;
-        let bytes = validate_native(native, MAX_COLLECTED_PATH_BYTES).ok()?;
-        #[cfg(unix)]
-        let path: std::path::PathBuf = {
-            use std::os::unix::ffi::OsStringExt;
-            if native.encoding != PathEncoding::UnixBytes {
-                return None;
-            }
-            std::ffi::OsString::from_vec(bytes).into()
-        };
-        #[cfg(windows)]
-        let path: std::path::PathBuf = {
-            use std::os::windows::ffi::OsStringExt;
-            if native.encoding != PathEncoding::WindowsUtf16Le {
-                return None;
-            }
-            let units: Vec<_> = bytes
-                .as_chunks::<2>()
-                .0
-                .iter()
-                .map(|pair| u16::from_le_bytes(*pair))
-                .collect();
-            std::ffi::OsString::from_wide(&units).into()
-        };
-        path.is_absolute().then_some(path)
+    /// Domain totals for one accepted settled report, including work without item events.
+    pub fn settled_totals(&self) -> Option<eml_core::vocabulary::BatchTotals> {
+        let summary = self.summary()?;
+        Some(eml_core::vocabulary::BatchTotals::from(
+            self.items.iter().map(|item| {
+                (
+                    Some(item.outcome()),
+                    item.removed.len(),
+                    item.source_bytes
+                        .value()
+                        .copied()
+                        .zip(item.copy_bytes.value().copied()),
+                )
+            }),
+            summary.counts.not_processed as usize,
+        ))
+    }
+    /// Advisory preview availability; core always readmits any subsequent request.
+    pub fn can_offer_copy(&self) -> bool {
+        eml_core::vocabulary::can_offer_copy(
+            self.items.iter().map(ItemRecord::outcome),
+            self.summary()
+                .and_then(|s| s.run_error.value())
+                .map(|e| e.code.as_str()),
+        )
+    }
+    /// All discovery results are accounted for only after framing and exit settlement.
+    pub fn results_cover_inventory(&self) -> bool {
+        self.finished
+            && self.failure.is_none()
+            && self.summary().is_some_and(|s| {
+                eml_core::vocabulary::results_cover_inventory(
+                    s.collection_complete,
+                    s.interrupted,
+                    s.counts.not_processed as usize,
+                    s.run_error.value().map(|e| e.code.as_str()),
+                )
+            })
     }
     /// Latch framing/reader failures without discarding accepted observations.
     pub fn invalidate(&mut self, failure: ProtocolFailure) {
@@ -296,17 +310,13 @@ impl RunReport {
         result
     }
     fn admit_path(&mut self, path: &ReportPathRecord) -> Result<(), ProtocolFailure> {
-        if self.native_operands
-            && path.native.encoding
-                != if cfg!(windows) {
-                    PathEncoding::WindowsUtf16Le
-                } else {
-                    PathEncoding::UnixBytes
-                }
-        {
+        if self.native_operands && !path.native.encoding.is_native() {
             return Err(ProtocolFailure::IncompatibleHelper);
         }
         let native = validate_native(&path.native, MAX_COLLECTED_PATH_BYTES)?;
+        if self.native_operands && path.native_absolute_path().is_none() {
+            return Err(ProtocolFailure::IncompatibleHelper);
+        }
         // Original Unix display bytes cannot be recovered from lossy text:
         // each U+FFFD might represent one bad byte or a literal three bytes.
         // Windows replacement preserves the exact original UTF16-unit count.
@@ -334,6 +344,16 @@ impl RunReport {
         self.admit_path(&item.source)?;
         if let Some(path) = item.destination.value() {
             self.admit_path(path)?;
+        }
+        if self.native_operands
+            && item
+                .publication
+                .cleanup
+                .residual_name
+                .value()
+                .is_some_and(|name| !name.encoding.is_native())
+        {
+            return Err(ProtocolFailure::IncompatibleHelper);
         }
         validate_publication(&item.publication)?;
         if let Some(existing) = item.existing_observation.value() {
@@ -377,48 +397,33 @@ impl RunReport {
                 existing.file_sync.state == Synchronization::NotAttempted
                     && existing.namespace_sync.state == Synchronization::NotAttempted
             });
+        let meaning = item
+            .outcome_facts()
+            .map(|facts| eml_core::vocabulary::classify(&facts).kind);
+        use eml_core::vocabulary::MeaningKind;
         let valid = match item.status {
             ItemStatus::Created => {
                 !dry_run
-                    && item.plan.value().is_none()
-                    && item.error.value().is_none()
                     && source.is_some()
                     && item.destination.value().is_some()
-                    && usable_publication(p)
-                    && item.existing_observation.value().is_none()
+                    && meaning == Some(MeaningKind::Created)
             }
             ItemStatus::UpToDate => {
                 !dry_run
-                    && item.plan.value().is_none()
-                    && item.error.value().is_none()
                     && source.is_some()
                     && item.destination.value().is_some()
-                    && p.state == Publication::NotPublished
+                    && meaning == Some(MeaningKind::ExistingVerified)
                     && p.file_sync.state == Synchronization::NotAttempted
                     && p.namespace_sync.state == Synchronization::NotAttempted
-                    && item
-                        .existing_observation
-                        .value()
-                        .is_some_and(usable_existing)
             }
             ItemStatus::Planned => {
                 dry_run
-                    && item.error.value().is_none()
                     && source.is_some()
                     && item.destination.value().is_some()
-                    && p.state == Publication::NotPublished
-                    && no_sync
-                    && match item.plan.value() {
-                        Some(Plan::Create) => item.existing_observation.value().is_none(),
-                        Some(Plan::VerifyExisting) => {
-                            item.existing_observation.value().is_some_and(|existing| {
-                                existing.identity.value().is_some()
-                                    && existing.bytes_equal.value() == Some(&true)
-                                    && existing.stable
-                            })
-                        }
-                        None => false,
-                    }
+                    && matches!(
+                        meaning,
+                        Some(MeaningKind::Prepared | MeaningKind::Comparison)
+                    )
             }
             ItemStatus::Failed => {
                 item.error.value().is_some()
@@ -472,11 +477,15 @@ fn validate_sync(
     state: Synchronization,
     code: Option<&i64>,
 ) -> Result<(), ProtocolFailure> {
-    if (state == Synchronization::NotAttempted) != (method == SynchronizationMethod::NotRequested)
-        || (state == Synchronization::NotAttempted && code.is_some())
-        || (state == Synchronization::Succeeded
-            && code.is_some()
-            && method != SynchronizationMethod::FsyncFullfsyncUnsupported)
+    let record = SyncRecord {
+        method,
+        state,
+        native_code: code.copied().map_or(Nullable::Null(()), Nullable::Value),
+    };
+    let receipt = record
+        .core_receipt()
+        .ok_or(ProtocolFailure::InvalidReceipt)?;
+    if state == Synchronization::Succeeded && !receipt.is_some_and(eml_core::SyncReceipt::succeeded)
     {
         Err(ProtocolFailure::InvalidReceipt)
     } else {
@@ -488,12 +497,12 @@ fn validate_file(sync: &SyncRecord) -> Result<(), ProtocolFailure> {
 }
 fn validate_namespace(sync: &NamespaceRecord) -> Result<(), ProtocolFailure> {
     validate_sync(sync.method, sync.state, sync.native_code.value())?;
-    if sync.required_edges > 513
+    if sync.required_edges > u32::from(MAX_NAMESPACE_EDGES)
         || sync.completed_edges > sync.required_edges
         || sync
             .failed_edge_index
             .value()
-            .is_some_and(|index| *index >= sync.required_edges || *index > 512)
+            .is_some_and(|index| *index >= sync.required_edges)
         || (sync.state == Synchronization::NotAttempted
             && (sync.completed_edges != 0 || sync.failed_edge_index.value().is_some()))
         || (sync.state == Synchronization::Succeeded && sync.failed_edge_index.value().is_some())
@@ -551,29 +560,6 @@ fn validate_existing(existing: &ExistingRecord) -> Result<(), ProtocolFailure> {
     validate_file(&existing.file_sync)?;
     validate_namespace(&existing.namespace_sync)
 }
-fn usable_namespace(namespace: &NamespaceRecord) -> bool {
-    namespace.state == Synchronization::Succeeded
-        && namespace.required_edges > 0
-        && namespace.required_edges == namespace.completed_edges
-        && namespace.failed_edge_index.value().is_none()
-}
-fn usable_publication(p: &PublicationRecord) -> bool {
-    p.state == Publication::Published
-        && p.candidate_identity.value().is_some()
-        && p.address == Address::Verified
-        && p.file_sync.state == Synchronization::Succeeded
-        && usable_namespace(&p.namespace_sync)
-        && matches!(p.cleanup.state, Cleanup::Complete | Cleanup::NotNeeded)
-        && p.cleanup.native_code.value().is_none()
-}
-fn usable_existing(e: &ExistingRecord) -> bool {
-    e.identity.value().is_some()
-        && e.bytes_equal.value() == Some(&true)
-        && e.stable
-        && e.address == Address::Verified
-        && e.file_sync.state == Synchronization::Succeeded
-        && usable_namespace(&e.namespace_sync)
-}
 fn validate_error(error: &ErrorRecord) -> Result<(), ProtocolFailure> {
     if error.code.is_empty()
         || error.code.len() > 128
@@ -584,6 +570,10 @@ fn validate_error(error: &ErrorRecord) -> Result<(), ProtocolFailure> {
             .is_some_and(|section| section.len() > 319)
     {
         Err(ProtocolFailure::MalformedRecord)
+    } else if eml_core::ErrorCode::from_wire_name(&error.code)
+        .is_some_and(|code| !code.allows_phase(error.phase))
+    {
+        Err(ProtocolFailure::InvalidReceipt)
     } else {
         Ok(())
     }

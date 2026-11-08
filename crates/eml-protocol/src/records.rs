@@ -112,17 +112,11 @@ record! { /// Core's publication evidence, not a frontend success Boolean.
 record! { /// Qualification of a previously existing copy.
     ExistingRecord {identity:Nullable<IdentityRecord>,bytes_equal:Nullable<bool>,stable:bool,address:Address,file_sync:SyncRecord,namespace_sync:NamespaceRecord}
 }
-vocabulary! { /// Closed operation phases; error codes remain open vocabulary.
-    ErrorPhase {Admission=>"admission",Collection=>"collection",Read=>"read",Prepare=>"prepare",Existing=>"existing",Stage=>"stage",Write=>"write",Sync=>"sync",Publish=>"publish",Address=>"address",Cleanup=>"cleanup",Delivery=>"delivery"}
-}
 record! { /// Bounded diagnostic facts without message payloads.
-    ErrorRecord {code:String,phase:ErrorPhase,detail:String,section:Nullable<String>}
-}
-vocabulary! { /// Policy reason supplied by the business library.
-    Removal {Attachment=>"attachment",RelatedResource=>"related_resource",NonBodyPart=>"non_body_part"}
+    ErrorRecord {code:String,#[serde(with="phase")] phase:eml_core::ErrorPhase,detail:String,section:Nullable<String>}
 }
 record! { /// Metadata for one removed entity; not the entity's contents.
-    RemovedRecord {section:String,content_type:String,filename:Nullable<String>,bytes:u64,reason:Removal}
+    RemovedRecord {section:String,content_type:String,filename:Nullable<String>,bytes:u64,#[serde(with="reason")] reason:eml_core::RemovalReason}
 }
 vocabulary! { /// Closed protocol item outcomes.
     ItemStatus {Created=>"created",UpToDate=>"up_to_date",Planned=>"planned",Failed=>"failed"}
@@ -158,4 +152,44 @@ pub enum EventRecord {
 /// Stateful order, receipts, aggregate bounds and exit checks belong to eml-app.
 pub fn decode_record(bytes: &[u8]) -> Result<EventRecord, serde_json::Error> {
     serde_json::from_slice(bytes)
+}
+
+// Core owns these closed domain vocabularies; JSON adaptation stays here.
+mod phase {
+    use serde::{Deserialize, Deserializer, Serializer};
+    pub(super) fn serialize<S: Serializer>(
+        value: &eml_core::ErrorPhase,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(value.as_str())
+    }
+    pub(super) fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<eml_core::ErrorPhase, D::Error> {
+        let value = String::deserialize(deserializer)?;
+        eml_core::ErrorPhase::ALL
+            .iter()
+            .copied()
+            .find(|phase| phase.as_str() == value)
+            .ok_or_else(|| serde::de::Error::custom("Unknown operation phase"))
+    }
+}
+mod reason {
+    use serde::{Deserialize, Deserializer, Serializer};
+    pub(super) fn serialize<S: Serializer>(
+        value: &eml_core::RemovalReason,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(value.as_str())
+    }
+    pub(super) fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<eml_core::RemovalReason, D::Error> {
+        let value = String::deserialize(deserializer)?;
+        eml_core::RemovalReason::ALL
+            .iter()
+            .copied()
+            .find(|reason| reason.as_str() == value)
+            .ok_or_else(|| serde::de::Error::custom("Unknown removal reason"))
+    }
 }

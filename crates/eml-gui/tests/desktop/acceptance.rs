@@ -985,6 +985,9 @@ fn s18_overlap_empty_admission_and_missing_summary_disable_or_explain_as_require
         let mut v = records("no-inputs");
         v[0]["dry_run"] = true.into();
         v[1]["run_error"]["code"] = code.into();
+        if code == "OUTPUT_OVERLAP" {
+            v[1]["run_error"]["phase"] = "admission".into();
+        }
         let text = v.iter().map(|v| format!("{v}\n")).collect::<String>();
         let cli = script(root.path(), &("cat >/dev/null\n".to_owned() + &emit(&text)));
         let c = controller(root.path(), cli);
@@ -2624,4 +2627,28 @@ fn stopped_summary_includes_core_work_without_preview_rows() {
         "{}",
         c.window().get_view().summary
     );
+}
+
+#[test]
+fn stopped_before_observations_can_continue_the_same_request() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let cli = script(
+        root.path(),
+        "request=$(cat)\nprintf '%s\\n' \"$request\" >> requests.jsonl\ncase \"$request\" in *'\"dry_run\":true'*) exit 0;; *) exit 130;; esac\n",
+    );
+    let c = controller(root.path(), cli);
+    c.stage(vec![root.path().join("inputs")]).unwrap();
+    c.start_selection();
+    pump(&c, || !c.is_busy());
+    assert_eq!(c.window().get_view().state, BatchState::Stopped);
+    assert!(c.window().get_view().can_start);
+    c.start_selection();
+    pump(&c, || !c.is_busy());
+    let created: Vec<_> = requests(root.path())
+        .into_iter()
+        .filter(|r| r["dry_run"] == false)
+        .collect();
+    assert_eq!(created.len(), 2);
+    assert_eq!(created[0], created[1]);
 }

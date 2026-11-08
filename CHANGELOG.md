@@ -5,6 +5,10 @@
 Use concise bullets without category labels or subheadings, grouping related changes and putting breaking changes and required actions first. Each bullet occupies one physical line, at most 200 characters including Markdown but excluding its `- ` marker: a ceiling, not a target. Shorten or split without losing material consequences. Use technical names when helpful; link to existing relevant documentation, without assuming paths or creating documents merely to satisfy this rule.
 ## [Unreleased]
 
+- Share receipt qualification across execution, outcome interpretation and report reading; reject inconsistent successful sync, cleanup and read-only plan claims.
+- Use core phase/removal vocabularies and capability decisions in adapters; reject known code/phase mismatches and incompatible native-worker paths. Valid protocol-1 JSON stays unchanged.
+- Keep Continue available after stopping before observations; repeat the same request with fresh core admission.
+
 - Use core’s remaining-work aggregation for CLI and stopped app summaries, including work that never produced a preview row.
 
 - Keep incomplete selection checking separate from unreadable inputs; a blocked inventory no longer appears as zero emails.

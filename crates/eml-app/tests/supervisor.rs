@@ -13,12 +13,32 @@ use std::{
     time::{Duration, Instant},
 };
 fn fixture(name: &str) -> String {
-    fs::read_to_string(
+    let text = fs::read_to_string(
         Path::new(env!("CARGO_MANIFEST_DIR"))
             .join(format!("../../tests/contract/protocol/{name}.jsonl")),
     )
     .unwrap()
-    .replace("@VERSION@", eml_core::product::VERSION)
+    .replace("@VERSION@", eml_core::product::VERSION);
+    text.lines()
+        .map(|line| {
+            let mut record: serde_json::Value = serde_json::from_str(line).unwrap();
+            if record["type"] == "item" {
+                for field in ["source", "destination"] {
+                    if let Some(native) = record[field].get_mut("native") {
+                        let value: eml_protocol::records::NativePathRecord =
+                            serde_json::from_value(native.clone()).unwrap();
+                        if let Some(relative) = value.native_path().filter(|p| !p.is_absolute()) {
+                            let absolute = Path::new("/owned-synthetic").join(relative);
+                            *native =
+                                serde_json::to_value(eml_protocol::NativePathValue::new(&absolute))
+                                    .unwrap();
+                        }
+                    }
+                }
+            }
+            format!("{record}\n")
+        })
+        .collect()
 }
 fn quoted(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))

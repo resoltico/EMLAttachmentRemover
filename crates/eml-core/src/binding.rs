@@ -111,7 +111,7 @@ impl NamespaceProgress {
     fn mirror_edge(&mut self) {
         self.0.required_edges += 2;
         assert!(
-            self.0.required_edges <= 513,
+            self.0.required_edges <= crate::MAX_NAMESPACE_EDGES,
             "admitted mirror route bounds namespace operations"
         );
     }

@@ -46,7 +46,7 @@ pub struct ExistingFacts {
     /// Actual namespace synchronization, including edge accounting.
     pub namespace_sync: crate::NamespaceObservation,
 }
-/// Facts used only for presentation; constructing these grants no I/O authority.
+/// Observed facts for interpretation and report validation; construction grants no I/O authority.
 #[derive(Clone, Debug)]
 pub struct OutcomeFacts {
     /// Producer's result category.
@@ -190,38 +190,31 @@ pub struct OutcomeMeaning {
 }
 /// Related resources verified absent from an existing matching copy.
 pub const EXISTING_RELATED_RESOURCE_NOTICE: &str = "Inline images or other related resources are absent from the matching bytes. They may appear missing in the existing copy.";
-fn synced(file: Option<crate::SyncReceipt>, namespace: crate::NamespaceObservation) -> bool {
-    file.is_some_and(crate::SyncReceipt::succeeded)
-        && namespace.required_edges > 0
-        && namespace.required_edges <= 513
-        && namespace.completed_edges == namespace.required_edges
-        && namespace.failed_edge_index.is_none()
-        && namespace.receipt.is_some_and(crate::SyncReceipt::succeeded)
-}
 /// Classify accepted display facts without granting any filesystem capability.
 pub fn classify(f: &OutcomeFacts) -> OutcomeMeaning {
     use crate::{AddressState, CleanupState, PlanAction};
-    let cleanup_ok = matches!(
-        f.cleanup.state,
-        CleanupState::NotNeeded | CleanupState::Complete
-    ) && f.cleanup.native_code.is_none()
-        && f.cleanup.residual_name.is_none();
+    let cleanup_ok = f.cleanup.succeeded();
     let existing_matches = f
         .existing
         .as_ref()
         .is_some_and(|e| e.bytes_equal == Some(true));
-    let new_qualified = f.publication == Publication::Published
-        && f.candidate_identity_known
-        && f.address == AddressState::Verified
-        && f.final_readback == Some(true)
-        && synced(f.file_sync, f.namespace_sync)
-        && cleanup_ok;
+    let new_qualified = crate::qualification::publication(
+        f.publication,
+        f.candidate_identity_known,
+        f.address,
+        f.file_sync,
+        f.namespace_sync,
+        &f.cleanup,
+    ) && f.final_readback == Some(true);
     let existing_qualified = f.existing.as_ref().is_some_and(|e| {
-        e.identity_known
-            && e.bytes_equal == Some(true)
-            && e.stable
-            && e.address == AddressState::Verified
-            && synced(e.file_sync, e.namespace_sync)
+        crate::qualification::existing(
+            e.identity_known,
+            e.bytes_equal,
+            e.stable,
+            e.address,
+            e.file_sync,
+            e.namespace_sync,
+        )
     });
     let kind = match f.result {
         ResultKind::Planned
@@ -229,12 +222,21 @@ pub fn classify(f: &OutcomeFacts) -> OutcomeMeaning {
                 && f.error.is_none()
                 && cleanup_ok
                 && f.file_sync.is_none()
-                && f.namespace_sync.receipt.is_none()
-                && f.namespace_sync.required_edges == 0 =>
+                && f.namespace_sync.is_unattempted() =>
         {
             match f.plan {
                 Some(PlanAction::Create) if f.existing.is_none() => MeaningKind::Prepared,
-                Some(PlanAction::VerifyExisting) if existing_matches => MeaningKind::Comparison,
+                Some(PlanAction::VerifyExisting)
+                    if f.existing.as_ref().is_some_and(|e| {
+                        e.identity_known
+                            && e.bytes_equal == Some(true)
+                            && e.stable
+                            && e.file_sync.is_none()
+                            && e.namespace_sync.is_unattempted()
+                    }) =>
+                {
+                    MeaningKind::Comparison
+                }
                 _ => MeaningKind::Unestablished,
             }
         }
@@ -287,7 +289,7 @@ pub fn classify(f: &OutcomeFacts) -> OutcomeMeaning {
         if f.address != AddressState::Verified {
             consequences.push(Consequence::AddressUnqualified);
         }
-        if !synced(f.file_sync, f.namespace_sync) {
+        if !crate::qualification::synchronized(f.file_sync, f.namespace_sync) {
             consequences.push(Consequence::DurabilityUnqualified);
         }
     }
@@ -347,25 +349,22 @@ impl From<&crate::ItemResult<'_>> for OutcomeFacts {
             error: None,
             related_resources: false,
         };
-        let metadata = match result {
-            ItemResult::Created(copy, data) => {
+        match result {
+            ItemResult::Created(copy, _) => {
                 facts.result = ResultKind::Created;
                 facts.set_published(copy.publication());
                 // This private success value follows the publisher's exact
                 // readback; a mere failed publication never supplies this fact.
                 facts.final_readback = Some(true);
-                Some(*data)
             }
-            ItemResult::UpToDate(copy, data) => {
+            ItemResult::UpToDate(copy, _) => {
                 facts.result = ResultKind::Existing;
                 facts.existing = Some(copy.observation().into());
-                Some(*data)
             }
             ItemResult::Planned(plan) => {
                 facts.result = ResultKind::Planned;
                 facts.plan = Some(plan.action());
                 facts.existing = plan.existing().map(Into::into);
-                Some(plan.metadata())
             }
             ItemResult::Failed(failure) => {
                 facts.error = Some(failure.error().code());
@@ -394,10 +393,9 @@ impl From<&crate::ItemResult<'_>> for OutcomeFacts {
                         facts.cleanup = copy.cleanup().clone();
                     }
                 }
-                failure.metadata()
             }
         };
-        facts.related_resources = metadata.is_some_and(|data| {
+        facts.related_resources = result.metadata().is_some_and(|data| {
             data.removed
                 .iter()
                 .any(|part| part.reason == crate::RemovalReason::RelatedResource)
@@ -593,13 +591,15 @@ mod tests {
             bytes_equal: Some(true),
             stable: true,
             address: AddressState::Verified,
-            file_sync: qualified.file_sync,
-            namespace_sync: qualified.namespace_sync,
+            file_sync: None,
+            namespace_sync: NamespaceObservation::unattempted(),
         });
         f.plan = Some(PlanAction::VerifyExisting);
         assert_eq!(classify(&f).kind, MeaningKind::Comparison);
         f.result = ResultKind::Existing;
         f.plan = None;
+        f.existing.as_mut().unwrap().file_sync = qualified.file_sync;
+        f.existing.as_mut().unwrap().namespace_sync = qualified.namespace_sync;
         assert_eq!(classify(&f).kind, MeaningKind::ExistingVerified);
         assert_eq!(classify(&f).removal_mode, RemovalMode::Absent);
         assert_eq!(
@@ -1009,4 +1009,50 @@ pub fn email_count(n: usize) -> String {
 /// Shared attachment-count noun.
 pub fn attachment_count(n: usize) -> String {
     format!("{n} {}", if n == 1 { "attachment" } else { "attachments" })
+}
+
+/// Whether settled preview observations offer a fresh copy attempt. This never
+/// authorizes execution: current inputs and destinations must always be readmitted.
+/// Error names are open vocabulary; an unknown code is not a known global blocker.
+pub fn can_offer_copy(outcomes: impl IntoIterator<Item = Outcome>, error: Option<&str>) -> bool {
+    if error
+        .and_then(crate::ErrorCode::from_wire_name)
+        .is_some_and(|code| {
+            matches!(
+                code,
+                crate::ErrorCode::NoInputs
+                    | crate::ErrorCode::InputLimitExceeded
+                    | crate::ErrorCode::OutputOverlap
+            )
+        })
+    {
+        return false;
+    }
+    outcomes.into_iter().any(|outcome| match outcome {
+        Outcome::Failed(_) => false,
+        Outcome::Ready
+        | Outcome::NothingToRemove
+        | Outcome::CopySaved
+        | Outcome::CopiedAsIs
+        | Outcome::AlreadyExists
+        | Outcome::WillVerify
+        | Outcome::NeedsChecking
+        | Outcome::Unknown
+        | Outcome::NotProcessed => true,
+    })
+}
+/// Whether settled results cover the discovered inventory. This does not prove
+/// current filesystem absence. Unknown errors must retain reporting uncertainty.
+pub fn results_cover_inventory(
+    complete: bool,
+    interrupted: bool,
+    unprocessed: usize,
+    error: Option<&str>,
+) -> bool {
+    complete
+        && !interrupted
+        && unprocessed == 0
+        && error.is_none_or(|name| {
+            crate::ErrorCode::from_wire_name(name) == Some(crate::ErrorCode::NoInputs)
+        })
 }

@@ -106,6 +106,9 @@ pub enum RemovalReason {
     NonBodyPart,
 }
 impl RemovalReason {
+    /// Exhaustive domain vocabulary; wire adapters consume the canonical names.
+    pub const ALL: &'static [Self] = &[Self::Attachment, Self::RelatedResource, Self::NonBodyPart];
+
     /// Canonical protocol-1 name; rendering does not duplicate MIME decisions.
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -113,6 +116,11 @@ impl RemovalReason {
             Self::RelatedResource => "related_resource",
             Self::NonBodyPart => "non_body_part",
         }
+    }
+}
+impl std::fmt::Display for RemovalReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
     }
 }
 /// Bounded display metadata describing one source decision, not a destination path.

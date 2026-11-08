@@ -55,6 +55,14 @@ pub struct CleanupReceipt {
     /// Native cleanup failure.
     pub native_code: Option<i64>,
 }
+impl CleanupReceipt {
+    /// Cleanup is qualified only when no resource or native failure remains.
+    pub fn succeeded(&self) -> bool {
+        matches!(self.state, CleanupState::NotNeeded | CleanupState::Complete)
+            && self.residual_name.is_none()
+            && self.native_code.is_none()
+    }
+}
 /// Cleanup is explicit; an unknown result is never success.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CleanupState {

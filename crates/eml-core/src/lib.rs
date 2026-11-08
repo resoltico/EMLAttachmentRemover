@@ -1,4 +1,4 @@
-//! Reusable immutable message preparation for EML Attachment Remover.
+//! Reusable native EML collection, preparation, execution and outcome policy.
 #![deny(unsafe_code)]
 
 #[cfg(any(unix, windows))]
@@ -21,8 +21,8 @@ pub use existing::{
 pub use outcome::{
     AddressState, Counts, CreatedCopy, DeliveryFailure, DeliveryPhase, Event, EventSink,
     ExistingCopy, ExistingObservation, ExitClass, FailureEffect, ItemEvent, ItemFailure,
-    ItemResult, MessageMetadata, NamespaceObservation, PlanAction, PlannedCopy, PublishedCopy,
-    ReportPath, RunOutcome, RunStart, UnknownPublication,
+    ItemResult, MAX_NAMESPACE_EDGES, MessageMetadata, NamespaceObservation, PlanAction,
+    PlannedCopy, PublishedCopy, ReportPath, RunOutcome, RunStart, UnknownPublication,
 };
 #[cfg(any(unix, windows))]
 pub use run::{MAX_REMOVAL_ENTRIES, dry_run, run};
@@ -64,6 +64,8 @@ pub use request::{
 pub use source::{PreparedSource, SourcePreparationError, prepare_source};
 
 pub mod product;
+/// Pure domain qualification shared by execution and report consumers.
+pub mod qualification;
 pub mod vocabulary;
 pub use eml_message::{
     MAX_MESSAGE_BYTES, MAX_MESSAGE_PARTS, PreparationError, PreparedMessage, Refusal,

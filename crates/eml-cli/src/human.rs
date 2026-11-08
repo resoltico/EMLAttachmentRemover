@@ -61,7 +61,7 @@ impl<W: Write> EventSink for HumanSink<W> {
             match event {
                 Event::Start(start) => self.checking = start.dry_run,
                 Event::Item(item) => {
-                    let data = metadata(&item.result);
+                    let data = item.result.metadata();
                     let parts = data.map_or(0, |d| d.removed.len());
                     self.items.push((
                         Outcome::from(facts.as_ref().unwrap(), parts),
@@ -90,14 +90,6 @@ fn write_error(writer: &mut impl Write, error: &eml_core::OperationFailure) -> i
         write!(writer, " ({native})")?;
     }
     writeln!(writer, "]")
-}
-fn metadata<'a>(result: &'a eml_core::ItemResult<'a>) -> Option<eml_core::MessageMetadata<'a>> {
-    use eml_core::ItemResult;
-    match result {
-        ItemResult::Created(_, data) | ItemResult::UpToDate(_, data) => Some(*data),
-        ItemResult::Planned(plan) => Some(plan.metadata()),
-        ItemResult::Failed(failure) => failure.metadata(),
-    }
 }
 fn write_cleanup(writer: &mut impl Write, cleanup: &eml_core::CleanupReceipt) -> io::Result<()> {
     if cleanup.state == eml_core::CleanupState::NotNeeded {
@@ -189,7 +181,7 @@ fn write_human(
 }
 fn write_item(writer: &mut impl Write, value: &eml_core::ItemEvent<'_>) -> io::Result<()> {
     let facts = OutcomeFacts::from(&value.result);
-    let data = metadata(&value.result);
+    let data = value.result.metadata();
     let outcome = Outcome::from(&facts, data.map_or(0, |d| d.removed.len()));
     write_label(writer, outcome, value.source.display)?;
     if let Some(path) = value.destination {
