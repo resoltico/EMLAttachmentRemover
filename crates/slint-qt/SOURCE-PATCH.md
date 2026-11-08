@@ -38,9 +38,9 @@ Local changes:
 
 Tests in `file_transfer.rs` exercise URL rejection, empty transfer results,
 non-UTF8 bytes and newline filenames. The Qt conversion test includes the old
-lossy conversion as a negative control. The Linux `cargo xtask ci` profile explicitly runs these library tests, alongside
-the application's portal boundary tests and native profile compilation with
-`raw-window-handle-06`.
+lossy conversion as a negative control. The Linux `cargo xtask ci` profile explicitly runs these library tests together
+with the application's portal boundary tests, selecting the supported native Qt
+profile with `raw-window-handle-06`.
 
 Qt's nonnative filesystem chooser was tested and shown to replace non-UTF8
 Unix bytes before returning a URL. It is deliberately not used. Native portal
