@@ -46,25 +46,18 @@ pub(crate) fn run(rust_only: bool) -> Result<()> {
             .args(exclusions),
     )?;
     if cfg!(target_os = "linux") {
-        // Native adapter tests use Slint's testing backend and pure portal responses.
+        // Select the supported workspace profile so Cargo includes its optional Qt
+        // dependency. This runs native adapter and patched-library tests together.
         command(Command::new("cargo").args([
             "test",
             "--locked",
             "-p",
             "eml-gui",
-            "--lib",
-            "--features",
-            "desktop-qt",
-            "--target",
-            &target,
-        ]))?;
-        // The scoped Qt backend patch is a dependency, outside workspace test discovery.
-        command(Command::new("cargo").args([
-            "test",
-            "--locked",
             "-p",
             "i-slint-backend-qt",
             "--lib",
+            "--features",
+            "eml-gui/desktop-qt",
             "--target",
             &target,
         ]))?;
