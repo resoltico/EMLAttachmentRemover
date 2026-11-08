@@ -99,6 +99,29 @@ fn metadata<'a>(result: &'a eml_core::ItemResult<'a>) -> Option<eml_core::Messag
         ItemResult::Failed(failure) => failure.metadata(),
     }
 }
+fn write_cleanup(writer: &mut impl Write, cleanup: &eml_core::CleanupReceipt) -> io::Result<()> {
+    if cleanup.state == eml_core::CleanupState::NotNeeded {
+        return Ok(());
+    }
+    write!(
+        writer,
+        "                 [{}: {}",
+        fields::CLEANUP,
+        eml_core::vocabulary::cleanup_label(cleanup.state)
+    )?;
+    if let Some(code) = cleanup.native_code {
+        write!(writer, " · {}: {code}", fields::NATIVE_CODE)?;
+    }
+    if let Some(name) = &cleanup.residual_name {
+        write!(
+            writer,
+            " · {}: {}",
+            fields::RESIDUAL_RESOURCE,
+            eml_protocol::TerminalPath::new(std::path::Path::new(name))
+        )?;
+    }
+    writeln!(writer, "]")
+}
 fn write_human(
     writer: &mut impl Write,
     event: &Event<'_>,
@@ -186,12 +209,32 @@ fn write_item(writer: &mut impl Write, value: &eml_core::ItemEvent<'_>) -> io::R
         )?;
     }
     writeln!(writer)?;
+    if let Some(data) = data {
+        for part in data.removed {
+            let name = eml_core::vocabulary::part_name(
+                part.filename.as_deref(),
+                part.reason,
+                &part.content_type,
+            );
+            let kind = eml_core::vocabulary::part_kind(part.reason, &part.content_type);
+            write!(
+                writer,
+                "                 {}",
+                eml_protocol::DisplayText::new(name)
+            )?;
+            if !kind.is_empty() && kind != name {
+                write!(writer, " ({kind})")?;
+            }
+            writeln!(writer, " · {}", format_bytes(part.bytes))?;
+        }
+    }
     if let eml_core::ItemResult::Failed(failure) = &value.result {
         writeln!(writer, "                 {}", outcome.explanation())?;
         write_error(writer, failure.error())?;
         for consequence in eml_core::vocabulary::classify(&facts).consequences {
             writeln!(writer, "                 {}", consequence.text())?;
         }
+        write_cleanup(writer, &facts.cleanup)?;
     }
     if let Some(notice) = eml_core::vocabulary::classify(&facts).related_notice {
         writeln!(writer, "                 {notice}")?;
@@ -385,3 +428,22 @@ fn write_label(
 #[cfg(test)]
 #[path = "../tests/support/human_labels.rs"]
 mod labels;
+
+#[cfg(test)]
+mod cleanup_tests {
+    use super::*;
+    #[test]
+    fn cleanup_diagnostics_retain_the_separate_native_cause_and_escape_residue() {
+        let receipt = eml_core::CleanupReceipt {
+            state: eml_core::CleanupState::Residual,
+            residual_name: Some(".emlattachmentremover-\u{202e}.tmp".into()),
+            native_code: Some(13),
+        };
+        let mut output = Vec::new();
+        write_cleanup(&mut output, &receipt).unwrap();
+        assert_eq!(
+            String::from_utf8(output).unwrap(),
+            "                 [Cleanup: Residual · Native code: 13 · Residual resource: .emlattachmentremover-\\u{202e}.tmp]\n"
+        );
+    }
+}

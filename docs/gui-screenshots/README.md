@@ -27,11 +27,16 @@ The capture writes lossless PPMs. Convert each to PNG with, for example,
 
 ## Native app gallery
 
-These window captures show the universal macOS app. Normal and minimum sizes
-refer to client areas; the native title bar adds to the outer frame (32 px on this macOS host). Full-size images capture a 1920×1080 native client region.
+These window captures show the current macOS desktop with freshly built debug
+executables. The archive gate separately verifies universal distribution binaries. Normal and minimum sizes
+refer to client areas; the native title bar adds to the outer frame (32 px on this macOS host). Full-size images capture the host’s available 1474×938 client region; the window manager constrains larger requests.
 
 | Window | Light | Dark |
 |---|---|---|
-| Full-size client, 1920×1080 | [JPEG](manual/full-light.jpg) | [JPEG](manual/full-dark.jpg) |
+| Full-size client, 1474×938 | [JPEG](manual/full-light.jpg) | [JPEG](manual/full-dark.jpg) |
 | Normal, 1080×700 client | [JPEG](manual/normal-light.jpg) | [JPEG](manual/normal-dark.jpg) |
 | Minimum, 760×520 client | [JPEG](manual/minimum-light.jpg) | [JPEG](manual/minimum-dark.jpg) |
+
+The selected inline-image detail includes the core warning about omitted related
+resources. Normal/minimum captures retain visible actions below the scrolling
+details. Capture appearance and application preferences were restored afterward.

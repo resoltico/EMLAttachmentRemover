@@ -253,3 +253,27 @@ fn windows_unpaired_units_prefixes_and_both_separators_are_native() {
         }
     }
 }
+
+#[test]
+fn request_path_diagnostics_explain_location_cause_and_action() {
+    assert_eq!(
+        RequestPathError::TooManyInputs.to_string(),
+        "Too many input paths. Add at most 4096 files or folders at once."
+    );
+    for (violation, expected) in [
+        (PathViolation::EmbeddedNul, "contains a NUL character"),
+        (
+            PathViolation::TooManyUnits,
+            "exceeds 32768 native path units",
+        ),
+        (
+            PathViolation::TooManyComponents,
+            "exceeds 256 path components",
+        ),
+    ] {
+        let text = rejected_path(RequestPath::Input(0), violation).to_string();
+        assert!(text.starts_with("Input path 1 "));
+        assert!(text.contains(expected));
+        assert!(!text.contains("InvalidPath"));
+    }
+}

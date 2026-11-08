@@ -51,10 +51,10 @@ impl std::fmt::Display for RequestDecodeError {
             }
             Self::UnsupportedProtocol => f.write_str("Request must use protocol 1"),
             Self::WrongEncoding { path } => {
-                write!(f, "{path:?}: native encoding differs from host")
+                write!(f, "{path}: native encoding differs from host")
             }
-            Self::InvalidBase64 { path } => write!(f, "{path:?}: invalid canonical Base64"),
-            Self::OddUtf16Bytes { path } => write!(f, "{path:?}: incomplete UTF-16LE unit"),
+            Self::InvalidBase64 { path } => write!(f, "{path}: invalid canonical Base64"),
+            Self::OddUtf16Bytes { path } => write!(f, "{path}: incomplete UTF-16LE unit"),
             Self::InvalidRequest(error) => std::fmt::Display::fmt(error, f),
         }
     }

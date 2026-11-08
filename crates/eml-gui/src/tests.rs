@@ -226,3 +226,15 @@ fn attachment_labels_name_unnamed_parts_by_kind() {
 
 #[path = "../tests/desktop/polish_state.rs"]
 mod polish_state;
+
+#[test]
+fn request_rejection_wording_preserves_the_actual_cause() {
+    let error = eml_app::RequestError::AbsoluteSelectionRequired;
+    assert_eq!(crate::wording::request_error(&error), error.to_string());
+    let error = eml_app::RequestError::InvalidRequest(eml_core::RequestPathError::InvalidPath {
+        path: eml_core::RequestPath::Input(0),
+        violation: eml_core::PathViolation::EmbeddedNul,
+    });
+    assert!(crate::wording::request_error(&error).contains("NUL"));
+    assert!(!crate::wording::request_error(&error).contains("Too many items"));
+}

@@ -779,3 +779,20 @@ fn field_human_native_failures_keep_numeric_causes() {
             .contains("(OS error 2)")
     );
 }
+
+#[test]
+fn human_preview_names_the_parts_using_shared_core_vocabulary() {
+    let root = root();
+    let input = b"Subject: Preview\r\nContent-Type: multipart/related; boundary=X\r\n\r\n--X\r\nContent-Type: text/html\r\n\r\n<p>Body</p>\r\n--X\r\nContent-Type: image/png\r\n\r\nPNG\r\n--X--\r\n";
+    fs::write(root.path().join("one.eml"), input).unwrap();
+    let result = invoke(root.path(), &["--dry-run", "--", "one.eml"], None);
+    assert_eq!(result.status.code(), Some(0));
+    let text = String::from_utf8(result.stdout).unwrap();
+    assert!(
+        text.lines()
+            .any(|l| l.trim_start().starts_with("Inline image · ")),
+        "{text}"
+    );
+    assert!(text.contains(eml_core::vocabulary::PREPARED_RELATED_RESOURCE_NOTICE));
+    assert!(!root.path().join("one.no-attachments.eml").exists());
+}

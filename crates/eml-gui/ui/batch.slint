@@ -1,6 +1,6 @@
 // Copyright 2026 Ervins Strauhmanis
 // SPDX-License-Identifier: MPL-2.0
-import { VerticalBox, HorizontalBox, ListView, ScrollView, ProgressIndicator } from "std-widgets.slint";
+import { VerticalBox, HorizontalBox, ListView, ScrollView, ProgressIndicator, TextEdit } from "std-widgets.slint";
 import { Theme } from "theme.slint";
 import { BatchState, Tone, EmailRow, EmailDetail, BatchView, AppWords } from "models.slint";
 import { ActionButton, PrimaryButton, TextButton, Label, Chip, ToneDot, UiMetrics, AttachmentChip } from "controls.slint";
@@ -19,6 +19,9 @@ export component BatchPane inherits Rectangle {
     callback add-files(); callback add-folder(); callback reset(); callback start(); callback stop();
     callback filter(); callback select(string); callback navigate(int,int); callback clear-selected();
     callback reveal-report(); callback show-copy(); callback show-original(); callback copy-details(); callback destination(); callback output();
+    private property <bool> show-diagnostics: false;
+    private property <string> diagnostics: root.view.diagnostics;
+    changed diagnostics => { root.show-diagnostics = false; }
     private property <length> column-width: min(Theme.column-max-width,root.width - Theme.space-6 * 2);
     private property <length> column-x: (root.width - self.column-width) / 2;
     private property <length> text-x: root.column-x + UiMetrics.scroll-inset + Theme.space-2;
@@ -57,6 +60,8 @@ export component BatchPane inherits Rectangle {
                     if root.view.problems != "": Chip { text: root.view.filtered ? root.words.show-all : root.view.problems; selected: root.view.filtered; clicked => { root.filter(); } }
                 }
                 if root.view.banner != "": Label { text: "⚠ " + root.view.banner; color: Theme.warn; wrap: word-wrap; }
+                if root.diagnostics != "": TextButton { text: root.show-diagnostics ? root.words.hide-details : root.words.details; expandable: true; expanded: root.show-diagnostics; clicked => { root.show-diagnostics = !root.show-diagnostics; } }
+                if root.show-diagnostics && root.diagnostics != "": TextEdit { text: root.diagnostics; read-only: true; preferred-height: 100px; max-height: 100px; accessible-label: root.words.processing-details; }
                 if root.view.notice != "": HorizontalBox { padding: 0px; spacing: Theme.space-2;
                     Label { text: root.view.notice; color: Theme.warn; overflow: elide; horizontal-stretch: 1; accessible-live-region: polite; }
                     if root.view.can-reveal-report: TextButton { text: root.words.show-report; clicked => { root.reveal-report(); } }

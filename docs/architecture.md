@@ -15,8 +15,14 @@ and human outcome vocabulary. Frontends adapt inputs and render those facts.
 
 `eml-message` has no filesystem or platform dependency. Fuzzing targets that crate;
 its independent model and verifier check retained bodies and removed parts.
-`eml_core::vocabulary` maps typed facts to human labels for both CLI and GUI.
-`eml_core::product` owns the command/display names and source-identity formatting;
+`eml_core::vocabulary` maps typed facts to human labels, explanations, simultaneous
+publication/cleanup consequences, related-resource notices, attachment names/kinds,
+size formatting and counts for both CLI and GUI. Both render those meanings;
+frontend controls and transport diagnostics retain their interface-specific owners.
+GUI details use current accepted observations, without reinterpreting a previous
+preview as a current create result. Human diagnostics keep canonical phases and
+separate cleanup resource/native causes; exact protocol-1 facts remain unchanged.
+`eml_core::product` owns the command/display names, purpose and source-identity formatting;
 the workspace manifest owns the release version. `EML_SOURCE_REVISION` optionally
 embeds a full commit ID for both frontends; About displays its first 12 characters.
 
@@ -170,3 +176,9 @@ backend and virtual time. The software renderer is the default; Skia remains an
 explicit measurement feature. Builds pin upstream crates. The small
 [spin_on source patch](../crates/spin-on/README.md) uses standard Rust pinning and
 a no-op waker to remove archived `pin-utils`; the audit policy is unchanged.
+
+The desktop exposes bounded worker stderr in an expandable, read-only processing
+detail area. A typed pre-start request refusal is distinct from an interrupted or
+incomplete copy. This diagnostic text is not parsed into business decisions and
+does not change exact JSONL report export. Request representation/resource causes
+retain core's actionable wording rather than becoming a generic item-count error.
