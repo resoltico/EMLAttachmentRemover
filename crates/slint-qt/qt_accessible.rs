@@ -67,7 +67,7 @@ impl PropertyDirtyHandler for AccessibleItemPropertiesTracker {
                 auto accessible_item = live_accessible_item(obj);
                 if (!accessible_item) return;
                 auto data = accessible_item->data();
-                rust!(AccessibleItemPropertiesTracker_rearm [data: Pin<&SlintAccessibleItemData> as "void*"] {
+                rust!(AccessibleItemPropertiesTracker_rearm [data: Pin<&SlintAccessibleItemData> as "SlintAccessibleItemData*"] {
                     data.arm_state_tracker();
                 });
 
@@ -92,7 +92,7 @@ impl PropertyDirtyHandler for ValuePropertyTracker {
                 auto accessible_item = live_accessible_item(obj);
                 if (!accessible_item) return;
                 auto data = accessible_item->data();
-                rust!(ValuePropertyTracker_rearm [data: Pin<&SlintAccessibleItemData> as "void*"] {
+                rust!(ValuePropertyTracker_rearm [data: Pin<&SlintAccessibleItemData> as "SlintAccessibleItemData*"] {
                     data.arm_value_tracker();
                 });
 
@@ -116,7 +116,7 @@ impl PropertyDirtyHandler for TextPropertyTracker {
                 auto item = live_accessible_item(obj);
                 if (!item) return;
                 auto data = item->data();
-                rust!(TextPropertyTracker_rearm [data: Pin<&SlintAccessibleItemData> as "void*"] {
+                rust!(TextPropertyTracker_rearm [data: Pin<&SlintAccessibleItemData> as "SlintAccessibleItemData*"] {
                     data.arm_text_tracker();
                 });
                 item->sendTextChangeEvents();
@@ -141,7 +141,7 @@ impl PropertyDirtyHandler for LabelPropertyTracker {
                 auto accessible_item = live_accessible_item(obj);
                 if (!accessible_item) return;
                 auto data = accessible_item->data();
-                rust!(LabelPropertyTracker_rearm [data: Pin<&SlintAccessibleItemData> as "void*"] {
+                rust!(LabelPropertyTracker_rearm [data: Pin<&SlintAccessibleItemData> as "SlintAccessibleItemData*"] {
                     data.arm_label_tracker();
                 });
 
@@ -166,7 +166,7 @@ impl PropertyDirtyHandler for DescriptionPropertyTracker {
                 auto accessible_item = live_accessible_item(obj);
                 if (!accessible_item) return;
                 auto data = accessible_item->data();
-                rust!(DescriptionPropertyTracker_rearm [data: Pin<&SlintAccessibleItemData> as "void*"] {
+                rust!(DescriptionPropertyTracker_rearm [data: Pin<&SlintAccessibleItemData> as "SlintAccessibleItemData*"] {
                     data.arm_description_tracker();
                 });
 
@@ -192,7 +192,7 @@ impl PropertyDirtyHandler for FocusDelegationPropertyTracker {
                 auto accessible_item = live_accessible_item(obj);
                 if (!accessible_item) return;
                 auto data = accessible_item->data();
-                rust!(FocusDelegationPropertyTracker_rearm [data: Pin<&SlintAccessibleItemData> as "void*"] {
+                rust!(FocusDelegationPropertyTracker_rearm [data: Pin<&SlintAccessibleItemData> as "SlintAccessibleItemData*"] {
                     data.arm_focus_delegation_tracker();
                 });
 
@@ -324,6 +324,7 @@ impl SlintAccessibleItemData {
 }
 
 cpp! {{
+    struct SlintAccessibleItemData;
     // Note: Do not include <QtWidgets> to avoid inclusion of gl.h (see #10989).
     #include <QtGui/QAccessible>
     #include <QtCore/QTimer>
@@ -501,9 +502,9 @@ cpp! {{
 
     // Returns the orientation of the item as a Qt::Orientation value
     // (Qt::Horizontal=1, Qt::Vertical=2), or 0 if the property is not set.
-    int item_qt_orientation(void *data) {
+    int item_qt_orientation(SlintAccessibleItemData *data) {
         return rust!(item_qt_orientation_
-            [data: &SlintAccessibleItemData as "void*"]
+            [data: &SlintAccessibleItemData as "SlintAccessibleItemData*"]
                 -> i32 as "int" {
             data.item.upgrade()
                 .and_then(|i| i.accessible_string_property(AccessibleStringProperty::Orientation))
@@ -516,9 +517,9 @@ cpp! {{
         });
     }
 
-    QString item_string_property(void *data, uint32_t what) {
+    QString item_string_property(SlintAccessibleItemData *data, uint32_t what) {
         return rust!(item_string_property_
-            [data: &SlintAccessibleItemData as "void*", what: u32 as "uint32_t"]
+            [data: &SlintAccessibleItemData as "SlintAccessibleItemData*", what: u32 as "uint32_t"]
                 -> QString as "QString" {
 
             if let Some(item) = data.item.upgrade() {
@@ -772,7 +773,7 @@ cpp! {{
         {
             m_data = rust!(Slint_accessible_item_ctor [obj: *mut c_void as "QObject*",
                     item: &ItemWeak as "void*"] ->
-                    *mut SlintAccessibleItemData as "void*" {
+                    *mut SlintAccessibleItemData as "SlintAccessibleItemData*" {
                         let data = SlintAccessibleItemData::new_pin_box(obj, item);
                         unsafe { Box::into_raw(Pin::into_inner_unchecked(data)) }
             });
@@ -790,13 +791,13 @@ cpp! {{
 
 
         ~Slint_accessible_item() {
-            rust!(Slint_accessible_item_dtor [m_data: *mut SlintAccessibleItemData as "void*"] {
+            rust!(Slint_accessible_item_dtor [m_data: *mut SlintAccessibleItemData as "SlintAccessibleItemData*"] {
                 unsafe { Pin::new_unchecked(Box::from_raw(m_data)) };
             });
         }
 
         void *rustItem() const override {
-            return rust!(Slint_accessible_item_rustItem [m_data: Pin<&SlintAccessibleItemData> as "void*"] -> *const ItemWeak as "void*" {
+            return rust!(Slint_accessible_item_rustItem [m_data: Pin<&SlintAccessibleItemData> as "SlintAccessibleItemData*"] -> *const ItemWeak as "void*" {
                 &m_data.item
             });
         }
@@ -809,13 +810,14 @@ cpp! {{
             return dynamic_cast<Slint_accessible *>(parent())->qwidget();
         }
 
-        void *data() const {
+        // This is the pinned Rust payload, never the C++ interface object.
+        SlintAccessibleItemData *data() const {
             return m_data;
         }
 
         bool isValid() const override {
             if (!Slint_accessible::isValid() || !m_data) return false;
-            return rust!(Slint_accessible_item_valid [m_data: &SlintAccessibleItemData as "void*"] -> bool as "bool" {
+            return rust!(Slint_accessible_item_valid [m_data: &SlintAccessibleItemData as "SlintAccessibleItemData*"] -> bool as "bool" {
                 m_data.item.upgrade().is_some()
             });
         }
@@ -827,7 +829,7 @@ cpp! {{
         void delegateFocus() const override {
             if (!has_focus) { return; }
 
-            auto index = rust!(Slint_accessible_item_delegate_focus [m_data: Pin<&SlintAccessibleItemData> as "void*"] -> i32 as "int" {
+            auto index = rust!(Slint_accessible_item_delegate_focus [m_data: Pin<&SlintAccessibleItemData> as "SlintAccessibleItemData*"] -> i32 as "int" {
                 m_data.item.upgrade()
                     .and_then(|i| { i.accessible_string_property(AccessibleStringProperty::DelegateFocus) })
                     .and_then(|s| s.as_str().parse::<i32>().ok()).unwrap_or(-1)
@@ -858,7 +860,7 @@ cpp! {{
                 item_string_property(m_data, ITEM_SELECTED) == "true");
             if (hasTextInterface()) {
                 result.selectableText = true;
-                const auto flags = rust!(Slint_text_flags [m_data: &SlintAccessibleItemData as "void*"] -> u32 as "uint32_t" {
+                const auto flags = rust!(Slint_text_flags [m_data: &SlintAccessibleItemData as "SlintAccessibleItemData*"] -> u32 as "uint32_t" {
                     text::snapshot(&m_data.item).map_or(0, |value| u32::from(value.read_only) | (u32::from(value.multi_line) << 1))
                 });
                 result.readOnly = flags & 1;
@@ -958,13 +960,13 @@ cpp! {{
 
         bool hasTextInterface() const {
             if (!isValid() || role() != QAccessible::EditableText) return false;
-            return rust!(Slint_has_text [m_data: &SlintAccessibleItemData as "void*"] -> bool as "bool" {
+            return rust!(Slint_has_text [m_data: &SlintAccessibleItemData as "SlintAccessibleItemData*"] -> bool as "bool" {
                 text::snapshot(&m_data.item).is_some()
             });
         }
 
         SlintTextSelection selectionState() const {
-            return rust!(Slint_text_selection [m_data: &SlintAccessibleItemData as "void*"] -> text::Selection as "SlintTextSelection" {
+            return rust!(Slint_text_selection [m_data: &SlintAccessibleItemData as "SlintAccessibleItemData*"] -> text::Selection as "SlintTextSelection" {
                 text::selection(&m_data.item)
             });
         }
@@ -984,18 +986,18 @@ cpp! {{
         }
         void setSelection(int index, int start, int end) override {
             if (index != 0) return;
-            rust!(Slint_text_set_selection [m_data: &SlintAccessibleItemData as "void*", start: i32 as "int", end: i32 as "int"] {
+            rust!(Slint_text_set_selection [m_data: &SlintAccessibleItemData as "SlintAccessibleItemData*", start: i32 as "int", end: i32 as "int"] {
                 text::set_selection(&m_data.item, start, end);
             });
         }
         int cursorPosition() const override {
-            return rust!(Slint_text_cursor [m_data: &SlintAccessibleItemData as "void*"] -> i32 as "int" {
+            return rust!(Slint_text_cursor [m_data: &SlintAccessibleItemData as "SlintAccessibleItemData*"] -> i32 as "int" {
                 text::snapshot(&m_data.item).map_or(-1, |value| value.cursor)
             });
         }
         void setCursorPosition(int position) override { setSelection(0, position, position); }
         QString text(int start, int end) const override {
-            return rust!(Slint_text_range [m_data: &SlintAccessibleItemData as "void*", start: i32 as "int", end: i32 as "int"] -> QString as "QString" {
+            return rust!(Slint_text_range [m_data: &SlintAccessibleItemData as "SlintAccessibleItemData*", start: i32 as "int", end: i32 as "int"] -> QString as "QString" {
                 text::range(&m_data.item, start, end).map_or_else(QString::default, |value| QString::from(value.as_str()))
             });
         }
@@ -1026,7 +1028,7 @@ cpp! {{
             finder.setPosition(start);
             int end = finder.toNextBoundary();
             if (end < 0) end = value.size();
-            auto rect = rust!(Slint_text_rect [m_data: &SlintAccessibleItemData as "void*", start: i32 as "int", end: i32 as "int"] -> qttypes::QRectF as "QRectF" {
+            auto rect = rust!(Slint_text_rect [m_data: &SlintAccessibleItemData as "SlintAccessibleItemData*", start: i32 as "int", end: i32 as "int"] -> qttypes::QRectF as "QRectF" {
                 text::character_rect(&m_data.item, start, end).unwrap_or_default()
             }).toAlignedRect();
             if (rect.isEmpty()) return QRect();
@@ -1038,12 +1040,12 @@ cpp! {{
             const auto local = mapFromGlobal(point);
             if (!qwidget()->rect().contains(local)) return -1;
             float x = local.x(), y = local.y();
-            return rust!(Slint_text_hit [m_data: &SlintAccessibleItemData as "void*", x: f32 as "float", y: f32 as "float"] -> i32 as "int" {
+            return rust!(Slint_text_hit [m_data: &SlintAccessibleItemData as "SlintAccessibleItemData*", x: f32 as "float", y: f32 as "float"] -> i32 as "int" {
                 text::offset_at_point(&m_data.item, x, y)
             });
         }
         void scrollToSubstring(int start, int end) override {
-            rust!(Slint_text_scroll [m_data: &SlintAccessibleItemData as "void*", start: i32 as "int", end: i32 as "int"] {
+            rust!(Slint_text_scroll [m_data: &SlintAccessibleItemData as "SlintAccessibleItemData*", start: i32 as "int", end: i32 as "int"] {
                 text::scroll_to_range(&m_data.item, start, end);
             });
         }
@@ -1079,7 +1081,7 @@ cpp! {{
 
         void setCurrentValue(const QVariant &value) override {
             QString value_string = value.toString();
-            rust!(Slint_accessible_setCurrentValue [m_data: Pin<&SlintAccessibleItemData> as "void*", value_string: qttypes::QString as "QString"] {
+            rust!(Slint_accessible_setCurrentValue [m_data: Pin<&SlintAccessibleItemData> as "SlintAccessibleItemData*", value_string: qttypes::QString as "QString"] {
                 let Some(item) = m_data.item.upgrade() else {return};
                 item.accessible_action(&AccessibilityAction::SetValue(i_slint_core::format!("{value_string}")));
             });
@@ -1098,7 +1100,7 @@ cpp! {{
         }
 
         QStringList actionNames() const override {
-            int supported = rust!(Slint_accessible_item_supported [m_data: Pin<&SlintAccessibleItemData> as "void*"] -> SupportedAccessibilityAction as "uint" {
+            int supported = rust!(Slint_accessible_item_supported [m_data: Pin<&SlintAccessibleItemData> as "SlintAccessibleItemData*"] -> SupportedAccessibilityAction as "uint" {
                 m_data.item.upgrade().map(|i| i.supported_accessibility_actions()).unwrap_or_default()
             });
             QStringList actions;
@@ -1124,7 +1126,7 @@ cpp! {{
                 if (!state().focusable) return;
                 qwidget()->activateWindow();
                 qwidget()->setFocus(Qt::OtherFocusReason);
-                rust!(Slint_accessible_set_focus [m_data: &SlintAccessibleItemData as "void*"] {
+                rust!(Slint_accessible_set_focus [m_data: &SlintAccessibleItemData as "SlintAccessibleItemData*"] {
                     if let Some(item) = m_data.item.upgrade() {
                         if let Some(adapter) = item.window_adapter() {
                             WindowInner::from_pub(adapter.window()).set_focus_item(
@@ -1133,7 +1135,7 @@ cpp! {{
                     }
                 });
             } else if (actionName == QAccessibleActionInterface::pressAction()) {
-                rust!(Slint_accessible_item_do_action1 [m_data: Pin<&SlintAccessibleItemData> as "void*"] {
+                rust!(Slint_accessible_item_do_action1 [m_data: Pin<&SlintAccessibleItemData> as "SlintAccessibleItemData*"] {
                     let Some(item) = m_data.item.upgrade() else {return};
                     let supported_actions = item.supported_accessibility_actions();
                     if supported_actions.contains(SupportedAccessibilityAction::Expand) {
@@ -1143,12 +1145,12 @@ cpp! {{
                     }
                 });
             } else if (actionName == QAccessibleActionInterface::increaseAction()) {
-                rust!(Slint_accessible_item_do_action2 [m_data: Pin<&SlintAccessibleItemData> as "void*"] {
+                rust!(Slint_accessible_item_do_action2 [m_data: Pin<&SlintAccessibleItemData> as "SlintAccessibleItemData*"] {
                     let Some(item) = m_data.item.upgrade() else {return};
                     item.accessible_action(&AccessibilityAction::Increment);
                 });
             } else if (actionName == QAccessibleActionInterface::decreaseAction()) {
-                rust!(Slint_accessible_item_do_action3 [m_data: Pin<&SlintAccessibleItemData> as "void*"] {
+                rust!(Slint_accessible_item_do_action3 [m_data: Pin<&SlintAccessibleItemData> as "SlintAccessibleItemData*"] {
                     let Some(item) = m_data.item.upgrade() else {return};
                     item.accessible_action(&AccessibilityAction::Decrement);
                 });
@@ -1161,7 +1163,7 @@ cpp! {{
 
     private:
         QObject *m_object = nullptr;
-        mutable void *m_data = nullptr;
+        mutable SlintAccessibleItemData *m_data = nullptr;
         QAccessible::State m_last_state;
         QString m_last_label;
         QString m_last_text;
@@ -1283,7 +1285,7 @@ cpp! {{
             auto data = ai->data();
 
             if (rust!(Slint_delete_stale_items
-                    [data: Pin<&SlintAccessibleItemData> as "void*"] -> bool as "bool" {
+                    [data: Pin<&SlintAccessibleItemData> as "SlintAccessibleItemData*"] -> bool as "bool" {
                 data.item.upgrade().is_none()
             })) {
                 ai->detach();
@@ -1302,7 +1304,7 @@ cpp! {{
             auto iface = dynamic_cast<Slint_accessible_item *>(QAccessible::queryAccessibleInterface(existing[i]));
             if (!iface) continue;
             auto data = iface->data();
-            if (rust!(Slint_indexOfItems [data: Pin<&SlintAccessibleItemData> as "void*", item: &ItemWeak as "void*"] -> bool as "bool" {
+            if (rust!(Slint_indexOfItems [data: Pin<&SlintAccessibleItemData> as "SlintAccessibleItemData*", item: &ItemWeak as "void*"] -> bool as "bool" {
                 data.item == *item
             })) {
                 return i;
