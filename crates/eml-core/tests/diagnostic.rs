@@ -110,3 +110,24 @@ fn known_wire_guidance_does_not_invent_meanings_for_future_or_misspelled_codes()
     assert!(ErrorCode::from_wire_name("malformed").is_none());
     assert!(ErrorCode::from_wire_name("FUTURE_CODE").is_none());
 }
+
+#[test]
+fn numeric_native_diagnostics_have_stable_domains() {
+    assert_eq!(
+        eml_core::NativeDiagnostic::OsCode(13).to_string(),
+        "OS error 13"
+    );
+    assert_eq!(
+        eml_core::NativeDiagnostic::OsCode(-1).to_string(),
+        "OS error -1"
+    );
+    #[cfg(windows)]
+    assert_eq!(
+        eml_core::NativeDiagnostic::NtStatus {
+            status: 0xC0000022u32 as i32,
+            win32: 5
+        }
+        .to_string(),
+        "NTSTATUS 0xC0000022; Win32 5"
+    );
+}

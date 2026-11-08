@@ -63,7 +63,9 @@ pub(super) fn header(
             ],
         ),
         State::Done => (
-            if saved == 0 && problems > 0 {
+            if saved == 0 && totals.has_attention() {
+                "Results need attention".into()
+            } else if saved == 0 && problems > 0 {
                 "No copies saved".into()
             } else {
                 Outcome::CopySaved.count_label(saved)

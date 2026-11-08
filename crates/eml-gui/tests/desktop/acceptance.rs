@@ -2282,3 +2282,74 @@ fn u6_every_state_family_and_filter_preserves_first_row_y() {
     assert_eq!(ui.get_view().state, BatchState::Stopped);
     assert!((label(&ui, "one.eml, Not processed").absolute_position().y - y).abs() <= 1.0);
 }
+
+#[test]
+fn field_attention_results_do_not_claim_that_no_copy_was_saved() {
+    init_no_event_loop();
+    for scenario in [
+        "published-with-error",
+        "existing-sync-failure",
+        "unknown-publication",
+        "",
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        let create = if scenario.is_empty() {
+            String::new()
+        } else {
+            stream(root.path(), &[("one.eml", scenario)], false)
+        };
+        let c = controller(
+            root.path(),
+            dual(
+                root.path(),
+                &check_stream(root.path(), &["one.eml"]),
+                &create,
+            ),
+        );
+        c.stage(vec![root.path().join("one.eml")]).unwrap();
+        pump(&c, || !c.is_busy());
+        c.start_selection();
+        pump(&c, || !c.is_busy());
+        assert_eq!(
+            c.window().get_view().title,
+            "Results need attention",
+            "scenario {scenario}"
+        );
+        assert_eq!(c.window().get_view().problems, "1 needs attention");
+    }
+    let root = tempfile::tempdir().unwrap();
+    let c = controller(
+        root.path(),
+        dual(
+            root.path(),
+            &check_stream(root.path(), &["one.eml"]),
+            &stream(root.path(), &[("one.eml", "prepublication-failure")], false),
+        ),
+    );
+    c.stage(vec![root.path().join("one.eml")]).unwrap();
+    pump(&c, || !c.is_busy());
+    c.start_selection();
+    pump(&c, || !c.is_busy());
+    assert_eq!(c.window().get_view().title, "No copies saved");
+}
+
+#[test]
+fn field_source_controls_are_escaped_without_changing_native_selection() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let folder = root.path().join("folder\n\u{202e}");
+    let name = "06-evil\n\u{202e}fake.eml";
+    let c = controller(
+        root.path(),
+        dual(root.path(), &check_stream(&folder, &[name]), ""),
+    );
+    c.stage(vec![folder.clone()]).unwrap();
+    pump(&c, || !c.is_busy());
+    let row = c.window().get_rows().row_data(0).unwrap();
+    assert_eq!(row.name, "06-evil\\n\\u{202e}fake.eml");
+    assert!(!row.folder.contains('\n') && !row.folder.contains('\u{202e}'));
+    assert!(row.folder.ends_with("folder\\n\\u{202e}"));
+    c.window().invoke_select_email(row.key);
+    assert_eq!(c.selected_original(), Some(folder.join(name)));
+    assert_eq!(c.window().get_detail().name, "06-evil\\n\\u{202e}fake.eml");
+}

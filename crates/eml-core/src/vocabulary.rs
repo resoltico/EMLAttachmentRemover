@@ -705,7 +705,7 @@ impl Outcome {
                 "The result couldn’t be confirmed. Check the save folder, then try again. Existing copies are never replaced."
             }
             Self::NeedsChecking => {
-                "The copy was written, but the final checks didn’t complete. Check the save folder, then try again. Existing copies are never replaced."
+                "A copy exists, but the final checks didn’t complete. Check the save folder, then try again. Existing copies are never replaced."
             }
             Self::Failed(code) => failure(code).1,
         }
@@ -842,10 +842,12 @@ pub fn part_name<'a>(
     reason: crate::RemovalReason,
     content_type: &str,
 ) -> &'a str {
-    filename.filter(|name| !name.is_empty()).unwrap_or_else(|| {
-        let kind = part_kind(reason, content_type);
-        if kind.is_empty() { "Attachment" } else { kind }
-    })
+    filename
+        .filter(|name| !name.trim().is_empty())
+        .unwrap_or_else(|| {
+            let kind = part_kind(reason, content_type);
+            if kind.is_empty() { "Attachment" } else { kind }
+        })
 }
 /// Aggregate of human outcomes; no report or UI dependency.
 #[derive(Clone, Debug, Default)]
@@ -893,13 +895,15 @@ impl BatchTotals {
     pub fn saved(&self) -> usize {
         self.count(Outcome::CopySaved) + self.count(Outcome::CopiedAsIs)
     }
-    /// Shared problem count wording, preserving attention versus failure.
-    pub fn problem_label(&self) -> String {
-        if self
-            .counts
+    /// Whether any result has unconfirmed publication or qualification.
+    pub fn has_attention(&self) -> bool {
+        self.counts
             .keys()
             .any(|o| o.severity() == Severity::Attention)
-        {
+    }
+    /// Shared problem count wording, preserving attention versus failure.
+    pub fn problem_label(&self) -> String {
+        if self.has_attention() {
             format!(
                 "{} {} attention",
                 self.problems,

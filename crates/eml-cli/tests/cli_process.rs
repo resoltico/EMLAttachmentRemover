@@ -752,3 +752,30 @@ fn u3_plain_outcomes_and_diagnostics_preserve_process_exit_contract() {
         )
     );
 }
+
+#[test]
+fn field_human_native_failures_keep_numeric_causes() {
+    let root = root();
+    let human = invoke(root.path(), &["--", "missing.eml"], None);
+    let json = invoke(
+        root.path(),
+        &["--format", "json", "--", "missing.eml"],
+        None,
+    );
+    assert_eq!(human.status.code(), Some(1));
+    assert_eq!(json.status.code(), Some(1));
+    let text = String::from_utf8(human.stdout).unwrap();
+    assert!(text.contains("(OS error 2)"), "{text}");
+    let records: Vec<serde_json::Value> = json
+        .stdout
+        .split(|b| *b == b'\n')
+        .filter(|l| !l.is_empty())
+        .map(|l| serde_json::from_slice(l).unwrap())
+        .collect();
+    assert!(
+        records[1]["error"]["detail"]
+            .as_str()
+            .unwrap()
+            .contains("(OS error 2)")
+    );
+}
