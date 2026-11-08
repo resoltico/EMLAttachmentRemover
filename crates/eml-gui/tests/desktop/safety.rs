@@ -53,7 +53,7 @@ fn production_binary_targets_cannot_alias_on_case_insensitive_filesystems() {
 }
 
 #[test]
-fn about_contents_and_actions_fit_font_and_display_scales() {
+fn about_contents_and_actions_fit_display_scales() {
     init_no_event_loop();
     let root = tempfile::tempdir().unwrap();
     let c = controller(root.path(), completed(root.path(), "created"));
@@ -64,8 +64,7 @@ fn about_contents_and_actions_fit_font_and_display_scales() {
             .dispatch_event(slint::platform::WindowEvent::ScaleFactorChanged {
                 scale_factor: scale,
             });
-        for font in [13.0_f32, 26.0, 40.0] {
-            c.window().set_ui_size(font);
+        {
             c.window().invoke_about();
             mock_elapsed_time(Duration::from_millis(5));
             let content = ElementHandle::find_by_element_id(&about, "AboutWindow::about-focus")
@@ -74,8 +73,8 @@ fn about_contents_and_actions_fit_font_and_display_scales() {
             // The test backend inlines the menu that native windows place outside
             // the client area. Measure it before sizing the actual About content.
             let menu_height = content.absolute_position().y;
-            let width = 440.0_f32.max(font * 30.0);
-            let height = 490.0_f32.max(font * 32.0) + menu_height;
+            let width = 440.0_f32;
+            let height = 490.0_f32 + menu_height;
             about
                 .window()
                 .set_size(slint::LogicalSize::new(width, height));
@@ -104,7 +103,7 @@ fn about_contents_and_actions_fit_font_and_display_scales() {
                         && size.height > 0.0
                         && position.x + size.width <= width + 0.1
                         && position.y + size.height <= height + 0.1,
-                    "{label} clipped at font {font}, scale {scale}: {position:?}, {size:?}"
+                    "{label} clipped at scale {scale}: {position:?}, {size:?}"
                 );
                 if matches!(label, "Project website" | "Licenses") {
                     assert!(size.height >= 32.0);
@@ -115,7 +114,6 @@ fn about_contents_and_actions_fit_font_and_display_scales() {
             assert!((action_geometry[0].0 - action_geometry[1].0).abs() < 0.1);
             assert!((action_geometry[0].1 - action_geometry[1].1).abs() < 0.1);
             about.invoke_licenses();
-            assert_eq!(c.license_window().get_ui_size(), font);
             c.license_window().invoke_dismiss();
             about.invoke_dismiss();
         }

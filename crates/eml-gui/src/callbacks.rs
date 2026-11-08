@@ -43,7 +43,7 @@ impl DesktopController {
             c.show_about();
         });
         bind!(on_licenses, |c: &Rc<Self>| {
-            c.show_licenses(c.ui.get_ui_size());
+            c.show_licenses();
         });
         let weak = Rc::downgrade(self);
         self.ui.on_select_email(move |key| {
@@ -92,7 +92,7 @@ impl DesktopController {
         let weak = Rc::downgrade(self);
         self.about.on_licenses(move || {
             if let Some(c) = weak.upgrade() {
-                c.show_licenses(c.about.get_ui_size());
+                c.show_licenses();
             }
         });
         let weak = Rc::downgrade(self);
@@ -106,14 +106,12 @@ impl DesktopController {
 
 impl DesktopController {
     pub(super) fn show_about(&self) {
-        self.about.set_ui_size(self.ui.get_ui_size());
         match self.about.show() {
             Ok(()) => self.about.invoke_focus_website(),
             Err(e) => self.message(&e.to_string()),
         }
     }
-    pub(super) fn show_licenses(&self, size: f32) {
-        self.licenses.set_ui_size(size);
+    pub(super) fn show_licenses(&self) {
         match self.licenses.show() {
             Ok(()) => self.licenses.invoke_focus_start(),
             Err(e) => self.message(&e.to_string()),

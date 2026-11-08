@@ -1,3 +1,4 @@
+import { Theme } from "theme.slint";
 import { AppWords } from "models.slint";
 // Copyright 2026 Ervins Strauhmanis
 // SPDX-License-Identifier: MPL-2.0
@@ -17,10 +18,9 @@ export component AboutWindow inherits Window {
     private property <bool> show-notice-details: false;
     title: root.words.about-prefix + root.product-name;
     icon: @image-url("eml-icon.png");
-    in property <length> ui-size: 14px;
-    default-font-size: root.ui-size;
-    preferred-width: max(440px, root.ui-size * 30);
-    preferred-height: max(490px, root.ui-size * 32) + (root.notice != "" ? 64px : 0px) + (root.show-notice-details ? 100px : 0px);
+    default-font-size: Theme.body;
+    preferred-width: 440px;
+    preferred-height: 490px + (root.notice != "" ? 64px : 0px) + (root.show-notice-details ? 100px : 0px);
     callback website(); callback licenses(); callback dismiss();
     callback focus-website();
     focus-website => { website.focus(); }
@@ -41,15 +41,15 @@ export component AboutWindow inherits Window {
     forward-focus: about-focus;
     about-focus := FocusScope {
         key-pressed(event) => { if event.text == Key.Escape { root.dismiss(); return accept; } return reject; }
-        VerticalBox { padding: UiMetrics.gutter; spacing: UiMetrics.gap; alignment: center;
+        VerticalBox { padding: Theme.space-6; spacing: Theme.space-2; alignment: center;
             HorizontalBox { alignment: center; padding: 0px;
                 Image { source: root.icon; width: 64px; height: 64px; image-fit: contain; accessible-label: root.words.application-icon; }
             }
-            name-text := AboutLabel { text: root.product-name; font-size: root.ui-size * 1.4; font-weight: 600; }
+            name-text := AboutLabel { text: root.product-name; font-size: Theme.title; font-weight: 600; }
             version-text := AboutLabel { text: root.words.version-prefix + root.version; }
             purpose-text := AboutLabel { text: root.words.purpose; single-line: false; }
             copyright-text := AboutLabel { text: root.copyright; }
-            HorizontalBox { alignment: center; spacing: UiMetrics.gap; padding: 0px;
+            HorizontalBox { alignment: center; spacing: Theme.space-2; padding: 0px;
                 website := ActionButton { text: root.words.project-website; clicked => { root.website(); } }
                 ActionButton { text: root.words.licenses; clicked => { root.licenses(); } }
             }
@@ -67,12 +67,11 @@ export component LicenseWindow inherits Window {
     title: root.words.license-title;
     icon: @image-url("eml-icon.png");
     preferred-width: 720px; preferred-height: 560px;
-    in property <length> ui-size: 14px;
     in property <string> licenses;
     in property <string> notice;
     in property <string> notice-details;
     private property <bool> show-notice-details: false;
-    default-font-size: root.ui-size;
+    default-font-size: Theme.body;
     callback third-party(); callback dismiss();
     callback focus-start();
     focus-start => {
@@ -92,9 +91,9 @@ export component LicenseWindow inherits Window {
     license-focus := FocusScope {
         forward-focus: license-text;
         key-pressed(event) => { if event.text == Key.Escape { root.dismiss(); return accept; } return reject; }
-        VerticalBox { padding: UiMetrics.gutter; spacing: UiMetrics.inset;
+        VerticalBox { padding: Theme.space-6; spacing: Theme.space-4;
             license-text := TextEdit { text: root.licenses; read-only: true; accessible-label: root.words.license-terms; }
-            VerticalBox { padding: 0px; spacing: UiMetrics.gap; vertical-stretch: 0;
+            VerticalBox { padding: 0px; spacing: Theme.space-2; vertical-stretch: 0;
                 Text { text: root.notice; wrap: word-wrap; vertical-alignment: center; color: Palette.foreground; accessible-live-region: polite; }
                 if root.notice-details != "": TextButton { text: root.show-notice-details ? root.words.hide-details : root.words.details; expandable: true; expanded: root.show-notice-details; clicked => { root.show-notice-details = !root.show-notice-details; } }
                 if root.show-notice-details && root.notice-details != "": TextEdit { text: root.notice-details; read-only: true; preferred-height: 100px; max-height: 100px; accessible-label: root.words.notices-details; }

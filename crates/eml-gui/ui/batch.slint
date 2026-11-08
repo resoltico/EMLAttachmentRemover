@@ -9,19 +9,21 @@ export component BatchPane inherits Rectangle {
     in property <BatchView> view;
     in property <[EmailRow]> rows;
     in property <EmailDetail> detail;
-    in property <length> ui-size;
     in property <bool> hovered;
     callback add-files(); callback add-folder(); callback reset(); callback start(); callback stop();
     callback filter(); callback select(string); callback navigate(int,int); callback clear-selected();
     callback reveal-report(); callback show-copy(); callback show-original(); callback copy-details(); callback destination(); callback output();
-    private property <length> column-width: min(980px,root.width - 48px);
+    private property <length> column-width: min(Theme.column-max-width,root.width - 48px);
     private property <length> column-x: (root.width - self.column-width) / 2;
     private property <length> text-x: root.column-x + UiMetrics.scroll-inset + 8px;
     private property <length> text-width: root.column-width - 2 * (UiMetrics.scroll-inset + 8px);
-    private property <length> row-height: max(44px,root.ui-size * 2 + 12px);
+    private property <length> row-height: Theme.row-height;
     private property <bool> wide: root.width >= 900px;
     private property <length> email-column: root.column-width * 0.32;
-    private property <length> attachments-column: max(0px,root.column-width - UiMetrics.scroll-inset * 2 - 16px - (root.wide ? 36px : 24px) - root.email-column - 175px - (root.wide ? 145px : 0px));
+    private property <length> status-column: 175px;
+    private property <length> size-column: 145px;
+    private property <length> column-spacing: Theme.space-3;
+    private property <length> attachments-column: max(0px, root.text-width - root.column-spacing * (root.wide ? 3 : 2) - root.email-column - root.status-column - (root.wide ? root.size-column : 0px));
     private property <length> scroll-y;
     private property <int> selected-index: root.view.selected-index;
     function reveal-selected() {
@@ -37,30 +39,30 @@ export component BatchPane inherits Rectangle {
     changed list-height => { root.reveal-selected(); }
     VerticalBox { width: parent.width; height: parent.height; padding: 0px; spacing: 0px;
         Rectangle { height: header.preferred-height;
-            header := VerticalBox { x: root.text-x; width: root.text-width; padding-top: 18px; padding-bottom: 12px; padding-left: 0px; padding-right: 0px; spacing: 6px;
-                HorizontalBox { min-height: max(32px, root.ui-size * 1.4 + 10px); padding: 0px; spacing: 8px;
-                    Label { text: root.view.title; font-size: 22px; font-weight: 700; horizontal-stretch: 1; overflow: elide; accessible-live-region: polite; }
+            header := VerticalBox { x: root.text-x; width: root.text-width; padding-top: 18px; padding-bottom: Theme.space-3; padding-left: 0px; padding-right: 0px; spacing: 6px;
+                HorizontalBox { min-height: Theme.control-height; padding: 0px; spacing: Theme.space-2;
+                    Label { text: root.view.title; font-size: Theme.title; font-weight: 700; horizontal-stretch: 1; overflow: elide; accessible-live-region: polite; }
                     if root.view.state == BatchState.checking || root.view.state == BatchState.ready: ActionButton { text: root.words.add-files; enabled: root.view.can-add; clicked => { root.add-files(); } }
                     if root.view.state == BatchState.checking || root.view.state == BatchState.ready: ActionButton { text: root.words.add-folder; enabled: root.view.can-add; clicked => { root.add-folder(); } }
                     if root.view.state == BatchState.checking || root.view.state == BatchState.ready: TextButton { text: root.words.start-over; enabled: root.view.can-reset; clicked => { root.reset(); } }
                 }
-                HorizontalBox { padding: 0px; spacing: 8px;
+                HorizontalBox { padding: 0px; spacing: Theme.space-2;
                     Label { text: root.view.summary; color: Theme.muted; overflow: elide; horizontal-stretch: 1; }
                     if root.view.problems != "": Chip { text: root.view.filtered ? root.words.show-all : root.view.problems; selected: root.view.filtered; clicked => { root.filter(); } }
                 }
                 if root.view.banner != "": Label { text: "⚠ " + root.view.banner; color: Theme.warn; wrap: word-wrap; }
-                if root.view.notice != "": HorizontalBox { padding: 0px; spacing: 8px;
+                if root.view.notice != "": HorizontalBox { padding: 0px; spacing: Theme.space-2;
                     Label { text: root.view.notice; color: Theme.warn; overflow: elide; horizontal-stretch: 1; accessible-live-region: polite; }
                     if root.view.can-reveal-report: TextButton { text: root.words.show-report; clicked => { root.reveal-report(); } }
                 }
             }
         }
         Rectangle { height: 28px;
-            HorizontalBox { x: root.column-x + UiMetrics.scroll-inset; width: root.column-width - UiMetrics.scroll-inset * 2; padding-left: 8px; padding-right: 8px; padding-top: 0px; padding-bottom: 0px; spacing: 12px;
+            HorizontalBox { x: root.column-x + UiMetrics.scroll-inset; width: root.column-width - UiMetrics.scroll-inset * 2; padding-left: Theme.space-2; padding-right: Theme.space-2; padding-top: 0px; padding-bottom: 0px; spacing: root.column-spacing;
                 Label { text: root.words.email; width: root.email-column; color: Theme.muted; }
                 Label { text: root.words.attachments; width: root.attachments-column; color: Theme.muted; }
-                if root.wide: Label { text: root.words.size; width: 145px; color: Theme.muted; }
-                Label { text: root.words.status; width: 175px; color: Theme.muted; }
+                if root.wide: Label { text: root.words.size; width: root.size-column; color: Theme.muted; }
+                Label { text: root.words.status; width: root.status-column; color: Theme.muted; }
             }
         }
         Rectangle { vertical-stretch: 1; min-height: root.row-height * 2 + UiMetrics.scroll-inset * 2;
@@ -79,43 +81,43 @@ export component BatchPane inherits Rectangle {
                 accessible-role: list; accessible-label: root.words.emails;
                 for row in root.rows: Rectangle {
                     height: root.row-height; background: row.selected ? Theme.accent-soft : Theme.surface;
-                    border-width: 1px; border-color: Theme.raised; border-radius: 5px;
+                    border-width: 1px; border-color: Theme.raised; border-radius: Theme.radius-control;
                     accessible-role: list-item; accessible-label: row.name + ", " + row.status;
                     accessible-description: row.description;
                     accessible-item-selectable: true; accessible-item-selected: row.selected;
                     accessible-action-default => { list-focus.focus(); root.select(row.key); }
                     TouchArea { clicked => { list-focus.focus(); root.select(row.key); } }
-                    HorizontalBox { width: parent.width; height: parent.height; padding-left: 8px; padding-right: 8px; padding-top: 2px; padding-bottom: 2px; spacing: 12px;
+                    HorizontalBox { width: parent.width; height: parent.height; padding-left: Theme.space-2; padding-right: Theme.space-2; padding-top: 2px; padding-bottom: 2px; spacing: root.column-spacing;
                         VerticalBox { width: root.email-column; padding: 0px; spacing: 0px;
                             // The suffix keeps the extension visible when the name is clipped.
-                            Rectangle { min-height: root.ui-size * 1.4; vertical-stretch: 0;
+                            Rectangle { min-height: Theme.line-height; vertical-stretch: 0;
                                 prefix := Label { x: 0px; width: min(self.preferred-width,max(0px,parent.width - suffix.preferred-width)); height: parent.height; text: row.prefix; overflow: elide; font-weight: 550; }
                                 suffix := Label { x: prefix.width; width: min(self.preferred-width,max(0px,parent.width - prefix.width)); height: parent.height; text: row.suffix; font-weight: 550; overflow: elide; }
                             }
                             Rectangle { min-height: 17px; vertical-stretch: 0; accessible-role: text; accessible-label: row.folder;
-                                folder-prefix := Label { x: 0px; width: min(self.preferred-width,max(0px,parent.width - folder-suffix.preferred-width)); height: parent.height; text: row.folder-prefix; font-size: 12px; color: Theme.muted; overflow: elide; accessible-role: none; }
-                                folder-suffix := Label { x: folder-prefix.width; width: min(self.preferred-width,max(0px,parent.width - folder-prefix.width)); height: parent.height; text: row.folder-suffix; font-size: 12px; color: Theme.muted; overflow: elide; accessible-role: none; }
+                                folder-prefix := Label { x: 0px; width: min(self.preferred-width,max(0px,parent.width - folder-suffix.preferred-width)); height: parent.height; text: row.folder-prefix; font-size: Theme.small; color: Theme.muted; overflow: elide; accessible-role: none; }
+                                folder-suffix := Label { x: folder-prefix.width; width: min(self.preferred-width,max(0px,parent.width - folder-prefix.width)); height: parent.height; text: row.folder-suffix; font-size: Theme.small; color: Theme.muted; overflow: elide; accessible-role: none; }
                             }
                         }
                         Rectangle { width: root.attachments-column;
                         HorizontalBox { width: parent.width; height: parent.height; padding: 0px; spacing: 5px;
                             if row.has-chips: AttachmentChip { text: row.chip1; }
-                            if !row.has-chips: Label { text: row.chip1; font-size: 12px; color: Theme.muted; overflow: elide; }
+                            if !row.has-chips: Label { text: row.chip1; font-size: Theme.small; color: Theme.muted; overflow: elide; }
                             if row.chip2 != "": AttachmentChip { text: row.chip2; }
-                            if row.more != "": Label { text: row.more; font-size: 12px; color: Theme.muted; }
+                            if row.more != "": Label { text: row.more; font-size: Theme.small; color: Theme.muted; }
                             Rectangle { horizontal-stretch: 1; }
                         }
                         }
-                        if root.wide: Rectangle { width: 145px; accessible-role: text; accessible-label: row.size-text;
+                        if root.wide: Rectangle { width: root.size-column; accessible-role: text; accessible-label: row.size-text;
                             if row.size-reduction-known: Rectangle {
                                 before := Label { x: 0px; width: min(self.preferred-width,max(0px,parent.width - after.preferred-width)); height: parent.height; text: row.source-size + " → "; color: Theme.muted; overflow: elide; accessible-role: none; }
                                 after := Label { x: before.width; width: min(self.preferred-width,max(0px,parent.width - before.width)); height: parent.height; text: row.copy-size; color: Theme.text; overflow: elide; accessible-role: none; }
                             }
                             if !row.size-reduction-known: Label { text: row.size-text; width: parent.width; height: parent.height; overflow: elide; accessible-role: none; }
                         }
-                        HorizontalBox { width: 175px; padding: 0px; spacing: 8px;
-                            VerticalBox { width: 8px; padding: 0px; spacing: 0px; alignment: center; ToneDot { tone: row.tone == Tone.accent ? Theme.accent : row.tone == Tone.ok ? Theme.ok : row.tone == Tone.warn ? Theme.warn : row.tone == Tone.bad ? Theme.bad : Theme.idle; } }
-                            Label { text: row.status; color: row.tone == Tone.bad ? Theme.bad : row.tone == Tone.warn ? Theme.warn : row.tone == Tone.ok ? Theme.ok : row.tone == Tone.muted ? Theme.muted : Theme.text; overflow: elide; horizontal-stretch: 1; }
+                        HorizontalBox { width: root.status-column; padding: 0px; spacing: Theme.space-2;
+                            VerticalBox { width: 8px; padding: 0px; spacing: 0px; alignment: center; ToneDot { tone: Theme.tone(row.tone); } }
+                            Label { text: row.status; color: Theme.tone(row.tone); overflow: elide; horizontal-stretch: 1; }
                         }
                     }
                 }
@@ -127,24 +129,24 @@ export component BatchPane inherits Rectangle {
             background: Theme.raised; border-width: 1px; border-color: Theme.border;
             accessible-role: groupbox; accessible-label: root.words.details-label;
             preferred-height: min(root.height * 0.4, detail-content.preferred-height + 64px);
-            max-height: self.preferred-height; min-height: detail-actions.preferred-height + 24px + root.ui-size * 1.4; vertical-stretch: 0;
-            VerticalBox { x: root.text-x - UiMetrics.scroll-inset; width: root.text-width + UiMetrics.scroll-inset * 2; height: parent.height; padding-top: 8px; padding-bottom: 8px; padding-left: 0px; padding-right: 0px; spacing: 6px;
+            max-height: self.preferred-height; min-height: detail-actions.preferred-height + 24px + Theme.line-height; vertical-stretch: 0;
+            VerticalBox { x: root.text-x - UiMetrics.scroll-inset; width: root.text-width + UiMetrics.scroll-inset * 2; height: parent.height; padding-top: Theme.space-2; padding-bottom: Theme.space-2; padding-left: 0px; padding-right: 0px; spacing: 6px;
                 ScrollView { vertical-stretch: 1; min-height: 0px; content-width: self.visible-width; content-height: detail-content.preferred-height;
                     detail-content := VerticalBox { width: parent.visible-width; x: 0px; padding: 0px; spacing: 6px;
                         Label { text: root.detail.name; font-weight: 650; overflow: elide; }
                         Label { text: root.detail.sentence; wrap: word-wrap; }
-                        for part in root.detail.parts: HorizontalBox { padding: 0px; spacing: 8px;
-                            Label { text: part.name; font-size: 12px; overflow: elide; horizontal-stretch: 1; }
-                            Label { text: part.kind; width: 130px; font-size: 12px; color: Theme.muted; overflow: elide; }
-                            Label { text: part.size; width: 75px; font-size: 12px; color: Theme.muted; horizontal-alignment: right; overflow: elide; }
+                        for part in root.detail.parts: HorizontalBox { padding: 0px; spacing: Theme.space-2;
+                            Label { text: part.name; font-size: Theme.small; overflow: elide; horizontal-stretch: 1; }
+                            Label { text: part.kind; width: 130px; font-size: Theme.small; color: Theme.muted; overflow: elide; }
+                            Label { text: part.size; width: 75px; font-size: Theme.small; color: Theme.muted; horizontal-alignment: right; overflow: elide; }
                         }
                         Rectangle { min-height: 18px; vertical-stretch: 0; accessible-role: text; accessible-label: root.detail.path;
-                            path-prefix := Label { x: 0px; width: min(self.preferred-width,max(0px,parent.width - path-suffix.preferred-width)); height: parent.height; text: root.detail.path-prefix; font-size: 11.5px; color: Theme.muted; overflow: elide; accessible-role: none; }
-                            path-suffix := Label { x: path-prefix.width; width: min(self.preferred-width,max(0px,parent.width - path-prefix.width)); height: parent.height; text: root.detail.path-suffix; font-size: 11.5px; color: Theme.muted; overflow: elide; accessible-role: none; }
+                            path-prefix := Label { x: 0px; width: min(self.preferred-width,max(0px,parent.width - path-suffix.preferred-width)); height: parent.height; text: root.detail.path-prefix; font-size: Theme.caption; color: Theme.muted; overflow: elide; accessible-role: none; }
+                            path-suffix := Label { x: path-prefix.width; width: min(self.preferred-width,max(0px,parent.width - path-prefix.width)); height: parent.height; text: root.detail.path-suffix; font-size: Theme.caption; color: Theme.muted; overflow: elide; accessible-role: none; }
                         }
                     }
                 }
-                detail-actions := HorizontalBox { padding: 0px; spacing: 8px; alignment: end;
+                detail-actions := HorizontalBox { padding: 0px; spacing: Theme.space-2; alignment: end;
                     if root.detail.can-show-copy: ActionButton { text: root.words.show-copy; enabled: root.view.can-copy; clicked => { root.show-copy(); } }
                     ActionButton { text: root.words.show-original; enabled: root.view.can-copy; clicked => { root.show-original(); } }
                     TextButton { text: root.words.copy-details; enabled: root.view.can-copy; clicked => { root.copy-details(); } }
@@ -152,11 +154,11 @@ export component BatchPane inherits Rectangle {
             }
         }
 
-        Rectangle { height: max(60px,root.ui-size * 2 + 30px); background: Theme.raised; border-width: 1px; border-color: Theme.border;
-            HorizontalBox { x: root.text-x; width: root.text-width; height: max(32px,root.ui-size * 1.4 + 10px); y: (parent.height - self.height) / 2; padding: 0px; spacing: 10px;
+        Rectangle { height: Theme.footer-height; background: Theme.raised; border-width: 1px; border-color: Theme.border;
+            HorizontalBox { x: root.text-x; width: root.text-width; height: Theme.control-height; y: (parent.height - self.height) / 2; padding: 0px; spacing: 10px;
                 if root.view.state == BatchState.checking || root.view.state == BatchState.ready: Label { text: root.words.save-copies; color: Theme.muted; }
                 if root.view.state == BatchState.checking || root.view.state == BatchState.ready: ActionButton { text: root.view.destination + " ▾"; enabled: root.view.can-add; clicked => { root.destination(); } }
-                if root.view.state == BatchState.removing: VerticalBox { padding: 0px; spacing: 4px; horizontal-stretch: 1;
+                if root.view.state == BatchState.removing: VerticalBox { padding: 0px; spacing: Theme.space-1; horizontal-stretch: 1;
                     Label { text: root.view.progress-text; }
                     ProgressIndicator { progress: root.view.progress; }
                 }

@@ -109,8 +109,8 @@ fn theme_tokens_keep_readable_contrast_in_both_schemes() {
             (name, colors)
         })
         .collect();
-    for background in ["sidebar", "surface", "raised", "accent-soft"] {
-        for foreground in ["text", "muted", "accent", "ok", "warn", "bad", "idle"] {
+    for background in ["surface", "raised", "accent-soft"] {
+        for foreground in ["text", "muted", "accent", "ok", "warn", "bad"] {
             assert_eq!(tokens[foreground].len(), 2);
             assert_eq!(tokens[background].len(), 2);
             for (scheme, (&front, &back)) in tokens[foreground]

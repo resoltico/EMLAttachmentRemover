@@ -9,7 +9,6 @@ import { Label, ActionButton, TextButton } from "controls.slint";
 export { BatchState, Tone, EmailRow, EmailDetail, BatchView, AppWords, AttachmentView } from "models.slint";
 export component MainWindow inherits Window {
     in property <string> product-name;
-    in property <length> ui-size: 13px;
     in property <bool> native-about;
     in property <AppWords> words;
     in property <BatchView> view;
@@ -19,7 +18,7 @@ export component MainWindow inherits Window {
     in property <[string]> output-roots;
     in-out property <bool> drop-hovered;
     title: root.product-name; icon: @image-url("eml-icon.png"); background: Theme.surface;
-    default-font-size: root.ui-size;
+    default-font-size: Theme.body;
     min-width: 760px; min-height: 520px; preferred-width: 1080px; preferred-height: 700px;
     callback choose-files(); callback choose-folder(); callback choose-destination(); callback beside-source(); callback recent-destination(int);
     callback start-selection(); callback start-over(); callback stop(); callback toggle-problems();
@@ -55,7 +54,7 @@ export component MainWindow inherits Window {
     if root.view.state == BatchState.empty: EmptyBatch { words: root.words; notice: root.view.notice; can-reveal-report: root.view.can-reveal-report; reveal-report => { root.reveal-report(); } enabled: root.view.can-add; hovered: root.drop-hovered;
         add-files => { root.choose-files(); } add-folder => { root.choose-folder(); }
     }
-    if root.view.state != BatchState.empty: BatchPane { words: root.words; view: root.view; rows: root.rows; detail: root.detail; ui-size: root.ui-size; hovered: root.drop-hovered;
+    if root.view.state != BatchState.empty: BatchPane { words: root.words; view: root.view; rows: root.rows; detail: root.detail; hovered: root.drop-hovered;
         add-files => { root.choose-files(); } add-folder => { root.choose-folder(); } reset => { root.start-over(); }
         start => { root.start-selection(); } stop => { root.stop(); } filter => { root.toggle-problems(); }
         select(key) => { root.select-email(key); } navigate(delta,edge) => { root.navigate-email(delta,edge); } clear-selected => { root.clear-selected(); }
@@ -63,10 +62,10 @@ export component MainWindow inherits Window {
         show-copy => { root.show-copy(); } show-original => { root.show-original(); } copy-details => { root.copy-details(); }
         destination => { destinations.show(); } output => { root.show-output(); }
     }
-    destinations := PopupWindow { x: max(0px,(root.width - 980px) / 2 + 90px); y: root.height - self.height - 60px; width: 340px;
+    destinations := PopupWindow { x: max(0px,(root.width - Theme.column-max-width) / 2 + 90px); y: root.height - self.height - 60px; width: 340px;
         height: 88px + root.recent-destinations.length * 36px;
         Rectangle { background: Theme.raised; border-width: 1px; border-color: Theme.border;
-            VerticalBox { padding: 8px; spacing: 4px;
+            VerticalBox { padding: Theme.space-2; spacing: Theme.space-1;
                 TextButton { text: root.words.next-to; clicked => { destinations.close(); root.beside-source(); } }
                 for folder[index] in root.recent-destinations: TextButton { text: folder; clicked => { destinations.close(); root.recent-destination(index); } }
                 TextButton { text: root.words.choose-folder; clicked => { destinations.close(); root.choose-destination(); } }
@@ -83,14 +82,14 @@ export component MainWindow inherits Window {
     private property <bool> show-quit: root.view.quit;
     changed show-quit => { if root.show-quit { decision.show(); } else { decision.close(); } }
     decision := PopupWindow { x: max(0px,(root.width - self.width) / 2); y: 70px; width: min(480px,root.width - 48px); height: content.preferred-height + 32px; close-policy: no-auto-close;
-        Rectangle { background: Theme.raised; border-width: 1px; border-color: Theme.border; border-radius: 8px;
+        Rectangle { background: Theme.raised; border-width: 1px; border-color: Theme.border; border-radius: Theme.radius-container;
             FocusScope { forward-focus: cancel;
                 init => { cancel.focus(); }
                 key-pressed(event) => { if event.text == Key.Escape { root.cancel-quit(); return accept; } return reject; }
-                content := VerticalBox { padding: 16px; spacing: 14px;
-                    Label { text: root.words.quit-title; font-size: 18px; font-weight: 700; }
+                content := VerticalBox { padding: Theme.space-4; spacing: 14px;
+                    Label { text: root.words.quit-title; font-size: Theme.title; font-weight: 700; }
                     Label { text: root.view.export-running ? root.words.export-body : root.words.quit-body; wrap: word-wrap; }
-                    HorizontalBox { padding: 0px; spacing: 8px; alignment: end;
+                    HorizontalBox { padding: 0px; spacing: Theme.space-2; alignment: end;
                         cancel := ActionButton { text: root.words.cancel; enabled: !root.view.quit-committed; clicked => { root.cancel-quit(); } }
                         ActionButton { text: root.words.stop-quit; enabled: !root.view.quit-committed; clicked => { root.stop-and-quit(); } }
                         if root.view.quit-now: ActionButton { text: root.words.quit-now; clicked => { root.quit-now(); } }
