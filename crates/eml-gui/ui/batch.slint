@@ -16,14 +16,15 @@ export component BatchPane inherits Rectangle {
     in property <[EmailRow]> rows;
     in property <EmailDetail> detail;
     in property <bool> hovered;
+    callback text-focus-changed();
+    callback text-editors-changed();
     callback add-files(); callback add-folder(); callback reset(); callback start(); callback stop();
     callback filter(); callback select(string); callback navigate(int,int); callback clear-selected();
     callback reveal-report(); callback show-copy(); callback show-original(); callback copy-details(); callback destination(); callback output();
     private property <bool> show-diagnostics: false;
-    private property <bool> diagnostics-has-focus: false;
-    out property <bool> text-has-focus: root.show-diagnostics && root.diagnostics != "" && root.diagnostics-has-focus;
     private property <string> diagnostics: root.view.diagnostics;
-    changed diagnostics => { root.show-diagnostics = false; }
+    changed show-diagnostics => { root.text-editors-changed(); }
+    changed diagnostics => { root.show-diagnostics = false; root.text-editors-changed(); }
     private property <length> column-width: min(Theme.column-max-width,root.width - Theme.space-6 * 2);
     private property <length> column-x: (root.width - self.column-width) / 2;
     private property <length> text-x: root.column-x + UiMetrics.scroll-inset + Theme.space-2;
@@ -64,9 +65,9 @@ export component BatchPane inherits Rectangle {
                 if root.view.banner != "": Label { text: "⚠ " + root.view.banner; color: Theme.warn; wrap: word-wrap; }
                 if root.diagnostics != "": TextButton { text: root.show-diagnostics ? root.words.hide-details : root.words.details; expandable: true; expanded: root.show-diagnostics; clicked => { root.show-diagnostics = !root.show-diagnostics; } }
                 if root.show-diagnostics && root.diagnostics != "": TextEdit {
-                    init => { root.diagnostics-has-focus = self.has-focus; }
-                    changed has-focus => { root.diagnostics-has-focus = self.has-focus; }
-                    text: root.diagnostics; read-only: true; preferred-height: 100px; max-height: 100px; accessible-label: root.words.processing-details; }
+                    init => { root.text-editors-changed(); }
+                    changed has-focus => { root.text-focus-changed(); }
+                    text: root.diagnostics; read-only: true; preferred-height: Theme.diagnostic-height; max-height: Theme.diagnostic-height; accessible-label: root.words.processing-details; }
                 if root.view.notice != "": HorizontalBox { padding: 0px; spacing: Theme.space-2;
                     Label { text: root.view.notice; color: Theme.warn; overflow: elide; horizontal-stretch: 1; accessible-live-region: polite; }
                     if root.view.can-reveal-report: TextButton { text: root.words.show-report; clicked => { root.reveal-report(); } }

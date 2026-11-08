@@ -28,6 +28,9 @@ export component MainWindow inherits Window {
     callback select-email(string); callback navigate-email(int,int); callback clear-selected();
     callback reveal-report(); callback show-copy(); callback show-original(); callback copy-details(); callback copy(); callback export-report(); callback reveal-output(int);
     callback close-window(); callback minimize(); callback website(); callback licenses(); callback about();
+    in property <bool> text-copy-eligible;
+    callback text-focus-changed();
+    callback text-editors-changed();
     callback cancel-quit(); callback stop-and-quit(); callback quit-now();
     MenuBar {
         Menu { title: root.words.file;
@@ -37,7 +40,7 @@ export component MainWindow inherits Window {
             if root.view.can-reveal-report: MenuItem { title: root.words.show-saved-report; activated => { root.reveal-report(); } }
             MenuItem { title: root.words.close; shortcut: @keys(Control + W); activated => { root.close-window(); } }
         }
-        Menu { title: root.words.edit; MenuItem { title: root.words.copy; shortcut: @keys(Control + C); enabled: batch-pane.text-has-focus || root.view.can-copy; activated => { root.copy(); } } }
+        Menu { title: root.words.edit; MenuItem { title: root.words.copy; shortcut: @keys(Control + C); enabled: root.view.can-copy || root.text-copy-eligible; activated => { root.copy(); } } }
         Menu { title: root.words.batch;
             MenuItem { title: root.view.primary; shortcut: @keys(Control + Return); enabled: root.view.can-start; activated => { root.start-selection(); } }
             MenuItem { title: root.words.stop; shortcut: @keys(Control + "."); enabled: root.view.can-stop; activated => { root.stop(); } }
@@ -61,6 +64,8 @@ export component MainWindow inherits Window {
         add-files => { root.choose-files(); } add-folder => { root.choose-folder(); } reset => { root.start-over(); }
         start => { root.start-selection(); } stop => { root.stop(); } filter => { root.toggle-problems(); }
         select(key) => { root.select-email(key); } navigate(delta,edge) => { root.navigate-email(delta,edge); } clear-selected => { root.clear-selected(); }
+        text-focus-changed => { root.text-focus-changed(); }
+        text-editors-changed => { root.text-editors-changed(); }
         reveal-report => { root.reveal-report(); }
         show-copy => { root.show-copy(); } show-original => { root.show-original(); } copy-details => { root.copy-details(); }
         destination => { destinations.show(); } output => { root.show-output(); }
