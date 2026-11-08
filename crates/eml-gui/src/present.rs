@@ -344,24 +344,39 @@ impl crate::DesktopController {
             return;
         };
         let total = inventory.map(|(total, _complete)| total);
-        let totals = BatchTotals::from(rows.iter().map(|row| {
-            (
-                match row.status {
-                    RowStatus::Settled(o) => Some(o),
-                    _ => None,
-                },
-                row.item.removed.len(),
-                row.item
-                    .source_bytes
-                    .value()
-                    .copied()
-                    .zip(row.item.copy_bytes.value().copied()),
-            )
-        }));
+        let totals = BatchTotals::from(
+            rows.iter().map(|row| {
+                (
+                    match row.status {
+                        RowStatus::Settled(o) => Some(o),
+                        _ => None,
+                    },
+                    row.item.removed.len(),
+                    row.item
+                        .source_bytes
+                        .value()
+                        .copied()
+                        .zip(row.item.copy_bytes.value().copied()),
+                )
+            }),
+            0,
+        );
+        let stopped_totals = (r.batch.state() == State::Stopped)
+            .then(|| {
+                r.batch
+                    .create
+                    .as_ref()?
+                    .report
+                    .as_ref()?
+                    .with_report(crate::view_model::settled_totals)
+                    .flatten()
+            })
+            .flatten();
         let header = wording::header(
             &r.batch,
             &totals,
             inventory,
+            stopped_totals.as_ref(),
             rows.iter()
                 .filter(|r| r.status == RowStatus::Missing)
                 .count(),

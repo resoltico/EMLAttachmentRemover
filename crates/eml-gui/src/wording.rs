@@ -10,6 +10,7 @@ pub(super) fn header(
     batch: &Batch,
     totals: &BatchTotals,
     inventory: Option<(u32, bool)>,
+    stopped_totals: Option<&BatchTotals>,
     missing: usize,
 ) -> Header {
     let total = inventory.map(|(total, _complete)| total);
@@ -74,13 +75,16 @@ pub(super) fn header(
             "Removing attachments…".into(),
             vec!["Your originals are not changed".into()],
         ),
-        State::Stopped => (
-            "Stopped".into(),
-            vec![
-                Outcome::CopySaved.count_label(saved),
-                Outcome::NotProcessed.count_label(totals.count(Outcome::NotProcessed)),
-            ],
-        ),
+        State::Stopped => {
+            let settled = stopped_totals.unwrap_or(totals);
+            (
+                "Stopped".into(),
+                vec![
+                    Outcome::CopySaved.count_label(settled.saved()),
+                    Outcome::NotProcessed.count_label(settled.count(Outcome::NotProcessed)),
+                ],
+            )
+        }
         State::Done => (
             if saved == 0 && (totals.has_attention() || incomplete_create) {
                 "Results need attention".into()

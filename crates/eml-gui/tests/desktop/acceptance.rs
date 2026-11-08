@@ -2598,3 +2598,30 @@ fn blocked_collection_does_not_claim_that_no_emails_exist() {
     assert!(c.window().get_view().banner.contains("save folder"));
     assert!(!c.window().get_view().can_start);
 }
+
+#[test]
+fn stopped_summary_includes_core_work_without_preview_rows() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let mut values: Vec<Value> = stream(
+        root.path(),
+        &[("one.eml", "started-preedge-cancellation")],
+        false,
+    )
+    .lines()
+    .map(|l| serde_json::from_str(l).unwrap())
+    .collect();
+    values[0]["total"] = 5.into();
+    values[2]["counts"]["not_processed"] = 4.into();
+    let create: String = values.iter().map(|v| format!("{v}\n")).collect();
+    let c = controller(root.path(), dual(root.path(), "", &create));
+    c.stage(vec![root.path().join("inputs")]).unwrap();
+    c.start_selection();
+    pump(&c, || !c.is_busy());
+    assert_eq!(c.window().get_view().state, BatchState::Stopped);
+    assert!(
+        c.window().get_view().summary.contains("5 not processed"),
+        "{}",
+        c.window().get_view().summary
+    );
+}

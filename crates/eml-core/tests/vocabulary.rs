@@ -123,6 +123,7 @@ fn u2_totals_sizes_and_unnamed_parts() {
             (Outcome::NotProcessed, 0, None),
         ]
         .map(|(outcome, parts, bytes)| (Some(outcome), parts, bytes)),
+        0,
     );
     assert_eq!(
         (
@@ -138,7 +139,7 @@ fn u2_totals_sizes_and_unnamed_parts() {
 
 #[test]
 fn unresolved_emails_have_no_invented_terminal_outcome() {
-    let totals = BatchTotals::from([(None, 0, None)]);
+    let totals = BatchTotals::from([(None, 0, None)], 0);
     assert_eq!(totals.emails, 1);
     assert!(totals.counts.is_empty());
     assert_eq!(totals.problems, 0);
@@ -222,4 +223,12 @@ fn completed_cleanup_with_a_native_error_is_not_reported_as_unconfirmed() {
         Outcome::from(&f, 0),
         Outcome::Failed(eml_core::ErrorCode::CleanupFailed)
     );
+}
+
+#[test]
+fn remaining_work_and_explicitly_interrupted_items_are_counted_once() {
+    let totals = BatchTotals::from([(Some(Outcome::NotProcessed), 0, None)], 4);
+    assert_eq!(totals.emails, 5);
+    assert_eq!(totals.count(Outcome::NotProcessed), 5);
+    assert_eq!(totals.problems, 0);
 }
