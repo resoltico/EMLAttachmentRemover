@@ -47,6 +47,11 @@ Explicit ordinary leaf names use a canonical spelling only when canonical parent
 identity and complete file signature prove the same captured entry. Unproven or
 long-path canonicalization retains conservative spelling without a new admission
 error; final symlink entries and distinct hard-link names are not merged by inode.
+POSIX `realpath` is not a portable stored-leaf spelling oracle: on Linux it resolves
+traversal and symbolic links without proving stored case or Unicode normalization.
+Differing unproven leaf spellings therefore remain separate even when filesystem
+lookup reaches the same file. Identical repeated operands still coalesce; native
+canonical-spelling proofs on macOS and Windows can coalesce leaf aliases.
 Explicit files take precedence; the deepest selected root owns a walked file.
 The reported total stays paired with collection completeness; incomplete checking
 does not by itself establish a read failure or an empty selection.
