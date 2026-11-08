@@ -182,7 +182,11 @@ fn argument_error_text(mut error: clap::Error) -> String {
 }
 fn native_message(context: &str, error: &io::Error) -> String {
     match error.raw_os_error() {
-        Some(code) => format!("{context}: {} (OS error {code})\n", error.kind()),
+        Some(code) => format!(
+            "{context}: {} ({})\n",
+            error.kind(),
+            eml_core::NativeDiagnostic::OsCode(code)
+        ),
         None => format!("{context}: {}\n", error.kind()),
     }
 }
