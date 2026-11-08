@@ -200,3 +200,26 @@ fn field_incomplete_qualification_does_not_invent_a_new_write() {
         "A copy exists, but the final checks didn’t complete. Check the save folder, then try again. Existing copies are never replaced."
     );
 }
+
+#[test]
+fn completed_cleanup_with_a_native_error_is_not_reported_as_unconfirmed() {
+    let mut f = facts();
+    f.result = ResultKind::Failed;
+    f.publication = Publication::NotPublished;
+    f.error = Some(eml_core::ErrorCode::CleanupFailed);
+    f.cleanup.state = eml_core::CleanupState::Complete;
+    f.cleanup.native_code = Some(5);
+    let meaning = classify(&f);
+    assert!(
+        !meaning
+            .consequences
+            .iter()
+            .any(|c| c.text().contains("could not be established"))
+    );
+    assert!(meaning.consequences.iter().any(|c| c.text()
+        == "Cleanup completed, but reported a native error. Inspect the cleanup details."));
+    assert_eq!(
+        Outcome::from(&f, 0),
+        Outcome::Failed(eml_core::ErrorCode::CleanupFailed)
+    );
+}

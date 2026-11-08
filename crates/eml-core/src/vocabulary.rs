@@ -141,6 +141,8 @@ pub enum Consequence {
     ResidualCleanup,
     /// Cleanup could not be established.
     UnknownCleanup,
+    /// Cleanup completed while retaining a native failure observation.
+    CleanupCompletedWithError,
 }
 impl Consequence {
     /// Canonical explanation and next action, without interpolated paths.
@@ -165,6 +167,9 @@ impl Consequence {
             }
             Self::UnknownCleanup => {
                 "Temporary-resource cleanup could not be established. Inspect the cleanup details."
+            }
+            Self::CleanupCompletedWithError => {
+                "Cleanup completed, but reported a native error. Inspect the cleanup details."
             }
         }
     }
@@ -287,6 +292,11 @@ pub fn classify(f: &OutcomeFacts) -> OutcomeMeaning {
     match f.cleanup.state {
         CleanupState::Residual => consequences.push(Consequence::ResidualCleanup),
         CleanupState::Unknown => consequences.push(Consequence::UnknownCleanup),
+        CleanupState::Complete
+            if f.cleanup.native_code.is_some() && f.cleanup.residual_name.is_none() =>
+        {
+            consequences.push(Consequence::CleanupCompletedWithError);
+        }
         _ if !cleanup_ok => consequences.push(Consequence::UnknownCleanup),
         _ => {}
     }

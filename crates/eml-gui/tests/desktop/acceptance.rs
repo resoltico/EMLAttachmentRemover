@@ -2372,7 +2372,7 @@ fn core_consequences_reach_selected_details_and_copy_details() {
         ),
         (
             "complete-cleanup-with-error",
-            "Temporary-resource cleanup could not be established. Inspect the cleanup details.",
+            "Cleanup completed, but reported a native error. Inspect the cleanup details.",
         ),
     ] {
         let root = tempfile::tempdir().unwrap();
