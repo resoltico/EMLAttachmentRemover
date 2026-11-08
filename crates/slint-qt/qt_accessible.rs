@@ -1102,9 +1102,6 @@ cpp! {{
                 m_data.item.upgrade().map(|i| i.supported_accessibility_actions()).unwrap_or_default()
             });
             QStringList actions;
-            const auto current = state();
-            if (isValid() && qwidget()->isVisible() && current.focusable && !current.disabled)
-                actions << QAccessibleActionInterface::setFocusAction();
             if (supported & rust!(Slint_accessible_item_an1 [] -> SupportedAccessibilityAction as "uint" { SupportedAccessibilityAction::Default }))
                 actions << QAccessibleActionInterface::pressAction();
             if (supported & rust!(Slint_accessible_item_an2 [] -> SupportedAccessibilityAction as "uint" { SupportedAccessibilityAction::Increment }))
@@ -1113,6 +1110,11 @@ cpp! {{
                 actions << QAccessibleActionInterface::decreaseAction();
             if (supported & rust!(Slint_accessible_item_an4 [] -> SupportedAccessibilityAction as "uint" { SupportedAccessibilityAction::Expand }))
                 actions << QAccessibleActionInterface::pressAction();
+            // Existing activation remains the default action. Focusing is an
+            // additional capability, not a replacement for Press at index zero.
+            const auto current = state();
+            if (isValid() && qwidget()->isVisible() && current.focusable && !current.disabled)
+                actions << QAccessibleActionInterface::setFocusAction();
             return actions;
         }
 
