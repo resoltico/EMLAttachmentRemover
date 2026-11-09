@@ -1,7 +1,7 @@
 use crate::{Result, capture, tool};
 use std::{fs, io::Write, path::Path, process::Command};
 
-pub(crate) fn write(app: bool, targets: &[String], out: &Path) -> Result<()> {
+pub(crate) fn write(app: bool, target: &str, out: &Path) -> Result<()> {
     tool("cargo-about", "cargo_about")?;
     // The GUI's shipped normal/build graph uses the royalty-free Slint license.
     // cargo-about cannot supply that LicenseRef text; the upstream supplement is mandatory.
@@ -18,45 +18,37 @@ pub(crate) fn write(app: bool, targets: &[String], out: &Path) -> Result<()> {
     } else {
         None
     };
-    let mut texts = Vec::new();
-    for package in if app {
-        &["eml-gui"][..]
-    } else {
-        &["eml-cli"][..]
-    } {
-        let mut command = Command::new("cargo");
-        command
-            .args([
-                "about",
-                "generate",
-                "--fail",
-                "--locked",
-                "--config",
-                "legal/about.toml",
-                "--manifest-path",
-            ])
-            .arg(format!("crates/{package}/Cargo.toml"));
-        for target in targets {
-            command.args(["--target", target]);
-        }
-        if *package == "eml-gui" {
-            command.args([
-                "--no-default-features",
-                "--features",
-                "desktop renderer-software",
-            ]);
-        }
-        command.arg("legal/about.hbs");
-        // Keep cargo-about's diagnostics visible, including incomplete license sources.
-        let result = command.stderr(std::process::Stdio::inherit()).output()?;
-        if !result.status.success() {
-            return Err(format!("cargo-about failed: {}", result.status).into());
-        }
-        if result.stdout.is_empty() {
-            return Err("cargo-about produced no notices".into());
-        }
-        texts.push(result.stdout);
+    let package = if app { "eml-gui" } else { "eml-cli" };
+    let mut command = Command::new("cargo");
+    command
+        .args([
+            "about",
+            "generate",
+            "--fail",
+            "--locked",
+            "--config",
+            "legal/about.toml",
+            "--manifest-path",
+        ])
+        .arg(format!("crates/{package}/Cargo.toml"));
+    command.args(["--target", target]);
+    if app {
+        command.args([
+            "--no-default-features",
+            "--features",
+            "desktop renderer-software",
+        ]);
     }
+    command.arg("legal/about.hbs");
+    // Keep cargo-about's diagnostics visible, including incomplete license sources.
+    let result = command.stderr(std::process::Stdio::inherit()).output()?;
+    if !result.status.success() {
+        return Err(format!("cargo-about failed: {}", result.status).into());
+    }
+    if result.stdout.is_empty() {
+        return Err("cargo-about produced no notices".into());
+    }
+    let mut texts = vec![result.stdout];
     if let Some(text) = supplement {
         texts.push(text);
     }

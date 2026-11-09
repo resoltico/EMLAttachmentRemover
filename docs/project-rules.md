@@ -37,7 +37,7 @@ defenses outside it without changing it first.
 
 ## Product constraints
 
-Slint is the GUI toolkit. Desktop library and headless development support macOS and Linux; Windows supports core and the CLI only. The native desktop GUI and its distribution target macOS only. Linux builds use an Ubuntu 26.04 baseline on both CPU architectures. Slint is used as published: no vendored or patched toolkit crates without an owner decision recorded here. Signing is ad hoc only. Intel Macs are supported. macOS-only integration is limited to application-menu About routing, the Quit shim and document opening.
+Slint is the GUI toolkit. Desktop library and headless development support macOS and Linux; Windows supports core and the CLI only. The native desktop GUI and its distribution target macOS only. Linux builds use an Ubuntu 26.04 baseline on both CPU architectures. Slint is used as published: no vendored or patched toolkit crates without an owner decision recorded here. Signing is ad hoc only. Intel Macs are supported. macOS CLI and app distributions ship separate Apple Silicon and Intel archives. macOS-only integration is limited to application-menu About routing, the Quit shim and document opening.
 
 Front ends call core in process and render its events. No front end invokes or bundles another front end.
 

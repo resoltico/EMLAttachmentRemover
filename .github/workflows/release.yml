@@ -64,8 +64,17 @@ jobs:
           path: ${{ runner.temp }}/dist/*
           if-no-files-found: error
   macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: aarch64-apple-darwin, platform: macos-aarch64 }
+          - { target: x86_64-apple-darwin, platform: macos-x86_64 }
     runs-on: macos-26
     timeout-minutes: 30
+    env:
+      TARGET_TRIPLE: ${{ matrix.target }}
+      ARCHIVE_PLATFORM: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -77,36 +86,35 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: cargo-app-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', 'xtask/tools.toml') }}
-          restore-keys: cargo-app-${{ runner.os }}-${{ runner.arch }}-
+          key: cargo-app-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', 'xtask/tools.toml') }}
+          restore-keys: |
+            cargo-app-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-
+            cargo-app-${{ runner.os }}-${{ runner.arch }}-
       - name: Read tool versions
         id: tools
-        shell: bash
         run: cargo xtask tool-versions >> "$GITHUB_OUTPUT"
       - uses: taiki-e/install-action@b80e2bb2635f28eb98b9fce1e2f0887e1535c6b2
         with:
           tool: cargo-about@${{ steps.tools.outputs.cargo_about }}
-      - run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
-      - run: cargo xtask dist --cli --app --universal --out "$RUNNER_TEMP/dist"
-      - name: Build the native core document probe separately from product archives
+      - run: rustup target add "$TARGET_TRIPLE"
+      - run: cargo xtask dist --cli --app --target "$TARGET_TRIPLE" --out "$RUNNER_TEMP/dist"
+      - name: Build the matching native core document probe separately from product archives
         run: |
-          archive=("$RUNNER_TEMP"/dist/*-gui-*-macos-universal.zip)
+          archive=("$RUNNER_TEMP"/dist/*-gui-*-"$ARCHIVE_PLATFORM".zip)
           unzip -p "${archive[0]}" "EML Attachment Remover.app/Contents/Info.plist" > "$RUNNER_TEMP/app-info.plist"
           MACOSX_DEPLOYMENT_TARGET=$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$RUNNER_TEMP/app-info.plist")
           export MACOSX_DEPLOYMENT_TARGET
-          for target in aarch64-apple-darwin x86_64-apple-darwin; do
-            cargo build --locked --profile dist --target "$target" -p eml-gui --bin eml-gui-document-probe --features desktop
-          done
+          cargo build --locked --profile dist --target "$TARGET_TRIPLE" -p eml-gui --bin eml-gui-document-probe --features desktop
           cargo_artifacts=$(cargo metadata --locked --no-deps --format-version 1 | python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])')
-          lipo -create "$cargo_artifacts/aarch64-apple-darwin/dist/eml-gui-document-probe" "$cargo_artifacts/x86_64-apple-darwin/dist/eml-gui-document-probe" -output "$RUNNER_TEMP/eml-gui-document-probe"
+          cp "$cargo_artifacts/$TARGET_TRIPLE/dist/eml-gui-document-probe" "$RUNNER_TEMP/eml-gui-document-probe"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
-          name: macos-document-probe
+          name: macos-document-probe-${{ matrix.target }}
           path: ${{ runner.temp }}/eml-gui-document-probe
           if-no-files-found: error
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
-          name: macos-universal
+          name: macos-dist-${{ matrix.target }}
           path: ${{ runner.temp }}/dist/*
           if-no-files-found: error
   floor-smoke:
@@ -114,30 +122,44 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner: [macos-15, macos-15-intel]
+        include:
+          - { runner: macos-15, target: aarch64-apple-darwin, platform: macos-aarch64, arch: arm64 }
+          - { runner: macos-15-intel, target: x86_64-apple-darwin, platform: macos-x86_64, arch: x86_64 }
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 15
+    env:
+      ARCHIVE_PLATFORM: ${{ matrix.platform }}
+      EXPECTED_ARCH: ${{ matrix.arch }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
-          name: macos-universal
+          name: macos-dist-${{ matrix.target }}
           path: target/dist
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
-          name: macos-document-probe
+          name: macos-document-probe-${{ matrix.target }}
           path: ${{ runner.temp }}/document-probe
-      - name: Smoke the exact CLI and app archives on the macOS 15 floor
+      - name: Smoke the matching CLI and app archives on the macOS 15 floor
         run: |
           chmod +x "$RUNNER_TEMP/document-probe/eml-gui-document-probe"
           mkdir -p target/smoke
-          tar -xzf target/dist/emlattachmentremover-*-macos-universal.tar.gz -C target/smoke
-          ditto -x -k target/dist/emlattachmentremover-gui-*-macos-universal.zip target/smoke
+          tar -xzf target/dist/emlattachmentremover-*-"$ARCHIVE_PLATFORM".tar.gz -C target/smoke
+          ditto -x -k target/dist/emlattachmentremover-gui-*-"$ARCHIVE_PLATFORM".zip target/smoke
+          host_arch=$(uname -m)
+          [[ "$host_arch" == "$EXPECTED_ARCH" ]]
+          translated=$(sysctl -in sysctl.proc_translated)
+          [[ "$translated" != "1" ]]
+          cli_arch=$(lipo -archs target/smoke/emlattachmentremover)
+          [[ "$cli_arch" == "$EXPECTED_ARCH" ]]
+          app_version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "target/smoke/EML Attachment Remover.app/Contents/Info.plist")
+          cli_version=$(target/smoke/emlattachmentremover --version)
+          [[ "$cli_version" == "emlattachmentremover $app_version ($EML_SOURCE_REVISION)" ]]
           scripts/smoke-cli.sh target/smoke/emlattachmentremover tests/contract/mime
           scripts/smoke-macos-app.sh "target/smoke/EML Attachment Remover.app" \
-            tests/contract/mime/inputs/01-gmail-attachment.eml "$RUNNER_TEMP/document-probe/eml-gui-document-probe"
+            tests/contract/mime/inputs/01-gmail-attachment.eml "$RUNNER_TEMP/document-probe/eml-gui-document-probe" "$EXPECTED_ARCH"
   checksums:
     needs: [cli, macos, floor-smoke]
     runs-on: ubuntu-26.04
@@ -150,9 +172,21 @@ jobs:
           merge-multiple: true
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
-          name: macos-universal
+          name: macos-dist-aarch64-apple-darwin
           path: target/dist
-      - run: (cd target/dist && sha256sum -- *.tar.gz *.zip > SHA256SUMS)
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: macos-dist-x86_64-apple-darwin
+          path: target/dist
+      - name: Hash the complete release archive set
+        run: |
+          (
+            cd target/dist
+            archives=( *.tar.gz *.zip )
+            # Six CLI archives (Linux/Windows/macOS, both CPUs) and two Mac apps.
+            [[ "${#archives[@]}" -eq 8 ]] || { echo "Expected eight release archives" >&2; exit 1; }
+            sha256sum -- "${archives[@]}" > SHA256SUMS
+          )
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: checksums
@@ -206,12 +240,18 @@ jobs:
           merge-multiple: true
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
-          name: macos-universal
+          name: macos-dist-aarch64-apple-darwin
+          path: target/dist
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: macos-dist-x86_64-apple-darwin
           path: target/dist
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: checksums
           path: target/dist
+      - name: Verify the downloaded release archives before attesting
+        run: (cd target/dist && sha256sum --check --strict SHA256SUMS)
       - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
         with:
           subject-path: target/dist/*

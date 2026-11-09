@@ -15,13 +15,38 @@ When upgrading pinned Slint, re-verify native Edit → Copy and Select All routi
 
 ```sh
 rustup target add aarch64-apple-darwin x86_64-apple-darwin
-cargo xtask dist --cli --app --universal --out target/dist
-mkdir -p target/smoke
-tar -xzf target/dist/emlattachmentremover-*-macos-universal.tar.gz -C target/smoke
-ditto -x -k target/dist/emlattachmentremover-gui-*-macos-universal.zip target/smoke
-scripts/smoke-cli.sh target/smoke/emlattachmentremover tests/contract/mime
-EML_SOURCE_REVISION="$(git rev-parse HEAD)" cargo build --locked -p eml-gui --bin eml-gui-document-probe --features desktop
-scripts/smoke-macos-app.sh 'target/smoke/EML Attachment Remover.app' tests/contract/mime/inputs/01-gmail-attachment.eml target/debug/eml-gui-document-probe
+for mac_arch in aarch64 x86_64; do
+  cargo xtask dist --cli --app --target "$mac_arch-apple-darwin" --out target/dist
+done
+```
+
+Run the exact-archive checks on the matching Mac. The example selects Apple
+Silicon. On Intel set `mac_arch=x86_64` and `mac_macho_arch=x86_64`; each
+architecture needs its own native run. The checks reject wrong-CPU or
+multi-architecture binaries and a Rosetta-translated shell before execution.
+
+```sh
+set -eu
+mac_arch=aarch64
+mac_macho_arch=arm64
+mac_target="$mac_arch-apple-darwin"
+mkdir -p "target/smoke/$mac_arch"
+tar -xzf target/dist/emlattachmentremover-*-macos-"$mac_arch".tar.gz -C "target/smoke/$mac_arch"
+ditto -x -k target/dist/emlattachmentremover-gui-*-macos-"$mac_arch".zip "target/smoke/$mac_arch"
+host_arch=$(uname -m)
+test "$host_arch" = "$mac_macho_arch"
+translated=$(sysctl -in sysctl.proc_translated)
+test "$translated" != "1"
+cli_arch=$(lipo -archs "target/smoke/$mac_arch/emlattachmentremover")
+test "$cli_arch" = "$mac_macho_arch"
+revision=$(git rev-parse HEAD)
+app_version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "target/smoke/$mac_arch/EML Attachment Remover.app/Contents/Info.plist")
+cli_version=$("target/smoke/$mac_arch/emlattachmentremover" --version)
+test "$cli_version" = "emlattachmentremover $app_version ($revision)"
+scripts/smoke-cli.sh "target/smoke/$mac_arch/emlattachmentremover" tests/contract/mime
+EML_SOURCE_REVISION="$revision" MACOSX_DEPLOYMENT_TARGET=15.0 cargo build --locked --profile dist --target "$mac_target" -p eml-gui --bin eml-gui-document-probe --features desktop
+cargo_artifacts=$(cargo metadata --locked --no-deps --format-version 1 | python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])')
+EML_SOURCE_REVISION="$revision" scripts/smoke-macos-app.sh "target/smoke/$mac_arch/EML Attachment Remover.app" tests/contract/mime/inputs/01-gmail-attachment.eml "$cargo_artifacts/$mac_target/dist/eml-gui-document-probe" "$mac_macho_arch"
 ```
 
 Distribution uses the `dist` Cargo profile: checked release arithmetic, Thin LTO,
@@ -42,9 +67,13 @@ document types as Viewer/Alternate, with no Services or Assets.car. The icon is 
 source is an artwork-maintenance task, described in
 [artwork guide](../artwork/README.md).
 
-Both Mac executables contain arm64 and x86_64 slices with deployment minimum 15.0.
-The app bundle is ad hoc signed, followed by deep strict signature verification. Distribution resolves `HEAD` once, embeds that full revision
-in both binaries for every CPU target, and uses its UTC committer time for archives.
+Each macOS archive contains exactly one architecture: `macos-aarch64` contains
+arm64 Mach-O code; `macos-x86_64` contains x86_64 code. Both have deployment minimum
+15.0. Distribution defaults to the Rust host target; `--target` selects a different
+supported architecture. The app requires a macOS build host and a Darwin target.
+The app bundle is ad hoc signed, followed by deep strict signature verification.
+Each distribution command resolves `HEAD` once, embeds that full revision in both
+binaries for its CPU target, and uses its UTC committer time for archives.
 A conflicting `EML_SOURCE_REVISION` is rejected; empty or absent values are omitted
 from ordinary Cargo builds. Supplied revisions must contain 40 or 64 ASCII
 hexadecimal characters. ZIP timestamps round down to two-second precision.
@@ -63,20 +92,20 @@ CLI builds use native MSVC with static CRT and ZIP. On Linux run
 `cargo xtask dist --cli --target <native-triple> --out <fresh-folder>`. On Windows
 run `cargo run --locked -p xtask --target <native-triple> -- dist --cli --target <native-triple> --out <fresh-folder>`
 so host procedural macros are built separately from static-CRT target flags.
-Each archive includes notices for its selected normal/build dependency graph and
-Rust standard-library material. App notices cover its GUI graph and
-both CPU slices, with required upstream supplements. See
-[legal materials](../legal/README.md).
+The CLI and GUI are built in separate Cargo invocations so their dependency
+features remain independent. Each archive includes notices for its selected normal/build dependency graph and
+Rust standard-library material. App notices cover its selected architecture’s GUI
+graph, with required upstream supplements. See [legal materials](../legal/README.md).
 
 ## CI and owner release steps
 
 The [release workflow](../.github/workflows/release.yml) builds archives once,
-smokes those exact bytes, and runs the universal CLI/app on macos-15 and
-macos-15-intel. CLI smoke compares every MIME fixture with its golden bytes or
-expected refusal and checks original bytes. App smoke verifies signatures and CPU
-slices, launches with two selected paths and requests idle Quit without writing
-copies, and rejects a Helpers directory. CLI archives own their independent golden
-copy check. It does not automate Finder, Dock, file dialogs or other OS UI.
+smokes those exact bytes, and runs the Apple Silicon CLI/app on macos-15 and the
+Intel CLI/app on macos-15-intel. CLI smoke compares every MIME fixture with its
+golden bytes or expected refusal and checks original bytes. App smoke verifies
+signatures and the exact single CPU architecture, launches with two selected paths
+and requests idle Quit without writing copies, and rejects a Helpers directory.
+CLI archives own their independent golden copy check. It does not automate Finder, Dock, file dialogs or other OS UI.
 
 The floor smoke also runs [the native document-event probe](../scripts/smoke-macos-document-event.sh),
 which requires Python 3 (standard library only; tested with 3.9 and 3.15).
@@ -89,11 +118,17 @@ one `open -a` delivery must then produce a request containing both native paths.
 The probe checks source preservation and unregisters its temporary bundle. It
 stays outside the merge gate and does not replace manual Dock acceptance.
 Pass the matching probe binary as its third argument. The release workflow builds
-it for both Mac CPU slices, deriving its minimum OS from the app plist. Product
-artifact selection explicitly excludes this fixture. Passing `--omit-delivery` to the probe is a negative control: it must fail because
-no second request arrives. There are no delivery retries.
+a separate matching probe for each Mac target, deriving its minimum OS from the
+app plist. Product artifact selection explicitly excludes this fixture. Passing
+`--omit-delivery` to the probe is a negative control: it must fail because no
+second request arrives. There are no delivery retries.
 
 A branch `workflow_dispatch` builds, smokes and uploads archives and SHA256SUMS.
+The checksum job requires exactly eight product archives: six CLI archives
+(macOS, Linux and Windows, each for both CPUs) and two macOS app ZIPs. The
+architecture-matched document probes are separate test artifacts and are excluded
+from this set. After downloading the complete product set again, the tag-only
+draft job checks every archive against SHA256SUMS before attestation and drafting.
 Producer archives and CLI extraction folders use runner-temporary directories
 outside restored Cargo caches. A branch run skips attestation and draft-release
 creation. On an existing `v*` tag, successful
@@ -132,6 +167,6 @@ The scheduled Weekly workflow runs full fuzz and mutation campaigns once a week,
 separately from the merge gate. Only the owner may dispatch it manually. Development
 is limited to fuzz micro runs of at most 120 seconds (10 minutes total) and mutation
 runs of at most 60 selected mutants. See [CONTRIBUTING](../CONTRIBUTING.md) for commands.
-Intel Macs retain universal builds and macOS 15 Intel archive smoke coverage; the
+Intel Macs retain their own builds and macOS 15 Intel archive smoke coverage; the
 separate weekly Intel full-suite job is retired. The first scheduled Weekly run
 establishes the survivor baseline and is not part of the gates follow-up PR.

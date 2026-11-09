@@ -21,25 +21,23 @@ struct Arguments {
 }
 #[derive(Subcommand)]
 enum Task {
-    /// Build the release CLI archive, and optionally the universal macOS app.
+    /// Build target-specific CLI and macOS app archives (native target by default).
     Dist {
         #[arg(long)]
         cli: bool,
         #[arg(long)]
         app: bool,
         #[arg(long)]
-        universal: bool,
-        #[arg(long)]
         target: Option<String>,
         #[arg(long, default_value = "target/dist")]
         out: PathBuf,
     },
-    /// Generate notices for the selected shipped graph and actual target(s).
+    /// Generate notices for the selected shipped graph and one actual target.
     Notices {
         #[arg(long)]
         app: bool,
         #[arg(long, required = true)]
-        target: Vec<String>,
+        target: String,
         #[arg(long)]
         out: PathBuf,
     },
@@ -65,10 +63,9 @@ fn execute() -> Result<()> {
         Task::Dist {
             cli,
             app,
-            universal,
             target,
             out,
-        } => dist::build(cli, app, universal, target, &out),
+        } => dist::build(cli, app, target, &out),
         Task::Notices { app, target, out } => notices::write(app, &target, &out),
         Task::Ci { rust_only } => ci::run(rust_only),
         Task::Lint => lint::run(),
@@ -127,6 +124,69 @@ fn tool(name: &str, key: &str) -> Result<()> {
 
 #[cfg(test)]
 mod workspace_tests {
+    #[test]
+    fn distribution_arguments_accept_one_app_target_and_reject_universal() {
+        use super::{Arguments, Task};
+        use clap::Parser;
+        let parsed = Arguments::try_parse_from([
+            "xtask",
+            "dist",
+            "--cli",
+            "--app",
+            "--target",
+            "x86_64-apple-darwin",
+        ])
+        .unwrap();
+        assert!(
+            matches!(parsed.command, Task::Dist { cli: true, app: true, target: Some(target), .. } if target == "x86_64-apple-darwin")
+        );
+        assert!(Arguments::try_parse_from(["xtask", "dist", "--universal"]).is_err());
+        assert!(
+            Arguments::try_parse_from([
+                "xtask",
+                "dist",
+                "--target",
+                "aarch64-apple-darwin",
+                "--target",
+                "x86_64-apple-darwin",
+            ])
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn notices_arguments_require_one_target() {
+        use super::{Arguments, Task};
+        use clap::Parser;
+        let parsed = Arguments::try_parse_from([
+            "xtask",
+            "notices",
+            "--app",
+            "--target",
+            "aarch64-apple-darwin",
+            "--out",
+            "notices.txt",
+        ])
+        .unwrap();
+        assert!(
+            matches!(parsed.command, Task::Notices { app: true, target, .. } if target == "aarch64-apple-darwin")
+        );
+        assert!(Arguments::try_parse_from(["xtask", "notices", "--out", "notices.txt"]).is_err());
+        assert!(
+            Arguments::try_parse_from([
+                "xtask",
+                "notices",
+                "--target",
+                "aarch64-apple-darwin",
+                "--target",
+                "x86_64-apple-darwin",
+                "--out",
+                "notices.txt",
+            ])
+            .is_err()
+        );
+    }
+
     #[test]
     fn invocation_workspace_is_independent_of_the_executables_build_directory() {
         for _ in 0..2 {

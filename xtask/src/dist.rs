@@ -6,29 +6,9 @@ use std::{
     process::Command,
 };
 
-pub(crate) fn build(
-    cli: bool,
-    app: bool,
-    universal: bool,
-    target: Option<String>,
-    out: &Path,
-) -> Result<()> {
+pub(crate) fn build(cli: bool, app: bool, target: Option<String>, out: &Path) -> Result<()> {
     let host = host()?;
-    let mac = host.ends_with("apple-darwin");
-    if (app || universal) && !mac {
-        return Err("--app and --universal require a macOS build host".into());
-    }
-    if target.is_some() && (app || universal) {
-        return Err("--target cannot be combined with --app or --universal".into());
-    }
-    let targets = if mac && (app || universal || target.is_none()) {
-        vec![
-            "aarch64-apple-darwin".to_owned(),
-            "x86_64-apple-darwin".to_owned(),
-        ]
-    } else {
-        vec![target.unwrap_or_else(|| host.clone())]
-    };
+    let target = distribution_target(&host, app, target)?;
     let include_cli = cli || !app;
     let revision = crate::source::revision()?;
     let stamp = archive::Timestamp::for_revision(&revision)?;
@@ -36,59 +16,56 @@ pub(crate) fn build(
     let cargo_target = target_directory(&mut Command::new("cargo"))?;
     fs::create_dir_all(out)?;
     let scratch = tempfile::tempdir()?;
-    let binaries = scratch.path().join("binaries");
-    fs::create_dir(&binaries)?;
-    for target in &targets {
-        validate_target(target)?;
-        let mut command = Command::new("cargo");
-        command.args(["build", "--profile", "dist", "--locked", "--target", target]);
-        command.env("EML_SOURCE_REVISION", &revision);
-        if include_cli {
-            command.args(["-p", "emlattachmentremover", "--bin", CLI_NAME]);
-        }
-        if app {
-            command.args([
-                "-p",
-                "eml-gui",
-                "--bin",
-                "emlattachmentremover-gui",
-                "--features",
-                "eml-gui/desktop",
-            ]);
-        }
-        if mac {
-            command.env("MACOSX_DEPLOYMENT_TARGET", "15.0");
-        }
-        run(&mut command)?;
-    }
-    let extension = if targets[0].ends_with("windows-msvc") {
+    let extension = if target.ends_with("windows-msvc") {
         ".exe"
     } else {
         ""
     };
     let executable = format!("{CLI_NAME}{extension}");
+    let input = |name: &str| cargo_target.join(&target).join("dist").join(name);
     let mut products = Vec::new();
     if include_cli {
-        products.push((executable.as_str(), CLI_NAME));
+        products.push(("emlattachmentremover", executable.as_str(), CLI_NAME));
     }
     if app {
-        products.push(("emlattachmentremover-gui", "emlattachmentremover-gui"));
+        products.push((
+            "eml-gui",
+            "emlattachmentremover-gui",
+            "emlattachmentremover-gui",
+        ));
     }
-    for &(name, _) in &products {
-        let input = |target: &str| cargo_target.join(target).join("dist").join(name);
-        if targets.len() == 2 {
-            run(Command::new("lipo")
-                .arg("-create")
-                .args(targets.iter().map(|target| input(target)))
-                .arg("-output")
-                .arg(binaries.join(name)))?;
-        } else {
-            fs::copy(input(&targets[0]), binaries.join(name))?;
+    // Cargo unifies dependency features across selected packages. Build each
+    // product alone so its features match its standalone shipped-notices graph.
+    for &(package, name, command_name) in &products {
+        let mut command = Command::new("cargo");
+        command.args([
+            "build",
+            "--profile",
+            "dist",
+            "--locked",
+            "--target",
+            &target,
+            "-p",
+            package,
+            "--bin",
+            command_name,
+        ]);
+        command.env("EML_SOURCE_REVISION", &revision);
+        if package == "eml-gui" {
+            command.args(["--features", "eml-gui/desktop"]);
         }
-    }
-    if targets.contains(&host) {
-        for &(name, command_name) in &products {
-            let actual = crate::capture(Command::new(binaries.join(name)).arg("--version"))?;
+        let macos = target.ends_with("apple-darwin");
+        if macos {
+            command.env("MACOSX_DEPLOYMENT_TARGET", "15.0");
+        }
+        run(&mut command)?;
+        if macos {
+            let architectures =
+                crate::capture(Command::new("lipo").arg("-archs").arg(input(name)))?;
+            verify_macos_architecture(&target, &architectures)?;
+        }
+        if target == host {
+            let actual = crate::capture(Command::new(input(name)).arg("--version"))?;
             let expected = format!("{command_name} {VERSION} ({revision})");
             if actual != expected {
                 return Err(format!(
@@ -98,17 +75,13 @@ pub(crate) fn build(
             }
         }
     }
-    let suffix = if targets.len() == 2 {
-        "macos-universal".to_owned()
-    } else {
-        platform(&targets[0])?
-    };
+    let suffix = platform(&target)?;
     if include_cli {
         let stage = scratch.path().join("cli");
         fs::create_dir(&stage)?;
-        fs::copy(binaries.join(&executable), stage.join(&executable))?;
+        fs::copy(input(&executable), stage.join(&executable))?;
         fs::copy("LICENSE", stage.join("LICENSE"))?;
-        notices::write(false, &targets, &stage.join("THIRD-PARTY-NOTICES.txt"))?;
+        notices::write(false, &target, &stage.join("THIRD-PARTY-NOTICES.txt"))?;
         let format = if extension.is_empty() {
             "tar.gz"
         } else {
@@ -128,7 +101,7 @@ pub(crate) fn build(
             fs::create_dir_all(contents.join(directory))?;
         }
         fs::copy(
-            binaries.join("emlattachmentremover-gui"),
+            input("emlattachmentremover-gui"),
             contents.join("MacOS/EMLAttachmentRemover"),
         )?;
         fs::copy(
@@ -138,7 +111,7 @@ pub(crate) fn build(
         fs::copy("LICENSE", contents.join("Resources/LICENSE"))?;
         notices::write(
             true,
-            &targets,
+            &target,
             &contents.join("Resources/THIRD-PARTY-NOTICES.txt"),
         )?;
         fs::write(contents.join("Info.plist"), plist(bundle_version))?;
@@ -150,9 +123,32 @@ pub(crate) fn build(
             .arg(&bundle))?;
         archive::write(
             &stage,
-            &out.join(format!("{CLI_NAME}-gui-{VERSION}-macos-universal.zip")),
+            &out.join(format!("{CLI_NAME}-gui-{VERSION}-{suffix}.zip")),
             &stamp,
         )?;
+    }
+    Ok(())
+}
+fn distribution_target(host: &str, app: bool, target: Option<String>) -> Result<String> {
+    let target = target.unwrap_or_else(|| host.to_owned());
+    validate_target(&target)?;
+    if app && (!host.ends_with("apple-darwin") || !target.ends_with("apple-darwin")) {
+        return Err("--app requires a macOS build host and macOS target".into());
+    }
+    Ok(target)
+}
+fn verify_macos_architecture(target: &str, actual: &str) -> Result<()> {
+    let expected = match target {
+        "aarch64-apple-darwin" => "arm64",
+        "x86_64-apple-darwin" => "x86_64",
+        _ => return Err(format!("Not a supported macOS target: {target}").into()),
+    };
+    let mut architectures = actual.split_whitespace();
+    if architectures.next() != Some(expected) || architectures.next().is_some() {
+        return Err(format!(
+            "Built binary for {target} must contain only {expected}; found {actual:?}"
+        )
+        .into());
     }
     Ok(())
 }
@@ -235,6 +231,54 @@ fn plist(bundle_version: u32) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn distributions_select_one_native_or_explicit_target() {
+        for (target, suffix) in [
+            ("aarch64-apple-darwin", "macos-aarch64"),
+            ("x86_64-apple-darwin", "macos-x86_64"),
+            ("aarch64-unknown-linux-gnu", "linux-aarch64"),
+            ("x86_64-unknown-linux-gnu", "linux-x86_64"),
+            ("aarch64-pc-windows-msvc", "windows-aarch64"),
+            ("x86_64-pc-windows-msvc", "windows-x86_64"),
+        ] {
+            assert_eq!(distribution_target(target, false, None).unwrap(), target);
+            assert_eq!(platform(target).unwrap(), suffix);
+        }
+        for host in ["aarch64-apple-darwin", "x86_64-apple-darwin"] {
+            assert_eq!(distribution_target(host, true, None).unwrap(), host);
+            for target in ["aarch64-apple-darwin", "x86_64-apple-darwin"] {
+                assert_eq!(
+                    distribution_target(host, true, Some(target.into())).unwrap(),
+                    target
+                );
+            }
+        }
+        for (host, target) in [
+            ("aarch64-apple-darwin", "x86_64-unknown-linux-gnu"),
+            ("x86_64-unknown-linux-gnu", "aarch64-apple-darwin"),
+            ("x86_64-pc-windows-msvc", "x86_64-pc-windows-msvc"),
+        ] {
+            assert!(distribution_target(host, true, Some(target.into())).is_err());
+        }
+    }
+
+    #[test]
+    fn macos_archives_reject_the_wrong_architecture_and_multi_slice_binaries() {
+        for (target, expected, other) in [
+            ("aarch64-apple-darwin", "arm64", "x86_64"),
+            ("x86_64-apple-darwin", "x86_64", "arm64"),
+        ] {
+            verify_macos_architecture(target, expected).unwrap();
+            for actual in ["", other, "arm64 x86_64", "x86_64 arm64"] {
+                assert!(
+                    verify_macos_architecture(target, actual).is_err(),
+                    "{target}: {actual}"
+                );
+            }
+        }
+        assert!(verify_macos_architecture("x86_64-unknown-linux-gnu", "x86_64").is_err());
+    }
+
     #[test]
     fn targets_reject_old_windows_toolchain_and_unknown_platforms() {
         for target in [
