@@ -133,10 +133,6 @@ if command -v zsh >/dev/null; then
     assert 'original last line preserved' grep -qx 'export KEEP=1' "${fixture_home}/.zshrc"
     count=$(marker_count "${fixture_home}/.zshrc"); assert 'one PATH line' test "${count}" = 1
     resolved=$(resolve_in "${zsh_path}" -i -c "command -v ${command_name}"); assert 'new zsh finds installed program' test "${resolved}" = "${fixture_home}/.local/bin/${command_name}"
-    source_mail=${fixture_home}/source.eml
-    printf 'Subject: Installer smoke\r\n\r\nBody retained\r\n' > "${source_mail}"
-    env -i HOME="${fixture_home}" PATH="${base_path}" "${fixture_home}/.local/bin/${command_name}" -- "${source_mail}" > "${work}/cli-smoke"
-    assert 'installed CLI creates the exact body copy' cmp -s "${source_mail}" "${fixture_home}/source.no-attachments.eml"
     assert 'installer retains LICENSE' test -s "${fixture_home}/.local/bin/.${command_name}-install/legal/LICENSE"
     assert 'installer retains third-party notices' test -s "${fixture_home}/.local/bin/.${command_name}-install/legal/THIRD-PARTY-NOTICES.txt"
     run_installer /bin/zsh; expect_exit 0 'reinstall'
@@ -226,6 +222,13 @@ awk '/^sh install.sh --uninstall / {print}' "${work}/out" > "${work}/hint.sh"
 assert 'printed uninstall command has valid shell syntax' sh -n "${work}/hint.sh"
 help_command=$(sed -n 's/^Open a new terminal after a PATH change. Run: //p' "${work}/out")
 assert 'printed quoted command runs installed program' env -i HOME="${fixture_home}" PATH="${base_path}" sh -c "${help_command}"
+expected_mail=${work}/installer-expected.eml
+source_mail=${fixture_home}/source.eml
+printf 'Subject: Installer smoke\r\n\r\nBody retained\r\n' > "${expected_mail}"
+cp "${expected_mail}" "${source_mail}"
+env -i HOME="${fixture_home}" PATH="${base_path}" "${custom_dir}/${command_name}" -- "${source_mail}" > "${work}/cli-smoke"
+assert 'installed CLI preserves original bytes' cmp -s "${expected_mail}" "${source_mail}"
+assert 'installed CLI creates exact body-copy bytes' cmp -s "${expected_mail}" "${fixture_home}/source.no-attachments.eml"
 run_installer /bin/sh --install-dir "${custom_dir}" --uninstall; expect_exit 0 'custom uninstall'
 assert 'installer-created folder removed' test ! -e "${custom_dir}"
 

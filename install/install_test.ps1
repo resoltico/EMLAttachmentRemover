@@ -25,6 +25,22 @@ function Check([string]$Why, [bool]$Condition) {
     }
 }
 function Get-Output { return [IO.File]::ReadAllText((Join-Path $work 'out.txt')) }
+function Invoke-NativeCase([string]$Shell, [string[]]$Arguments, [switch]$StreamOutput) {
+    # PS 5.1 turns redirected native stderr into NativeCommandError records.
+    # Collect them without terminating the harness, then assert the actual exit.
+    $previousPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        $global:LASTEXITCODE = $null
+        if ($StreamOutput) {
+            & $Shell @Arguments 2>&1 | ForEach-Object { Write-Host $_ }
+        } else {
+            & $Shell @Arguments *> (Join-Path $work 'out.txt')
+        }
+        if ($global:LASTEXITCODE -isnot [int]) { throw "Native process did not produce an exit code: $Shell" }
+        return $global:LASTEXITCODE
+    } finally { $ErrorActionPreference = $previousPreference }
+}
 function Get-InstallerOptionMap([string[]]$Arguments) {
     $options = @{}
     for ($i = 0; $i -lt $Arguments.Count; $i++) {
@@ -61,8 +77,7 @@ function Invoke-Installer([string]$Shell, [string[]]$Arguments, [string]$Base = 
         [Environment]::SetEnvironmentVariable(($prefix + '_DOWNLOAD_BASE'), $Base)
         [Environment]::SetEnvironmentVariable(($prefix + '_VERSION'), $testVersion)
         if ($fileMode) {
-            & $Shell -NoProfile -ExecutionPolicy Bypass -File $installer @Arguments *> (Join-Path $work 'out.txt')
-            return $LASTEXITCODE
+            return (Invoke-NativeCase $Shell (@('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $installer) + $Arguments))
         }
         try {
             # Reuse the exact public scriptblock, not an internal installer function.
@@ -119,13 +134,24 @@ try {
     Check 'cached invocation preserves named values and switch binding' ($bound.Version -ceq '1.2.3' -and $bound.Directory -ceq "C:\a user's tools" -and $bound.NoModify)
 
     $currentShell = [Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+    $preferenceBeforeNative = $ErrorActionPreference
+    $exitCode = Invoke-NativeCase $currentShell @('-NoProfile', '-Command', "[Console]::Error.WriteLine('native stderr diagnostic'); exit 17")
+    Check 'native stderr retains the real nonzero process exit' ($exitCode -eq 17 -and (Get-Output).Contains('native stderr diagnostic'))
+    Check 'native invocation restores strict harness error handling' ($ErrorActionPreference -eq $preferenceBeforeNative)
+    $global:LASTEXITCODE = 0
+    $startFailureRefused = $false
+    try { [void](Invoke-NativeCase -Shell (Join-Path $work 'no-such-shell.exe') -Arguments @()) }
+    catch { $startFailureRefused = $true }
+    Check 'failed native launch cannot reuse a prior successful exit code' $startFailureRefused
+
+
     Check 'unknown arguments fail before platform or filesystem work' ((Invoke-Installer $currentShell @('-Unexpected', '-Help')) -ne 0)
     Check 'positional arguments fail before platform or filesystem work' ((Invoke-Installer $currentShell @('unexpected', '-Help')) -ne 0)
     Check 'help remains available' ((Invoke-Installer $currentShell @('-Help')) -eq 0)
     $reviewedBlock = "& ([scriptblock]::Create([IO.File]::ReadAllText('" + $installer.Replace("'", "''") + "')))"
     foreach ($parameter in @('Version', 'InstallDir')) {
-        & $currentShell -NoProfile -ExecutionPolicy Bypass -Command ($reviewedBlock + " -$parameter '' -Help") *> (Join-Path $work 'out.txt')
-        Check ("explicit empty $parameter refuses before defaults") ($LASTEXITCODE -ne 0)
+        $exitCode = Invoke-NativeCase $currentShell @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', ($reviewedBlock + " -$parameter '' -Help"))
+        Check ("explicit empty $parameter refuses before defaults") ($exitCode -ne 0)
     }
     if ($errors.Count) { throw ($errors | Out-String) }
     # Exercise the actual version/quoting helpers without running installation
@@ -188,8 +214,8 @@ try {
         # cases without recompiling the large installer in dozens of new processes.
         foreach ($shell in $shells) {
             Write-Host "=== worker: $shell"
-            & $shell -NoProfile -ExecutionPolicy Bypass -File $PSCommandPath -Dist $Dist -RunInCurrentShell
-            Check ("$shell complete suite") ($LASTEXITCODE -eq 0)
+            $exitCode = Invoke-NativeCase $shell @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $PSCommandPath, '-Dist', $Dist, '-RunInCurrentShell') -StreamOutput
+            Check ("$shell complete suite") ($exitCode -eq 0)
         }
         if ($script:failures -gt 0) { throw "$($script:failures) installer checks failed." }
         return
@@ -330,8 +356,8 @@ try {
             $defaultExe = Join-Path $env:LOCALAPPDATA ('Programs\' + $Product.WindowsFolder + '\' + $command + '.exe')
             Check 'isolated default executable exists' (Test-Path -LiteralPath $defaultExe)
             $defaultHash = (Get-FileHash -LiteralPath $defaultExe).Hash
-            & $shell -NoProfile -ExecutionPolicy Bypass -Command ($reviewedBlock + " -Uninstall -InstallDir '' -NoModifyPath") *> (Join-Path $work 'out.txt')
-            Check 'empty explicit uninstall fails and default stays untouched' ($LASTEXITCODE -ne 0 -and (Test-Path -LiteralPath $defaultExe) -and (Get-FileHash -LiteralPath $defaultExe).Hash -ceq $defaultHash)
+            $exitCode = Invoke-NativeCase $shell @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', ($reviewedBlock + " -Uninstall -InstallDir '' -NoModifyPath"))
+            Check 'empty explicit uninstall fails and default stays untouched' ($exitCode -ne 0 -and (Test-Path -LiteralPath $defaultExe) -and (Get-FileHash -LiteralPath $defaultExe).Hash -ceq $defaultHash)
             Check 'normal isolated default uninstall succeeds' ((Invoke-Installer $shell @('-Uninstall', '-NoModifyPath')) -eq 0)
         } finally { $env:LOCALAPPDATA = $savedLocalAppData }
 
@@ -365,15 +391,15 @@ try {
             [Environment]::SetEnvironmentVariable(($prefix + '_INSTALL_DIR'), $dir)
             [Environment]::SetEnvironmentVariable(($prefix + '_NO_MODIFY_PATH'), '1')
             [Environment]::SetEnvironmentVariable(($prefix + '_DOWNLOAD_BASE'), $Dist)
-            & $shell -NoProfile -ExecutionPolicy Bypass -Command ("Get-Content -Raw '" + $installer.Replace("'", "''") + "' | Invoke-Expression") *> (Join-Path $work 'out.txt')
-            Check 'iex install succeeds' ($LASTEXITCODE -eq 0 -and (Test-Path -LiteralPath $exe))
+            $exitCode = Invoke-NativeCase $shell @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', ("Get-Content -Raw '" + $installer.Replace("'", "''") + "' | Invoke-Expression"))
+            Check 'iex install succeeds' ($exitCode -eq 0 -and (Test-Path -LiteralPath $exe))
             [Environment]::SetEnvironmentVariable(($prefix + '_UNINSTALL'), '1')
-            & $shell -NoProfile -ExecutionPolicy Bypass -Command ("Get-Content -Raw '" + $installer.Replace("'", "''") + "' | Invoke-Expression") *> (Join-Path $work 'out.txt')
-            Check 'iex uninstall succeeds' ($LASTEXITCODE -eq 0 -and -not (Test-Path -LiteralPath $exe))
+            $exitCode = Invoke-NativeCase $shell @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', ("Get-Content -Raw '" + $installer.Replace("'", "''") + "' | Invoke-Expression"))
+            Check 'iex uninstall succeeds' ($exitCode -eq 0 -and -not (Test-Path -LiteralPath $exe))
             [Environment]::SetEnvironmentVariable(($prefix + '_UNINSTALL'), $null)
             [Environment]::SetEnvironmentVariable(($prefix + '_VERSION'), '999.0.0')
-            & $shell -NoProfile -ExecutionPolicy Bypass -Command ("Get-Content -Raw '" + $installer.Replace("'", "''") + "' | Invoke-Expression") *> (Join-Path $work 'out.txt')
-            Check 'iex failure is nonzero' ($LASTEXITCODE -ne 0)
+            $exitCode = Invoke-NativeCase $shell @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', ("Get-Content -Raw '" + $installer.Replace("'", "''") + "' | Invoke-Expression"))
+            Check 'iex failure is nonzero' ($exitCode -ne 0)
         } finally { foreach ($name in $saved.Keys) { [Environment]::SetEnvironmentVariable($name, $saved[$name]) } }
 
         if ($env:CI) {
