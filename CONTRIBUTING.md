@@ -25,8 +25,7 @@ cargo test --locked --workspace
 ```
 
 Install the tools listed under Checks first. For a native GUI on macOS, build
-and open the actual app bundle so OS identity,
-resources and the helper CLI use their supported layout:
+and open the actual app bundle for native identity and resources:
 
 ```sh
 cargo xtask dist --app --out target/desktop
@@ -35,11 +34,11 @@ ditto -x -k target/desktop/emlattachmentremover-gui-*-macos-universal.zip target
 open "target/desktop/app/EML Attachment Remover.app"
 ```
 
-Use a fresh output directory on subsequent distributions. Apart from `--version`
-and `-V`, the bare Cargo GUI executable requires its macOS bundle/helper context
-before opening a window. The GUI library and testing backend support macOS and Linux. Windows supports
+Use a fresh output directory on subsequent distributions. The app calls core in
+process and includes no CLI. Its bundle supplies native identity and resources.
+The GUI library and testing backend support macOS and Linux. Windows supports
 core and the CLI only. The native GUI uses Slint's Winit backend on macOS only.
-On Windows, exclude `eml-app` and `eml-gui` from workspace commands and use `--target` with your native MSVC triple so host procedural macros
+On Windows, exclude `eml-gui` from workspace commands and use `--target` with your native MSVC triple so host procedural macros
 are built independently of static-CRT target flags. Windows CI copies its freshly
 built xtask executable to the runner's temporary directory
 before running checks: Windows cannot replace that executable while Cargo tests
@@ -70,9 +69,9 @@ findings fail. Inline exceptions use `#[expect(..., reason = "...")]`.
 `cargo xtask ci --rust-only` runs the native Clippy/test portion used by matrix
 jobs. On Windows CI it runs through an explicitly targeted MSVC xtask executable.
 Windows checks run on both native CPU architectures. GUI tests use Slint's testing
-backend, with no OS UI automation. CLI tests cross the real subprocess boundary. Supervisor/GUI process fixtures use
-a Cargo-built launcher and per-test script data; distribution selects only the
-public product binaries.
+backend, with no OS UI automation. CLI tests cross the real subprocess boundary. GUI tests use real core and held typed-event callbacks through one runner seam;
+receipt projection units retain exhaustive wording/capability coverage. The native
+document probe uses a separate test binary that is never packaged or released.
 
 The desktop uses one batch with automatic read-only previews. See the
 [desktop guide](README.md#desktop-app) and [review captures](docs/gui-screenshots/README.md).
@@ -117,7 +116,7 @@ manual checklist. Build requirements and actual release acceptance are separate:
 run the floor checks before releasing.
 
 `cargo xtask notices --target <triple> --out <new-file>` generates CLI notices.
-Add `--app` and repeat `--target` for a universal app's CLI/GUI union. It requires
+Add `--app` and repeat `--target` for a universal app's GUI graph. It requires
 cargo-about, the selected Rust sysroot's copyright file and the retained upstream
 legal texts. See [legal materials](legal/README.md).
 

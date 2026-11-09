@@ -14,7 +14,6 @@ native = ["dep:opener", "dep:arboard"]
 desktop = ["native", "slint/backend-winit", "slint/raw-window-handle-06", "slint/unstable-winit-030", "dep:rfd", "dep:objc2", "dep:objc2-app-kit"]
 
 [dependencies]
-eml-app = { path = "../eml-app" }
 eml-core = { path = "../eml-core" }
 eml-protocol = { path = "../eml-protocol" }
 slint = { version = "=1.18.1", default-features = false, features = ["std", "compat-1-18", "accessibility"] }
@@ -51,8 +50,9 @@ required-features = ["native"]
 [lints]
 workspace = true
 
-# Cargo builds this stable test executable before spawning parallel tests.
+# Built separately for the native document-adapter probe; never packaged in the app.
 [[bin]]
-name = "eml-gui-cli-fixture"
-path = "../eml-app/tests/support/cli_fixture.rs"
+name = "eml-gui-document-probe"
+path = "tests/support/document_probe.rs"
+required-features = ["desktop"]
 test = false

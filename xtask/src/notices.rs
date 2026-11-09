@@ -20,7 +20,7 @@ pub(crate) fn write(app: bool, targets: &[String], out: &Path) -> Result<()> {
     };
     let mut texts = Vec::new();
     for package in if app {
-        &["eml-cli", "eml-gui"][..]
+        &["eml-gui"][..]
     } else {
         &["eml-cli"][..]
     } {

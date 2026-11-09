@@ -1192,19 +1192,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0e9c71c2167ca323c882b99918929403426e2373ea17242ff5653e0d5e1058be"
 
 [[package]]
-name = "eml-app"
-version = "7.0.0"
-dependencies = [
- "base64",
- "eml-core",
- "eml-protocol",
- "rustix 1.1.6",
- "serde",
- "serde_json",
- "tempfile",
-]
-
-[[package]]
 name = "eml-core"
 version = "7.0.0"
 dependencies = [
@@ -1223,7 +1210,6 @@ dependencies = [
  "base64",
  "chrono",
  "dirs",
- "eml-app",
  "eml-core",
  "eml-protocol",
  "i-slint-backend-testing",

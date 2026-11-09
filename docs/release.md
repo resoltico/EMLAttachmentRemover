@@ -20,7 +20,8 @@ mkdir -p target/smoke
 tar -xzf target/dist/emlattachmentremover-*-macos-universal.tar.gz -C target/smoke
 ditto -x -k target/dist/emlattachmentremover-gui-*-macos-universal.zip target/smoke
 scripts/smoke-cli.sh target/smoke/emlattachmentremover tests/contract/mime
-scripts/smoke-macos-app.sh 'target/smoke/EML Attachment Remover.app' tests/contract/mime/inputs/01-gmail-attachment.eml
+EML_SOURCE_REVISION="$(git rev-parse HEAD)" cargo build --locked -p eml-gui --bin eml-gui-document-probe --features desktop
+scripts/smoke-macos-app.sh 'target/smoke/EML Attachment Remover.app' tests/contract/mime/inputs/01-gmail-attachment.eml target/debug/eml-gui-document-probe
 ```
 
 Distribution uses the `dist` Cargo profile: checked release arithmetic, Thin LTO,
@@ -33,8 +34,8 @@ worktree in which an earlier `xtask` executable happened to be compiled.
 
 Use a fresh output folder. The CLI archive is flat: executable, LICENSE and
 THIRD-PARTY-NOTICES.txt. The app ZIP contains `EML Attachment Remover.app`, with
-GUI executable `Contents/MacOS/EMLAttachmentRemover`, public CLI helper
-`Contents/Helpers/emlattachmentremover`, and icon/notices/LICENSE in Resources.
+GUI executable `Contents/MacOS/EMLAttachmentRemover` and icon/notices/LICENSE in
+Resources. It contains no CLI; Terminal users install the separate CLI archive.
 The GUI Cargo target is `emlattachmentremover-gui`; the bundle identifier is
 `io.github.resoltico.emlattachmentremover`. The bundle declares email and folder
 document types as Viewer/Alternate, with no Services or Assets.car. The icon is the committed complete ICNS; re-exporting its editable
@@ -42,8 +43,7 @@ source is an artwork-maintenance task, described in
 [artwork guide](../artwork/README.md).
 
 Both Mac executables contain arm64 and x86_64 slices with deployment minimum 15.0.
-The helper is ad hoc signed first, then the bundle, followed by deep strict
-signature verification. Distribution resolves `HEAD` once, embeds that full revision
+The app bundle is ad hoc signed, followed by deep strict signature verification. Distribution resolves `HEAD` once, embeds that full revision
 in both binaries for every CPU target, and uses its UTC committer time for archives.
 A conflicting `EML_SOURCE_REVISION` is rejected; empty or absent values are omitted
 from ordinary Cargo builds. Supplied revisions must contain 40 or 64 ASCII
@@ -64,7 +64,7 @@ CLI builds use native MSVC with static CRT and ZIP. On Linux run
 run `cargo run --locked -p xtask --target <native-triple> -- dist --cli --target <native-triple> --out <fresh-folder>`
 so host procedural macros are built separately from static-CRT target flags.
 Each archive includes notices for its selected normal/build dependency graph and
-Rust standard-library material. App notices cover both executables and
+Rust standard-library material. App notices cover its GUI graph and
 both CPU slices, with required upstream supplements. See
 [legal materials](../legal/README.md).
 
@@ -75,17 +75,22 @@ smokes those exact bytes, and runs the universal CLI/app on macos-15 and
 macos-15-intel. CLI smoke compares every MIME fixture with its golden bytes or
 expected refusal and checks original bytes. App smoke verifies signatures and CPU
 slices, launches with two selected paths and requests idle Quit without writing
-copies. It then invokes the bundled CLI helper and compares copies with a golden. It does not automate Finder, Dock, file dialogs or other OS UI.
+copies, and rejects a Helpers directory. CLI archives own their independent golden
+copy check. It does not automate Finder, Dock, file dialogs or other OS UI.
 
 The floor smoke also runs [the native document-event probe](../scripts/smoke-macos-document-event.sh),
 which requires Python 3 (standard library only; tested with 3.9 and 3.15).
 After the exact archive checks, it makes a separate ad hoc signed copy with an
-isolated bundle identifier and a recording helper that forwards read-only requests
-to the real CLI and refuses create requests. The first check establishes startup;
+isolated bundle identifier and a recording runner that executes real core in
+process and refuses create requests. The separate `eml-gui-document-probe` test
+binary uses the same native startup and the controller's single runner seam. Its
+source identity must match the production app. It is never packaged or released. The first check establishes startup;
 one `open -a` delivery must then produce a request containing both native paths.
 The probe checks source preservation and unregisters its temporary bundle. It
 stays outside the merge gate and does not replace manual Dock acceptance.
-Passing `--omit-delivery` to the probe is a negative control: it must fail because
+Pass the matching probe binary as its third argument. The release workflow builds
+it for both Mac CPU slices, deriving its minimum OS from the app plist. Product
+artifact selection explicitly excludes this fixture. Passing `--omit-delivery` to the probe is a negative control: it must fail because
 no second request arrives. There are no delivery retries.
 
 A branch `workflow_dispatch` builds, smokes and uploads archives and SHA256SUMS.

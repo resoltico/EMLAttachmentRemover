@@ -201,29 +201,6 @@ fn about_and_licenses_restore_focus_selection_and_scroll_on_reopen() {
     assert!(!about.window().is_visible());
 }
 
-#[cfg(target_os = "macos")]
-#[test]
-fn macos_raw_launch_is_rejected_before_ui_and_bundle_layout_is_admitted() {
-    let root = tempfile::tempdir().unwrap();
-    assert!(
-        eml_gui::platform::validate_launch(
-            &root.path().join("emlattachmentremover-gui"),
-            &root.path().join("emlattachmentremover")
-        )
-        .is_err()
-    );
-    let contents = root.path().join("EML Attachment Remover.app/Contents");
-    fs::create_dir_all(contents.join("MacOS")).unwrap();
-    fs::create_dir_all(contents.join("Helpers")).unwrap();
-    fs::write(contents.join("Info.plist"), b"owned fixture").unwrap();
-    let helper = contents.join("Helpers/emlattachmentremover");
-    fs::write(&helper, b"owned fixture").unwrap();
-    assert!(
-        eml_gui::platform::validate_launch(&contents.join("MacOS/EMLAttachmentRemover"), &helper)
-            .is_ok()
-    );
-}
-
 fn close_shortcut(window: &slint::Window) {
     use slint::platform::{Key, WindowEvent};
     // Testing dispatch uses toolkit modifiers; winit maps macOS Command to Control.
