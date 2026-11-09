@@ -128,5 +128,10 @@ Before the owner tags or publishes:
    [README opening steps](../README.md#install). Preserve corresponding MPL source
    availability and notices when redistributing.
 
-Nightly CI runs Intel macOS tests and 15 minutes of pure MIME fuzzing. Its failures
-are investigated separately from the merge gate.
+The scheduled Weekly workflow runs full fuzz and mutation campaigns once a week,
+separately from the merge gate. Only the owner may dispatch it manually. Development
+is limited to fuzz micro runs of at most 120 seconds (10 minutes total) and mutation
+runs of at most 60 selected mutants. See [CONTRIBUTING](../CONTRIBUTING.md) for commands.
+Intel Macs retain universal builds and macOS 15 Intel archive smoke coverage; the
+separate weekly Intel full-suite job is retired. The first scheduled Weekly run
+establishes the survivor baseline and is not part of the gates follow-up PR.

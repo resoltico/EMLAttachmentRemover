@@ -2,12 +2,12 @@
 
 ## [Unreleased]
 
+- Fix nested multipart epilogue framing with mixed line endings; distinguish damaged emails from non-email files, fit status labels to the CLI and identify save paths that are files.
+- Run full fuzz and mutation campaigns weekly with shared corpus seeds, bounded contributor micro commands and pre-merge fuzz-crate lint; retire the separate weekly Intel full-suite job.
 - Keep checked emails when the save folder is unavailable, with plain recovery guidance and strict create admission. Show unreadable-settings fallback, a clear filter state and the action’s scope.
-
 - Refuse mailbox exports containing several emails; export messages one at a time. Single-message From envelopes remain supported.
 - Omit multipart epilogues and report their non-whitespace bytes. Preambles stay unchanged; older copies with epilogues now differ and are never overwritten.
 - Fix help placeholders and request-document error reasons. Core owns plain folder refusals, cause-specific guidance and failure counts in CLI and app summaries.
-
 - A crash during processing is reported as such, rather than as a result-delivery failure.
 - The Mac app no longer contains the CLI; install the macOS CLI archive to use it from Terminal.
 - Run the desktop directly on core with typed results and cooperative stop. Keep report export as protocol-1 JSON; unwinding failures retain earlier results.

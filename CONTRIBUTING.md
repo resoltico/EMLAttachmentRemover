@@ -127,19 +127,47 @@ verification check body retention and removals. Real contract fixtures live in
 [tests/contract](tests/contract); the extracted CLI smoke uses their golden bytes.
 Keep oracles independent of the parser under test.
 
-Fuzz with the compiler and cargo-fuzz versions in tools.toml. Select the native
-target explicitly because prebuilt cargo-fuzz binaries can default to their own
-build target (for example, musl on a GNU Linux host). Include the retained seeds
-alongside a writable corpus:
+Full fuzz and mutation campaigns run only in the scheduled [Weekly workflow](.github/workflows/weekly.yml),
+once a week. Manual dispatch is reserved for the owner. During development run
+micro campaigns only: fuzz at most 120 seconds per run and 10 minutes total;
+mutation at most 60 mutants per run, selected with `--in-diff`, `--file` or `-F`.
+Never dispatch or re-run Weekly to verify a PR.
+
+Use the compiler and cargo-fuzz versions in `xtask/tools.toml`. Select the native
+target explicitly (prebuilt cargo-fuzz may otherwise default to musl on GNU Linux).
+Use the corpora read-only after the writable directory; do not copy the seeds:
 
 ```sh
 mkdir -p fuzz/corpus/preparation
-cargo +<fuzz-compiler> fuzz run --target <native-triple> preparation fuzz/corpus/preparation fuzz/seeds -- -max_total_time=900
+cargo +<fuzz-compiler> fuzz run --target <native-triple> preparation fuzz/corpus/preparation fuzz/seeds tests/contract/mime/inputs tests/contract/mime/golden -- -dict=fuzz/mime.dict -max_len=65536 -max_total_time=60
 ```
 
-The nightly runs on `x86_64-unknown-linux-gnu` with AddressSanitizer and retains
-crashing inputs as workflow artifacts. To investigate a MIME change with
-mutation testing, install the pinned cargo-mutants and run
-`cargo mutants -p eml-message`. These are focused/manual tools; nightly fuzzing
-runs for 15 minutes. Avoid adding campaign, evidence or native UI qualification
-frameworks. Add tests for a concrete required behavior or regression.
+The weekly ASan campaign runs for two hours on Ubuntu 26.04 using the runner's CPUs.
+Crashes become contract inputs with expected outcomes, serving as regression tests
+and seeds. Findings are uploaded as artifacts; the grown corpus is not persisted.
+`cargo xtask lint` compiles and lints the standalone fuzz crate with the product
+toolchain, without exploration.
+
+Mutation scope, product test packages, timeout multiplier and justified equivalent
+exclusions live in [.cargo/mutants.toml](.cargo/mutants.toml). All product tests run
+for the baseline and each mutant; xtask is excluded because its archive test needs
+a git checkout. Use the pinned cargo-mutants and list the selection first:
+
+```sh
+git diff main -- crates > /absolute/path/product.diff
+cargo mutants --in-diff /absolute/path/product.diff --list
+# If the list exceeds 60, narrow it with --file or -F before running.
+cargo mutants --in-diff /absolute/path/product.diff
+```
+
+Weekly mutation uses 16 round-robin shards, each with runner CPUs minus one workers
+(at least one). At introduction, 2,848 mutants divide into 178 per shard. The four
+bounded samples took at most 43.9 seconds per mutant including build and tests:
+178 × 43.9 / 3,600 = 2.18 hours even with one worker, plus baseline/setup; three
+workers predict about 0.73 hours. This is a sizing estimate, not a Linux campaign
+measurement; the first scheduled run will establish actual costs.
+A baseline failure, missed mutant or timeout fails the shard; unviable mutants do
+not. Every shard uploads `mutants.out`. The first scheduled run is the survivor
+baseline survey, not PR verification; triaging pre-existing survivors is follow-up.
+Keep oracles independent and add tests for concrete behavior rather than campaign
+or evidence frameworks.

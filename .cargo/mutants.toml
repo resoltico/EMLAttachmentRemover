@@ -1,0 +1,32 @@
+# One Linux campaign over product code; headless GUI tests are included.
+examine_globs = [
+    "crates/eml-message/src/**", "crates/eml-core/src/**",
+    "crates/eml-protocol/src/**", "crates/eml-cli/src/**", "crates/eml-gui/src/**",
+]
+# These files require Windows or the macOS-only native/desktop features.
+exclude_globs = [
+    "crates/eml-core/src/fs/windows.rs", "crates/eml-core/src/fs/windows/**",
+    "crates/eml-gui/src/platform/macos.rs", "crates/eml-gui/src/platform/macos/**",
+    "crates/eml-gui/src/desktop.rs", "crates/eml-gui/src/native_dialogs.rs",
+    "crates/eml-gui/src/main.rs",
+]
+test_package = ["eml-message", "eml-core", "eml-protocol", "emlattachmentremover", "eml-gui"]
+# 27.1.0 otherwise builds its baseline with only the mutated packages. Supplying
+# these also as Cargo arguments gives baseline and mutants the identical scope.
+# Keep in step with test_package above; never include xtask (its archive test needs git).
+additional_cargo_args = [
+    "--locked", "--package=eml-message", "--package=eml-core",
+    "--package=eml-protocol", "--package=emlattachmentremover", "--package=eml-gui",
+]
+profile = "mutants"
+# Twice the measured unmutated product-test duration; compilation is separate.
+timeout_multiplier = 2.0
+exclude_re = [
+    # These entry points are compiled only with macOS native/desktop features.
+    # They have no executable Linux counterpart, so all such mutations are
+    # equivalent on this campaign host; keep portable ingress code in scope.
+    'crates/eml-gui/src/ingress\.rs:.*(?:replace (?:install_native|install_drops)(?: ->| with)| in (?:install_native|install_drops)$)',
+    # Multipart facts are created only from multipart/* media; forcing this
+    # redundant planner guard true cannot admit any additional state.
+    'crates/eml-message/src/plan\.rs:.*replace match guard node\.media\.starts_with\("multipart/"\) with true in visit$',
+]

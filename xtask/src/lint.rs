@@ -60,6 +60,13 @@ pub(crate) fn run() -> Result<()> {
         "--locked",
         "check",
     ]))?;
+    command(Command::new("cargo").args([
+        "clippy",
+        "--locked",
+        "--manifest-path",
+        "fuzz/Cargo.toml",
+        "--all-targets",
+    ]))?;
     command(&mut Command::new("actionlint"))?;
     command(Command::new("bash").arg("scripts/check-shell.sh"))?;
     command(Command::new("bash").arg("scripts/check-budget.sh"))
