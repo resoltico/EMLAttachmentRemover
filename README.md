@@ -128,12 +128,9 @@ publication. Ordinary owned folders are the supported environment; see the
 
 ## Develop and redistribute
 
-Native Linux GUI development uses the Slint Qt 6.12+ backend with accessibility
-and parented file dialogs through XDG Desktop Portal. A desktop file chooser
-portal backend must be installed and running. Wayland requires xdg-foreign window
-export; setup errors are shown in the app. The Qt runtime must match its build SDK.
-There is no Zenity fallback; macOS uses the Slint Winit backend. Linux supports both
-Wayland and X11 through Qt. Native GUI archives currently target macOS.
+The native desktop GUI and its archives target macOS only, using Slint's Winit
+backend. Linux supports core, the CLI and headless GUI development
+through Slint's testing backend; Windows supports core and the CLI.
 
 See [CONTRIBUTING](CONTRIBUTING.md) for the shortest build and check commands,
 [architecture](docs/architecture.md) for crate boundaries, and the

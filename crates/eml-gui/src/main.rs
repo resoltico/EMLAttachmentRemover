@@ -22,8 +22,6 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let executable = std::env::current_exe()?;
     #[cfg(target_os = "macos")]
     let cli = eml_app::bundled_cli(&executable)?;
-    #[cfg(target_os = "linux")]
-    let cli = executable.with_file_name(eml_core::product::CLI_NAME);
     platform::validate_launch(&executable, &cli)?;
     let home = dirs::home_dir().ok_or(eml_gui::HOME_UNAVAILABLE)?;
     let preferences = Preferences::load(Preferences::default_path()?);

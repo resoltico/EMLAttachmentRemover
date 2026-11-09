@@ -1,10 +1,10 @@
 //! Native file panels and file-manager integration for the supported backends.
 use crate::MainWindow;
-#[cfg(feature = "desktop-winit")]
+#[cfg(feature = "desktop")]
 use slint::ComponentHandle;
 use std::path::{Path, PathBuf};
 
-#[cfg(feature = "desktop-winit")]
+#[cfg(feature = "desktop")]
 async fn dialog(ui: &MainWindow) -> Result<rfd::AsyncFileDialog, String> {
     use slint::winit_030::WinitWindowAccessor;
     let parent = ui
@@ -16,7 +16,7 @@ async fn dialog(ui: &MainWindow) -> Result<rfd::AsyncFileDialog, String> {
 }
 
 pub(crate) async fn choose(ui: &MainWindow, files: bool) -> Result<Option<Vec<PathBuf>>, String> {
-    #[cfg(feature = "desktop-winit")]
+    #[cfg(feature = "desktop")]
     {
         let panel = dialog(ui).await?;
         Ok(if files {
@@ -37,10 +37,6 @@ pub(crate) async fn choose(ui: &MainWindow, files: bool) -> Result<Option<Vec<Pa
                 .map(|file| vec![file.path().to_owned()])
         })
     }
-    #[cfg(feature = "desktop-qt")]
-    {
-        crate::portal_dialogs::choose(ui, files).await
-    }
 }
 
 pub(crate) async fn save_report(
@@ -48,7 +44,7 @@ pub(crate) async fn save_report(
     directory: &Path,
     name: &str,
 ) -> Result<Option<PathBuf>, String> {
-    #[cfg(feature = "desktop-winit")]
+    #[cfg(feature = "desktop")]
     {
         Ok(dialog(ui)
             .await?
@@ -58,10 +54,6 @@ pub(crate) async fn save_report(
             .save_file()
             .await
             .map(|file| file.path().to_owned()))
-    }
-    #[cfg(feature = "desktop-qt")]
-    {
-        crate::portal_dialogs::save_report(ui, directory, name).await
     }
 }
 
@@ -77,24 +69,4 @@ pub(crate) fn reveal(path: &Path) -> Result<(), String> {
     } else {
         Err(status.to_string())
     }
-}
-
-#[cfg(target_os = "linux")]
-pub(crate) fn reveal(path: &Path) -> Result<(), String> {
-    let uri =
-        url::Url::from_file_path(path).map_err(|()| crate::wording::ABSOLUTE_REVEAL.to_owned())?;
-    zbus::block_on(async {
-        let connection = zbus::Connection::session().await?;
-        let proxy = zbus::Proxy::new(
-            &connection,
-            "org.freedesktop.FileManager1",
-            "/org/freedesktop/FileManager1",
-            "org.freedesktop.FileManager1",
-        )
-        .await?;
-        proxy
-            .call::<_, _, ()>("ShowItems", &(vec![uri.as_str()], ""))
-            .await
-    })
-    .map_err(|error: zbus::Error| error.to_string())
 }

@@ -5,9 +5,6 @@ pub(crate) fn run(rust_only: bool) -> Result<()> {
     if !rust_only {
         crate::lint::run()?;
     }
-    if cfg!(target_os = "linux") {
-        crate::tools::qt()?;
-    }
     let target = host()?;
     let exclusions = if cfg!(windows) {
         &["--exclude", "eml-app", "--exclude", "eml-gui"][..]
@@ -27,9 +24,7 @@ pub(crate) fn run(rust_only: bool) -> Result<()> {
         ])
         .args(exclusions);
     if cfg!(target_os = "macos") {
-        clippy.args(["--features", "eml-gui/desktop-winit"]);
-    } else if cfg!(target_os = "linux") {
-        clippy.args(["--features", "eml-gui/desktop-qt"]);
+        clippy.args(["--features", "eml-gui/desktop"]);
     }
     clippy.args([
         "--",
@@ -45,23 +40,6 @@ pub(crate) fn run(rust_only: bool) -> Result<()> {
             .args(["--target", &target])
             .args(exclusions),
     )?;
-    if cfg!(target_os = "linux") {
-        // Select the supported workspace profile so Cargo includes its optional Qt
-        // dependency. This runs native adapter and patched-library tests together.
-        command(Command::new("cargo").args([
-            "test",
-            "--locked",
-            "-p",
-            "eml-gui",
-            "-p",
-            "i-slint-backend-qt",
-            "--lib",
-            "--features",
-            "eml-gui/desktop-qt",
-            "--target",
-            &target,
-        ]))?;
-    }
     if !rust_only && cfg!(target_os = "macos") {
         let out = tempfile::tempdir()?;
         crate::dist::build(false, true, true, None, out.path())?;

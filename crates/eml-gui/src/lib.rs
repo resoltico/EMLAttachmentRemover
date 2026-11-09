@@ -6,8 +6,6 @@ pub mod ingress;
 #[cfg(feature = "native")]
 mod native_dialogs;
 pub mod platform;
-#[cfg(feature = "desktop-qt")]
-mod portal_dialogs;
 pub mod preferences;
 mod present;
 mod report_export;

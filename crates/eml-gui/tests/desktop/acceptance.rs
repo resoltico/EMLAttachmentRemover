@@ -2630,70 +2630,6 @@ fn native_path_units_remain_distinct_in_rows_details_and_folder_choices() {
     assert!(!details.contains('�'));
 }
 
-#[test]
-#[cfg(target_os = "linux")]
-fn linux_menu_default_actions_preserve_enabled_and_checked_command_facts() {
-    use i_slint_backend_testing::AccessibleRole;
-    init_no_event_loop();
-    let root = tempfile::tempdir().unwrap();
-    let c = controller(
-        root.path(),
-        dual(
-            root.path(),
-            &check_stream(root.path(), &["saved.eml", "failed.eml"]),
-            &stream(
-                root.path(),
-                &[
-                    ("saved.eml", "created"),
-                    ("failed.eml", "prepublication-failure"),
-                ],
-                false,
-            ),
-        ),
-    );
-    let ui = c.window();
-    let chosen = Rc::new(std::cell::Cell::new(0));
-    let count = chosen.clone();
-    ui.on_choose_files(move || count.set(count.get() + 1));
-    let exports = Rc::new(std::cell::Cell::new(0));
-    let count = exports.clone();
-    ui.on_export_report(move || count.set(count.get() + 1));
-    let file = label(&ui, "File");
-    assert_eq!(file.accessible_role(), Some(AccessibleRole::Button));
-    file.invoke_accessible_default_action();
-    mock_elapsed_time(Duration::from_millis(1));
-    let disabled = label(&ui, "Save Report…");
-    assert_eq!(disabled.accessible_role(), Some(AccessibleRole::Button));
-    assert_eq!(disabled.accessible_enabled(), Some(false));
-    assert!(
-        disabled
-            .accessible_description()
-            .is_some_and(|value| !value.is_empty())
-    );
-    disabled.invoke_accessible_default_action();
-    assert_eq!(exports.get(), 0);
-    let add = label(&ui, "Add Files…");
-    assert_eq!(add.accessible_role(), Some(AccessibleRole::Button));
-    add.invoke_accessible_default_action();
-    assert_eq!(chosen.get(), 1);
-    c.stage(vec![root.path().join("inputs")]).unwrap();
-    pump(&c, || !c.is_busy());
-    c.start_selection();
-    pump(&c, || !c.is_busy());
-    assert!(ui.get_view().can_filter);
-    for expected in [false, true] {
-        label(&ui, "Batch").invoke_accessible_default_action();
-        mock_elapsed_time(Duration::from_millis(1));
-        let filter = label(&ui, "Show Problems Only");
-        assert_eq!(filter.accessible_role(), Some(AccessibleRole::Button));
-        assert_eq!(filter.accessible_checkable(), Some(true));
-        assert_eq!(filter.accessible_checked(), Some(expected));
-        filter.invoke_accessible_default_action();
-        assert_eq!(ui.get_view().filtered, !expected);
-        assert_eq!(ui.get_rows().row_count(), if expected { 2 } else { 1 });
-    }
-}
-
 fn test_clipboard(window: &slint::Window) -> Option<String> {
     i_slint_core::window::WindowInner::from_pub(window)
         .context()
@@ -2767,21 +2703,6 @@ fn standard_copy_uses_diagnostic_selection_and_explicit_copy_details_keeps_full_
     focus_text(&ui, "Processing details", 0, 10);
     text_shortcut(ui.window(), "c");
     assert_eq!(test_clipboard(ui.window()).as_deref(), Some("diagnostic"));
-    #[cfg(target_os = "linux")]
-    {
-        label(&ui, "Edit").mock_single_click(slint::platform::PointerEventButton::Left);
-        mock_elapsed_time(Duration::from_millis(1));
-        i_slint_core::window::WindowInner::from_pub(ui.window())
-            .context()
-            .platform()
-            .set_clipboard_text(
-                "before menu copy",
-                slint::platform::Clipboard::DefaultClipboard,
-            );
-        label(&ui, "Copy").mock_single_click(slint::platform::PointerEventButton::Left);
-        mock_elapsed_time(Duration::from_millis(1));
-        assert_eq!(test_clipboard(ui.window()).as_deref(), Some("diagnostic"));
-    }
     label(&ui, "Copy Details").mock_single_click(slint::platform::PointerEventButton::Left);
     assert_eq!(test_clipboard(ui.window()).as_deref(), Some(facts.as_str()));
     text_shortcut(ui.window(), "c");
@@ -2803,24 +2724,6 @@ fn standard_copy_is_enabled_for_a_focused_diagnostic_without_a_selected_email() 
     focus_text(&ui, "Processing details", 0, 9);
     text_shortcut(ui.window(), "c");
     assert_eq!(test_clipboard(ui.window()).as_deref(), Some("selection"));
-    #[cfg(target_os = "linux")]
-    {
-        label(&ui, "Edit").mock_single_click(slint::platform::PointerEventButton::Left);
-        mock_elapsed_time(Duration::from_millis(1));
-        let copy = label(&ui, "Copy");
-        #[cfg(target_os = "linux")]
-        assert_eq!(copy.accessible_enabled(), Some(true));
-        i_slint_core::window::WindowInner::from_pub(ui.window())
-            .context()
-            .platform()
-            .set_clipboard_text(
-                "before menu copy",
-                slint::platform::Clipboard::DefaultClipboard,
-            );
-        copy.mock_single_click(slint::platform::PointerEventButton::Left);
-        mock_elapsed_time(Duration::from_millis(1));
-        assert_eq!(test_clipboard(ui.window()).as_deref(), Some("selection"));
-    }
     label(&ui, "Hide details").mock_single_click(slint::platform::PointerEventButton::Left);
     i_slint_core::window::WindowInner::from_pub(ui.window())
         .context()
@@ -2864,17 +2767,6 @@ fn secondary_about_and_license_details_support_copy_and_select_all() {
         test_clipboard(about.window()).as_deref(),
         Some("about diagnostic selection")
     );
-    #[cfg(target_os = "linux")]
-    {
-        text_element(&about, "Edit").invoke_accessible_default_action();
-        mock_elapsed_time(Duration::from_millis(1));
-        let old_copy = text_element(&about, "Copy");
-        about.set_notice_details("".into());
-        mock_elapsed_time(Duration::from_millis(1));
-        mock_elapsed_time(Duration::ZERO); // Apply the queued context update after conditional teardown.
-        assert!(!about.get_text_copy_eligible());
-        old_copy.invoke_accessible_default_action();
-    }
     let licenses = c.license_window();
     licenses.set_licenses("main license terms".into());
     licenses.set_notice("Failed to show notices".into());
@@ -2897,133 +2789,6 @@ fn secondary_about_and_license_details_support_copy_and_select_all() {
         test_clipboard(licenses.window()).as_deref(),
         Some("license diagnostic selection")
     );
-    #[cfg(target_os = "linux")]
-    {
-        text_element(&licenses, "Edit").invoke_accessible_default_action();
-        mock_elapsed_time(Duration::from_millis(1));
-        let old_copy = text_element(&licenses, "Copy");
-        licenses.set_notice_details("".into());
-        mock_elapsed_time(Duration::from_millis(1));
-        mock_elapsed_time(Duration::ZERO);
-        assert!(!licenses.get_text_copy_eligible());
-        old_copy.invoke_accessible_default_action();
-    }
-}
-
-#[test]
-#[cfg(target_os = "linux")]
-fn linux_menu_keyboard_focus_is_the_named_action_and_keys_keep_bubbling() {
-    use i_slint_core::{accessibility::AccessibleStringProperty, items::AccessibleRole};
-    init_no_event_loop();
-    let root = tempfile::tempdir().unwrap();
-    let c = controller(root.path(), completed(root.path(), "created"));
-    let ui = c.window();
-    let visits = Rc::new(std::cell::Cell::new(0));
-    let observed = visits.clone();
-    ui.on_website(move || observed.set(observed.get() + 1));
-    let focused = || {
-        let item = i_slint_core::window::WindowInner::from_pub(ui.window())
-            .focus_item
-            .borrow()
-            .upgrade()
-            .unwrap();
-        assert_eq!(item.accessible_role(), AccessibleRole::Button);
-        assert!(item.geometry().width() > 0. && item.geometry().height() > 0.);
-        item.accessible_string_property(AccessibleStringProperty::Label)
-            .unwrap()
-            .to_string()
-    };
-    label(&ui, "Help").invoke_accessible_default_action();
-    mock_elapsed_time(Duration::from_millis(1));
-    key(&ui, slint::platform::Key::DownArrow);
-    assert_eq!(focused(), "Project Website");
-    key(&ui, slint::platform::Key::DownArrow);
-    assert_eq!(focused(), "Licenses");
-    key(&ui, slint::platform::Key::UpArrow);
-    assert_eq!(focused(), "Project Website");
-    key(&ui, slint::platform::Key::Return);
-    assert_eq!(visits.get(), 1);
-}
-
-#[test]
-#[cfg(target_os = "linux")]
-fn open_menu_live_command_survives_unrelated_view_changes() {
-    init_no_event_loop();
-    let root = tempfile::tempdir().unwrap();
-    let c = controller(root.path(), completed(root.path(), "created"));
-    let ui = c.window();
-    let called = Rc::new(std::cell::Cell::new(0));
-    let observed = called.clone();
-    ui.on_close_window(move || observed.set(observed.get() + 1));
-    label(&ui, "File").invoke_accessible_default_action();
-    mock_elapsed_time(Duration::from_millis(1));
-    let close = label(&ui, "Close Window");
-    let mut view = ui.get_view();
-    view.can_add = false;
-    ui.set_view(view);
-    mock_elapsed_time(Duration::from_millis(1));
-    close.invoke_accessible_default_action();
-    assert_eq!(called.get(), 1);
-}
-#[test]
-#[cfg(target_os = "linux")]
-fn open_menu_rejects_currently_disabled_and_removed_commands() {
-    init_no_event_loop();
-    let root = tempfile::tempdir().unwrap();
-    let c = controller(root.path(), completed(root.path(), "created"));
-    let ui = c.window();
-    let called = Rc::new(std::cell::Cell::new(0));
-    let observed = called.clone();
-    ui.on_choose_files(move || observed.set(observed.get() + 1));
-    label(&ui, "File").invoke_accessible_default_action();
-    mock_elapsed_time(Duration::from_millis(1));
-    let add = label(&ui, "Add Files…");
-    let mut view = ui.get_view();
-    view.can_add = false;
-    ui.set_view(view);
-    mock_elapsed_time(Duration::from_millis(1));
-    add.invoke_accessible_default_action();
-    assert_eq!(called.get(), 0);
-    let mut view = ui.get_view();
-    view.can_reveal_report = true;
-    ui.set_view(view);
-    mock_elapsed_time(Duration::from_millis(1));
-    let observed = called.clone();
-    ui.on_reveal_report(move || observed.set(observed.get() + 10));
-    let observed = called.clone();
-    ui.on_close_window(move || observed.set(observed.get() + 100));
-    label(&ui, "File").invoke_accessible_default_action();
-    mock_elapsed_time(Duration::from_millis(1));
-    let old_report = label(&ui, "Show Saved Report");
-    let mut view = ui.get_view();
-    view.can_reveal_report = false;
-    ui.set_view(view);
-    mock_elapsed_time(Duration::from_millis(1));
-    old_report.invoke_accessible_default_action();
-    assert_eq!(called.get(), 0);
-}
-#[test]
-#[cfg(target_os = "linux")]
-fn menu_action_can_query_a_rebuilt_menu_without_holding_the_old_cache_borrow() {
-    init_no_event_loop();
-    let root = tempfile::tempdir().unwrap();
-    let c = controller(root.path(), completed(root.path(), "created"));
-    let ui = c.window();
-    let called = Rc::new(std::cell::Cell::new(0));
-    let observed = called.clone();
-    let weak = ui.as_weak();
-    ui.on_close_window(move || {
-        let ui = weak.upgrade().unwrap();
-        let mut view = ui.get_view();
-        view.can_add = !view.can_add;
-        ui.set_view(view);
-        label(&ui, "Help").invoke_accessible_default_action();
-        observed.set(observed.get() + 1);
-    });
-    label(&ui, "File").invoke_accessible_default_action();
-    mock_elapsed_time(Duration::from_millis(1));
-    label(&ui, "Close Window").invoke_accessible_default_action();
-    assert_eq!(called.get(), 1);
 }
 
 #[test]

@@ -43,7 +43,7 @@ pub(crate) fn write(app: bool, targets: &[String], out: &Path) -> Result<()> {
             command.args([
                 "--no-default-features",
                 "--features",
-                "desktop-winit renderer-software",
+                "desktop renderer-software",
             ]);
         }
         command.arg("legal/about.hbs");

@@ -14,13 +14,8 @@ only the workspace version. Distribution resolves and supplies HEAD for both
 frontends, using the optimized `dist` profile (see [release identity](docs/release.md)).
 On macOS, install Command Line Tools (`xcode-select --install`); full
 Xcode is unnecessary for builds. Linux development and released CLI binaries
-require Ubuntu 26.04 or newer. Native GUI development also needs `pkg-config`,
-`libfontconfig1-dev` and `libwayland-dev`, plus the Qt SDK version in `xtask/tools.toml`. Install the
-official Qt 6.12 SDK (Qt Base, Qt Wayland and bundled ICU) for your architecture and set
-`QMAKE` to its `bin/qmake`. Distro Qt development packages may be older than the
-supported baseline. Install the
-[Qt Linux system prerequisites](https://doc.qt.io/qt-6/linux-requirements.html)
-for your display server; the SDK does not supply all host libraries.
+require Ubuntu 26.04 or newer. Headless GUI development needs `pkg-config`,
+`libfontconfig1-dev` and `libwayland-dev`.
 Windows CLI development uses Visual Studio C++ Build Tools with the native x64
 or ARM64 MSVC tools. CI builds a static CRT.
 
@@ -42,33 +37,11 @@ open "target/desktop/app/EML Attachment Remover.app"
 
 Use a fresh output directory on subsequent distributions. Apart from `--version`
 and `-V`, the bare Cargo GUI executable requires its macOS bundle/helper context
-before opening a window. The GUI library and testing backend support macOS and
-Linux. Native Linux GUI builds use Slint's Qt backend, Qt 6 Widgets and Qt's
-accessibility integration;
-macOS uses Slint's Winit backend. CI installs the exact Qt SDK pin on Ubuntu 26.04 for both Linux
-architectures; `"$QMAKE" -query QT_VERSION` identifies the selected SDK. Native distribution archives currently target
-macOS. Linux development uses:
-
-```sh
-cargo build --locked -p emlattachmentremover
-cargo build --locked -p eml-gui --bin emlattachmentremover-gui --no-default-features --features desktop-qt
-cargo run --locked -p eml-gui --bin emlattachmentremover-gui --no-default-features --features desktop-qt
-```
-
-Keep the built CLI beside the GUI executable. Linux native operation requires
-Qt 6.12 or newer within Qt 6, with the runtime version matching the build SDK
-exactly, plus a Qt platform plugin for the session:
-Wayland or X11. Install Qt Wayland from the same SDK for Wayland, and put the
-SDK's `lib` directory on `LD_LIBRARY_PATH` when it is outside the system library
-search path. Native file dialogs require XDG Desktop Portal and your desktop's file chooser
-backend (for example, KDE or GTK). Wayland compositors must support xdg-foreign
-window export for parented panels. Dialogs are modal and parented to the app;
-portal setup or parent-export failures are shown as errors. There is no Zenity
-fallback. Accessibility uses Qt's platform integration. Missing Qt or `SLINT_NO_QT` is an error for the Linux
-native profile. On Windows, exclude `eml-app` and `eml-gui` from workspace commands
-and use `--target` with your native MSVC triple so host
-procedural macros are built independently of static-CRT target flags. Windows CI
-copies its freshly built xtask executable to the runner's temporary directory
+before opening a window. The GUI library and testing backend support macOS and Linux. Windows supports
+core and the CLI only. The native GUI uses Slint's Winit backend on macOS only.
+On Windows, exclude `eml-app` and `eml-gui` from workspace commands and use `--target` with your native MSVC triple so host procedural macros
+are built independently of static-CRT target flags. Windows CI copies its freshly
+built xtask executable to the runner's temporary directory
 before running checks: Windows cannot replace that executable while Cargo tests
 rebuild it. The native MSVC step in [CI](.github/workflows/ci.yml) uses Cargo's
 reported artifact path, including configured target directories.
@@ -88,8 +61,7 @@ cargo xtask ci
 
 Obtain actionlint and shellcheck from their upstream releases or a package manager,
 using the versions in tools.toml. `cargo xtask ci` checks tool versions, formatting,
-dependency policy for the headless graph, macOS native renderers alone/together, the Linux
-Qt graph and the separate fuzz lockfile, workflows, shell scripts and the
+dependency policy for the headless graph, macOS native renderers alone/together, the separate fuzz lockfile, workflows, shell scripts and the
 working-tree verification budget;
 then runs Clippy and tests. On macOS it also builds the signed universal app in a
 fresh temporary directory. Structural complexity thresholds warn; other Clippy
@@ -109,16 +81,11 @@ Native Finder/Dock, file panels and appearance are manual checks.
 Merge CI restores caches on every producer and saves them only on main. Release
 builds read those trusted cache namespaces rather than keys with no producers.
 Linux test and release builds use the same Ubuntu 26.04 baseline, so they can
-reuse build outputs. Cache keys include the Qt/developer-tool pins.
+reuse build outputs. Cache keys include the developer-tool pins.
 `cargo xtask lint` owns source/configuration checks for both hosted lint and local
 CI; `cargo xtask ci --rust-only` owns the native Clippy/test portion. Native
-Clippy selects `desktop-winit` on macOS and `desktop-qt` on Linux. Linux also
-runs native adapter tests against Slint's testing backend and pure portal
-responses, plus the scoped Qt backend's boundary unit tests outside workspace
-test discovery. They do not contact desktop services. These
-platform profiles are mutually exclusive; `--all-features` is unsupported.
-macOS defaults to `renderer-software`; `renderer-skia` is optional. Linux Qt
-draws through Qt's painter rather than a Slint renderer selection. The full
+Clippy selects `desktop` on macOS and headless elsewhere.
+macOS defaults to `renderer-software`; `renderer-skia` is optional. The full
 `cargo xtask ci` composes them and checks macOS archives separately.
 
 The budget reads tracked and non-ignored untracked working files, including
@@ -177,20 +144,3 @@ mutation testing, install the pinned cargo-mutants and run
 `cargo mutants -p eml-message`. These are focused/manual tools; nightly fuzzing
 runs for 15 minutes. Avoid adding campaign, evidence or native UI qualification
 frameworks. Add tests for a concrete required behavior or regression.
-
-## Pinned Slint source maintenance
-
-The [Core menu patch](crates/slint-core-source/SOURCE-PATCH.md) preserves actual
-item identity across menu rebuilds and validates live activation state.
-The [Qt backend patch](crates/slint-qt/SOURCE-PATCH.md) covers native path,
-window, text and accessibility integration. Linux also uses the
-[published Fluent widget closure](crates/slint-widgets/SOURCE-PATCH.md) with
-menu accessibility properties. Its original visual and layout source is retained.
-A [small build-helper extension](crates/slint-build-source/SOURCE-PATCH.md)
-selects the compiler's existing broad experimental switch explicitly for this
-Linux UI compilation: the copied published widgets use internal interfaces.
-This also enables other experimental syntax/context constructors; application
-UI code does not use them. No global environment flag is changed. macOS keeps
-builtin Cupertino and native menus. Review these source patches and rerun their
-native checks when changing the pinned toolkit; they are not a general-purpose
-replacement toolkit distribution.
