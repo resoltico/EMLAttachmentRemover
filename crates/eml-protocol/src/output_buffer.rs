@@ -33,6 +33,11 @@ impl BoundedEventBuffer {
             limit,
         }
     }
+    /// Transfer the retained bytes without copying or reserializing them.
+    pub fn into_bytes(self) -> Vec<u8> {
+        self.bytes
+    }
+
     /// Borrow the complete checked event for delivery.
     pub fn bytes(&self) -> &[u8] {
         &self.bytes

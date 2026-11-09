@@ -479,11 +479,17 @@ fn w2_policy_uses_typed_errors() {
 #[test]
 fn w3_rows_do_not_decode_protocol_records() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    for name in ["present.rs", "state.rs", "lib.rs"] {
-        let text = fs::read_to_string(root.join("src").join(name)).unwrap();
+    for path in rust_sources(&root.join("src")) {
+        if path.ends_with("preferences.rs") {
+            continue;
+        }
+        let text = fs::read_to_string(&path).unwrap();
         assert!(
-            !text.contains("eml_protocol::records") && !text.contains("serde_json::from_"),
-            "Rows still depend on protocol decoding: {name}"
+            !text.contains("ItemRecord")
+                && !text.contains("decode_record")
+                && !text.contains("serde_json::from_"),
+            "Rows still depend on protocol decoding: {}",
+            path.display()
         );
     }
     let tests = fs::read_to_string(root.join("tests/desktop.rs")).unwrap();

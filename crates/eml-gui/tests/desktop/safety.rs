@@ -56,7 +56,7 @@ fn production_binary_targets_cannot_alias_on_case_insensitive_filesystems() {
 fn about_contents_and_actions_fit_display_scales() {
     init_no_event_loop();
     let root = tempfile::tempdir().unwrap();
-    let c = controller(root.path(), completed(root.path(), "created"));
+    let c = controller(root.path(), eml_core::run);
     let about = c.about_window();
     for scale in [1.0, 2.0] {
         about
@@ -126,7 +126,7 @@ fn about_and_licenses_restore_focus_selection_and_scroll_on_reopen() {
     use slint::platform::{Key, PointerEventButton, WindowEvent};
     init_no_event_loop();
     let root = tempfile::tempdir().unwrap();
-    let c = controller(root.path(), completed(root.path(), "created"));
+    let c = controller(root.path(), eml_core::run);
     let about = c.about_window();
     let visits = Rc::new(std::cell::Cell::new(0));
     let observed = visits.clone();
@@ -269,12 +269,15 @@ fn native_drop_paths_are_deferred_as_one_check_and_cancelled_hover_adds_nothing(
     use slint::Model;
     init_no_event_loop();
     let root = tempfile::tempdir().unwrap();
-    let cli = super::acceptance::dual(
-        root.path(),
-        &super::acceptance::check_stream(root.path(), &["one.eml", "two.eml", "three.eml"]),
-        "",
-    );
-    let c = controller(root.path(), cli);
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let captured = calls.clone();
+    for name in ["one.eml", "two.eml", "three.eml"] {
+        write(root.path(), name, ATTACHMENT);
+    }
+    let c = controller(root.path(), move |r, control, sink| {
+        captured.lock().unwrap().push(r.clone());
+        eml_core::run(r, control, sink)
+    });
     for name in ["one.eml", "two.eml", "three.eml"] {
         c.deliver_drop(root.path().join(name));
     }
@@ -282,20 +285,21 @@ fn native_drop_paths_are_deferred_as_one_check_and_cancelled_hover_adds_nothing(
     mock_elapsed_time(Duration::from_millis(1));
     pump(&c, || !c.is_busy());
     assert_eq!(c.window().get_rows().row_count(), 3);
-    let seen = super::acceptance::requests(root.path());
+    let seen = calls.lock().unwrap();
     assert_eq!(seen.len(), 1);
-    assert_eq!(seen[0]["paths"].as_array().unwrap().len(), 3);
+    assert_eq!(seen[0].paths.len(), 3);
+    drop(seen);
     c.deliver_drop(root.path().join("cancelled.eml"));
     c.cancel_drop();
     mock_elapsed_time(Duration::from_millis(1));
-    assert_eq!(super::acceptance::requests(root.path()).len(), 1);
+    assert_eq!(calls.lock().unwrap().len(), 1);
 }
 #[test]
 fn secondary_close_shortcuts_leave_the_active_worker_and_native_selection_intact() {
     use slint::Model;
     init_no_event_loop();
     let root = tempfile::tempdir().unwrap();
-    let c = super::acceptance::gate(root.path());
+    let (c, release) = super::acceptance::gate(root.path());
     let ui = c.window();
     ui.invoke_select_email(ui.get_rows().row_data(0).unwrap().key);
     let selected = c.selected_original();
@@ -308,6 +312,6 @@ fn secondary_close_shortcuts_leave_the_active_worker_and_native_selection_intact
     assert!(!c.about_window().window().is_visible());
     assert!(c.is_busy());
     assert_eq!(c.selected_original(), selected);
-    fs::write(root.path().join("release"), b"go").unwrap();
+    release.release();
     pump(&c, || !c.is_busy());
 }

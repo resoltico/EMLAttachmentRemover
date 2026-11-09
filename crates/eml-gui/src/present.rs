@@ -4,10 +4,9 @@ use crate::{
     wording::{self as words},
 };
 use eml_core::{
-    ErrorCode,
+    OperationFailure, SettledItem,
     vocabulary::{BatchTotals, Outcome, Severity, fields, format_bytes},
 };
-use eml_protocol::records::ItemRecord;
 use std::{collections::HashMap, path::PathBuf};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum RowStatus {
@@ -53,7 +52,7 @@ impl RowStatus {
 }
 pub(super) struct Row {
     pub key: PathBuf,
-    pub item: ItemRecord,
+    pub item: SettledItem,
     pub kind: Kind,
     pub status: RowStatus,
     pub copy: Option<PathBuf>,
@@ -68,26 +67,26 @@ impl Row {
     fn explanation(&self) -> String {
         let mut lines = vec![self.status.explanation()];
         // A waiting/missing/unconfirmed replacement must not reuse old outcome claims.
-        if self.status == RowStatus::Settled(self.item.outcome())
-            && let Some(facts) = self.item.outcome_facts()
-        {
-            let meaning = eml_core::vocabulary::classify(&facts);
+        if self.status == RowStatus::Settled(self.item.outcome()) {
+            let meaning = eml_core::vocabulary::classify(&self.item.facts);
             lines.extend(meaning.consequences.iter().map(|c| c.text()));
         }
         lines.join("\n")
     }
     fn notice(&self) -> &'static str {
         if self.status == RowStatus::Settled(self.item.outcome()) {
-            self.item
-                .outcome_facts()
-                .and_then(|f| eml_core::vocabulary::classify(&f).related_notice)
+            eml_core::vocabulary::classify(&self.item.facts)
+                .related_notice
                 .unwrap_or("")
         } else {
             ""
         }
     }
     pub(super) fn size_text(&self) -> String {
-        match (self.item.source_bytes.value(), self.item.copy_bytes.value()) {
+        match (
+            self.item.source_bytes.as_ref(),
+            self.item.copy_bytes.as_ref(),
+        ) {
             (Some(a), Some(b)) if !self.item.removed.is_empty() => {
                 format!("{} → {}", format_bytes(*a), format_bytes(*b))
             }
@@ -103,9 +102,8 @@ impl Row {
             fields::DESTINATION,
             self.item
                 .destination
-                .value()
-                .and_then(|p| p.native_absolute_path())
-                .map(|p| eml_core::display::DisplayPath::new(&p).to_string())
+                .as_ref()
+                .map(|p| eml_core::display::DisplayPath::new(p).to_string())
                 .unwrap_or_default(),
             fields::STATUS,
             self.label()
@@ -116,20 +114,11 @@ impl Row {
         };
         text += &self.explanation();
         text.push('\n');
-        if let Some(error) = self.item.error.value() {
-            text += &format!(
-                "{}: {}\n{}: {}\n{}: {}\n",
-                fields::CODE,
-                eml_core::display::DisplayText::new(&error.code),
-                fields::PHASE,
-                error.phase,
-                fields::DETAIL,
-                eml_core::display::DisplayText::new(&error.detail)
-            );
+        if let Some(error) = &self.item.failure {
+            text += &words::failure_details(error);
         }
-        if let Some(facts) = self.item.outcome_facts()
-            && facts.cleanup.state != eml_core::CleanupState::NotNeeded
-        {
+        let facts = &self.item.facts;
+        if facts.cleanup.state != eml_core::CleanupState::NotNeeded {
             text += &format!(
                 "{}: {}\n",
                 fields::CLEANUP,
@@ -138,7 +127,7 @@ impl Row {
             if let Some(code) = facts.cleanup.native_code {
                 text += &format!("{}: {code}\n", fields::NATIVE_CODE);
             }
-            if let Some(name) = facts.cleanup.residual_name {
+            if let Some(name) = &facts.cleanup.residual_name {
                 text += &format!(
                     "{}: {}\n",
                     fields::RESIDUAL_RESOURCE,
@@ -146,10 +135,10 @@ impl Row {
                 );
             }
         }
-        if let Some(n) = self.item.source_bytes.value() {
+        if let Some(n) = self.item.source_bytes.as_ref() {
             text += &format!("{}: {n}\n", fields::SOURCE_BYTES);
         }
-        if let Some(n) = self.item.copy_bytes.value() {
+        if let Some(n) = self.item.copy_bytes.as_ref() {
             text += &format!("{}: {n}\n", fields::COPY_BYTES);
         }
         for part in &self.item.removed {
@@ -169,7 +158,7 @@ impl Row {
         text
     }
 }
-pub(super) fn rows(batch: &Batch) -> Option<Vec<Row>> {
+pub(super) fn rows(batch: &Batch) -> Vec<Row> {
     let absent_create_status = batch.create.as_ref().map(|slot| {
         if batch.state() == State::Removing {
             return RowStatus::Waiting;
@@ -184,9 +173,9 @@ pub(super) fn rows(batch: &Batch) -> Option<Vec<Row>> {
             .completion
             .as_ref()
             .filter(|c| c.failure.is_none())
-            .and_then(|c| {
+            .map(|c| {
                 c.report
-                    .with_report(eml_app::RunReport::results_cover_inventory)
+                    .with_report(crate::worker::RunReport::results_cover_inventory)
             })
             .unwrap_or(false);
         if complete {
@@ -247,7 +236,7 @@ pub(super) fn rows(batch: &Batch) -> Option<Vec<Row>> {
                     },
                 );
             }
-        })?;
+        });
     }
     let mut result: Vec<Row> = rows.into_values().collect();
     result.sort_by(|a, b| {
@@ -256,7 +245,18 @@ pub(super) fn rows(batch: &Batch) -> Option<Vec<Row>> {
             .cmp(&b.item.index)
             .then_with(|| a.key.cmp(&b.key))
     });
-    Some(result)
+    result
+}
+fn run_failure(batch: &Batch) -> Option<OperationFailure> {
+    let slot = batch.create.as_ref().or(batch.check.as_ref())?;
+    if let Some(failure) = slot.completion.as_ref().and_then(|c| c.failure.as_ref()) {
+        return Some(failure.clone());
+    }
+    slot.report.as_ref()?.with_report(|r| {
+        r.summary()
+            .and_then(eml_core::RunOutcome::run_error)
+            .cloned()
+    })
 }
 pub(super) fn banner(batch: &Batch) -> String {
     let Some(slot) = batch.create.as_ref().or(batch.check.as_ref()) else {
@@ -268,41 +268,29 @@ pub(super) fn banner(batch: &Batch) -> String {
     if slot
         .completion
         .as_ref()
-        .is_some_and(|c| c.state == eml_app::WorkerState::RequestRefused)
+        .is_some_and(|c| c.state == crate::worker::WorkerState::Incomplete)
     {
-        return words::REQUEST_REFUSED.into();
+        return words::WORKER_FAILED.into();
     }
-    slot.report
-        .as_ref()
-        .and_then(|handle| {
-            handle.with_report(|r| {
-                if let Some(error) = r.summary().and_then(|s| s.run_error.value()) {
-                    return ErrorCode::from_wire_name(&error.code)
-                        .map_or(words::WORKER_FAILED, |code| {
-                            eml_core::vocabulary::RunFailure(code).explanation()
-                        })
-                        .to_owned();
-                }
-                if r.failure().is_some()
-                    || slot
-                        .completion
-                        .as_ref()
-                        .is_some_and(|c| c.failure.is_some())
-                {
-                    return words::WORKER_FAILED.into();
-                }
-                String::new()
-            })
-        })
-        .unwrap_or_default()
+    run_failure(batch).map_or_else(String::new, |error| {
+        if slot
+            .completion
+            .as_ref()
+            .is_some_and(|c| c.state == crate::worker::WorkerState::Rejected)
+        {
+            error.detail().to_owned()
+        } else {
+            eml_core::vocabulary::RunFailure(error.code())
+                .explanation()
+                .to_owned()
+        }
+    })
 }
 impl crate::DesktopController {
     pub(super) fn refresh(&self) {
         use crate::*;
         let mut r = self.runtime.borrow_mut();
-        let Some(rows) = rows(&r.batch) else {
-            return;
-        };
+        let rows = rows(&r.batch);
         if !rows.iter().any(Row::problem) {
             r.batch.filter(false);
         }
@@ -325,14 +313,14 @@ impl crate::DesktopController {
                 h.with_report(|report| {
                     (
                         report.items().len(),
-                        report.start().map(|s| (s.total, s.collection_complete)),
+                        report
+                            .start()
+                            .map(|s| (s.total as u32, s.collection_complete)),
                     )
                 })
             })
-            .unwrap_or(Some((0, None)));
-        let Some((done, inventory)) = progress else {
-            return;
-        };
+            .unwrap_or((0, None));
+        let (done, inventory) = progress;
         let total = inventory.map(|(total, _complete)| total);
         let totals = BatchTotals::from(
             rows.iter().map(|row| {
@@ -344,9 +332,9 @@ impl crate::DesktopController {
                     row.item.removed.len(),
                     row.item
                         .source_bytes
-                        .value()
+                        .as_ref()
                         .copied()
-                        .zip(row.item.copy_bytes.value().copied()),
+                        .zip(row.item.copy_bytes.as_ref().copied()),
                 )
             }),
             0,
@@ -363,8 +351,7 @@ impl crate::DesktopController {
                     .as_ref()?
                     .report
                     .as_ref()?
-                    .with_report(eml_app::RunReport::settled_totals)
-                    .flatten()
+                    .with_report(crate::worker::RunReport::settled_totals)
             })
             .flatten();
         let header = wording::header(
@@ -420,20 +407,20 @@ impl crate::DesktopController {
                     source_size: row
                         .item
                         .source_bytes
-                        .value()
+                        .as_ref()
                         .map(|n| format_bytes(*n))
                         .unwrap_or_default()
                         .into(),
                     copy_size: row
                         .item
                         .copy_bytes
-                        .value()
+                        .as_ref()
                         .map(|n| format_bytes(*n))
                         .unwrap_or_default()
                         .into(),
                     size_reduction_known: !row.item.removed.is_empty()
-                        && row.item.source_bytes.value().is_some()
-                        && row.item.copy_bytes.value().is_some(),
+                        && row.item.source_bytes.as_ref().is_some()
+                        && row.item.copy_bytes.as_ref().is_some(),
                     description: description.into(),
                     has_chips: !names.is_empty(),
                     key: row_key(&row.key).into(),
@@ -549,23 +536,8 @@ impl crate::DesktopController {
             summary: header.summary.into(),
             problems: header.problems.into(),
             banner: banner(&r.batch).into(),
-            diagnostics: r
-                .batch
-                .create
-                .as_ref()
-                .or(r.batch.check.as_ref())
-                .and_then(|slot| slot.completion.as_ref())
-                .map(|completion| {
-                    let mut text = String::from_utf8_lossy(&completion.stderr)
-                        .lines()
-                        .map(|line| eml_core::display::DisplayText::new(line).to_string())
-                        .collect::<Vec<_>>()
-                        .join("\n");
-                    if completion.stderr_truncated {
-                        text.push_str(words::DIAGNOSTICS_TRUNCATED);
-                    }
-                    text
-                })
+            diagnostics: run_failure(&r.batch)
+                .map(|e| words::failure_details(&e))
                 .unwrap_or_default()
                 .into(),
             notice: self
@@ -641,25 +613,5 @@ impl crate::DesktopController {
         }
         self.rendered_revision.set(revision);
         self.presentation_dirty.set(false);
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use base64::{Engine, engine::general_purpose::STANDARD};
-    use eml_protocol::records::{NativePathRecord, PathEncoding};
-    #[test]
-    fn native_paths_are_independent_of_display_and_decimal_sizes_are_used() {
-        let path = NativePathRecord {
-            encoding: PathEncoding::UnixBytes,
-            base64: STANDARD.encode(b"/native/\xff.eml"),
-        };
-        assert_eq!(
-            path.native_path().unwrap().as_os_str().as_encoded_bytes(),
-            b"/native/\xff.eml"
-        );
-        assert_eq!(format_bytes(1_500_000), "1.5 MB");
-        assert_eq!(RowStatus::Missing.label(), "No longer found");
     }
 }

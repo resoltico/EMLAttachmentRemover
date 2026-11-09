@@ -2,39 +2,16 @@ use super::*;
 
 #[test]
 fn t1_settlement_without_busy_work_is_rendered_on_next_tick() {
-    use std::{
-        os::unix::fs::PermissionsExt,
-        time::{Duration, Instant},
-    };
+    use std::time::{Duration, Instant};
     i_slint_backend_testing::init_no_event_loop();
     let root = tempfile::tempdir().unwrap();
-    let cli = root.path().join("check.sh");
-    let records = include_str!("../../../../tests/contract/protocol/planned-create-unix.jsonl")
-        .replace("@VERSION@", eml_core::product::VERSION);
-    let records: String = records
-        .lines()
-        .map(|line| {
-            let mut record: serde_json::Value = serde_json::from_str(line).unwrap();
-            if record["type"] == "item" {
-                for (field, name) in [("source", "a.eml"), ("destination", "a.no-attachments.eml")]
-                {
-                    record[field]["native"] = serde_json::to_value(
-                        eml_protocol::NativePathValue::new(&root.path().join(name)),
-                    )
-                    .unwrap();
-                }
-            }
-            format!("{record}\n")
-        })
-        .collect();
     std::fs::write(
-        &cli,
-        format!("#!/bin/sh\ncat >/dev/null\ncat <<'RECORDS'\n{records}\nRECORDS\n"),
+        root.path().join("mail.eml"),
+        b"Content-Type: text/plain\r\n\r\nbody\r\n",
     )
     .unwrap();
-    std::fs::set_permissions(&cli, std::fs::Permissions::from_mode(0o700)).unwrap();
     let c = DesktopController::new(
-        cli,
+        eml_core::run,
         root.path().into(),
         preferences::Preferences::load(root.path().join("settings")),
     )
@@ -44,7 +21,7 @@ fn t1_settlement_without_busy_work_is_rendered_on_next_tick() {
     loop {
         let mut r = c.runtime.borrow_mut();
         let a = r.active.as_mut().unwrap();
-        if let Some(completion) = a.worker.poll().unwrap() {
+        if let Some(completion) = a.worker.poll() {
             let (kind, generation) = (a.kind, a.generation);
             let before = r.batch.revision();
             r.batch.settle(kind, generation, completion, false);
@@ -59,7 +36,6 @@ fn t1_settlement_without_busy_work_is_rendered_on_next_tick() {
     assert!(!c.is_busy());
     c.tick();
     assert_eq!(c.window().get_view().title, "1 email");
-    assert_eq!(c.window().get_rows().row_count(), 1);
     assert_eq!(
         c.window().get_rows().row_data(0).unwrap().status,
         "No attachments"

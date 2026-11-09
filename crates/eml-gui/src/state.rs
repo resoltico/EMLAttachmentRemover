@@ -1,5 +1,5 @@
 //! One batch's pure transitions. Worker ownership lives in the controller.
-use eml_app::{ReportHandle, WorkerCompletion};
+use crate::worker::{ReportHandle, WorkerCompletion};
 use std::path::PathBuf;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Kind {
@@ -207,28 +207,30 @@ mod tests {
     #[test]
     fn stale_generation_cannot_settle_or_replace_the_current_worker() {
         let root = tempfile::tempdir().unwrap();
-        let request = eml_app::RequestSnapshot::new(
+        std::fs::write(
+            root.path().join("mail.eml"),
+            b"Subject: Plain\r\n\r\nBody\r\n",
+        )
+        .unwrap();
+        let request = eml_core::RunRequest::from_absolute(
             vec![root.path().join("mail.eml")],
-            None,
+            eml_core::OutputLocation::BesideSource,
             eml_core::RunMode::DryRun,
         )
         .unwrap();
-        let mut worker = eml_app::WorkerRun::start(
-            std::path::Path::new("/usr/bin/false"),
-            &request,
-            root.path(),
-        )
-        .unwrap();
+        let paths = request.paths.clone();
+        let mut worker =
+            crate::worker::WorkerRun::start(std::sync::Arc::new(eml_core::run), request).unwrap();
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
         let completion = loop {
-            if let Some(c) = worker.poll().unwrap() {
+            if let Some(c) = worker.poll() {
                 break c;
             }
             assert!(std::time::Instant::now() < deadline);
             std::thread::yield_now();
         };
         let mut batch = Batch::default();
-        batch.add(request.request().paths.clone());
+        batch.add(paths);
         let (kind, generation) = batch.start().unwrap();
         batch.settle(kind, generation + 1, completion.clone(), false);
         assert_eq!(batch.active, Some((kind, generation)));

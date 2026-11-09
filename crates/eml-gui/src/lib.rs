@@ -1,6 +1,10 @@
-//! One-batch desktop controller over the supervised CLI boundary.
+//! One-batch desktop renderer of in-process core events.
 #![deny(unsafe_code)]
 mod actions;
+#[cfg(feature = "native")]
+mod desktop;
+#[cfg(feature = "native")]
+pub use desktop::run_desktop;
 mod callbacks;
 pub mod ingress;
 #[cfg(feature = "native")]
@@ -12,8 +16,9 @@ mod report_export;
 mod state;
 mod text_commands;
 mod wording;
-use eml_app::{RequestError, RequestSnapshot, WorkerRun, WorkerState};
+mod worker;
 use eml_core::RunMode;
+use eml_core::{OutputLocation, RequestPathError, RunRequest};
 use slint::{ComponentHandle, Model, ModelRc, VecModel};
 use state::{Batch, Effect, Kind, State};
 use std::{
@@ -24,6 +29,8 @@ use std::{
     sync::Arc,
     thread::JoinHandle,
 };
+pub use worker::RunSink;
+use worker::{Runner, WorkerRun, WorkerState};
 #[expect(
     missing_docs,
     unreachable_pub,
@@ -39,7 +46,6 @@ struct Active {
     generation: u64,
     worker: WorkerRun,
     stop_at: Option<u64>,
-    forced: bool,
     estimate: state::ProgressEstimate,
 }
 struct ExportJob {
@@ -63,6 +69,8 @@ struct OpenJob {
 struct Runtime {
     batch: Batch,
     active: Option<Active>,
+    retired_check: Option<WorkerRun>,
+    force_exit: bool,
     preferences: preferences::Preferences,
     export: Option<ExportJob>,
     quit: bool,
@@ -77,13 +85,13 @@ pub struct ReportExport {
     jsonl: Arc<[u8]>,
     token: Rc<()>,
 }
-/// The single owner of batch transitions, child processes and UI actions.
+/// The single owner of batch transitions, core runs and UI actions.
 pub struct DesktopController {
     ui: MainWindow,
     about: AboutWindow,
     licenses: LicenseWindow,
     runtime: RefCell<Runtime>,
-    cli: PathBuf,
+    runner: Arc<Runner>,
     home: PathBuf,
     rows: RefCell<Vec<present::Row>>,
     model: Rc<VecModel<EmailRow>>,
@@ -103,7 +111,14 @@ fn now_ms() -> u64 {
 impl DesktopController {
     /// Construct the production view and controller without starting work.
     pub fn new(
-        cli: PathBuf,
+        runner: impl Fn(
+            &RunRequest,
+            &eml_core::RunControl,
+            &mut RunSink,
+        ) -> Result<eml_core::RunOutcome, eml_core::InvalidRequest>
+        + Send
+        + Sync
+        + 'static,
         home: PathBuf,
         preferences: preferences::Preferences,
     ) -> Result<Rc<Self>, slint::PlatformError> {
@@ -134,12 +149,14 @@ impl DesktopController {
             ui,
             about,
             licenses,
-            cli,
+            runner: Arc::new(runner),
             home,
             model: Rc::new(VecModel::default()),
             runtime: RefCell::new(Runtime {
                 batch,
                 active: None,
+                retired_check: None,
+                force_exit: false,
                 preferences,
                 export: None,
                 quit: false,
@@ -176,7 +193,7 @@ impl DesktopController {
         self.licenses.clone_strong()
     }
     /// Admit native paths through the same boundary used by dialogs and documents.
-    pub fn stage(&self, paths: Vec<PathBuf>) -> Result<(), RequestError> {
+    pub fn stage(&self, paths: Vec<PathBuf>) -> Result<(), RequestPathError> {
         if paths.is_empty() {
             self.message(wording::NOTHING_ADDED);
             self.refresh();
@@ -197,15 +214,17 @@ impl DesktopController {
             if seen.insert(path.clone()) {
                 combined.push(path);
                 if combined.len() > eml_core::MAX_INPUT_PATHS {
-                    return Err(RequestError::InvalidRequest(
-                        eml_core::RequestPathError::TooManyInputs,
-                    ));
+                    return Err(RequestPathError::TooManyInputs);
                 }
             }
         }
-        RequestSnapshot::new(
+        RunRequest::from_absolute(
             combined.clone(),
-            runtime.batch.destination.clone(),
+            runtime
+                .batch
+                .destination
+                .clone()
+                .map_or(OutputLocation::BesideSource, OutputLocation::Directory),
             RunMode::DryRun,
         )?;
         let effect = runtime.batch.add(combined);
@@ -223,7 +242,15 @@ impl DesktopController {
     }
     fn effect(&self, effect: Option<Effect>) {
         match effect {
-            Some(Effect::InterruptCheck) => self.interrupt(),
+            Some(Effect::InterruptCheck) => {
+                let mut r = self.runtime.borrow_mut();
+                if let Some(mut old) = r.active.take() {
+                    debug_assert!(old.kind == Kind::Check && r.retired_check.is_none());
+                    old.worker.stop();
+                    r.retired_check = Some(old.worker);
+                    r.batch.active = None;
+                }
+            }
             Some(Effect::BusyAdding) => self.message(wording::BUSY_ADDING),
             None => {}
         }
@@ -287,15 +314,22 @@ impl DesktopController {
     }
     fn start_pending(&self) {
         let mut runtime = self.runtime.borrow_mut();
-        if runtime.active.is_some() || runtime.quitting {
+        if runtime.active.is_some()
+            || runtime.quitting
+            || (runtime.batch.pending == Some(Kind::Check) && runtime.retired_check.is_some())
+        {
             return;
         }
         let Some((kind, generation)) = runtime.batch.start() else {
             return;
         };
-        let request = RequestSnapshot::new(
+        let request = RunRequest::from_absolute(
             runtime.batch.inputs.clone(),
-            runtime.batch.destination.clone(),
+            runtime
+                .batch
+                .destination
+                .clone()
+                .map_or(OutputLocation::BesideSource, OutputLocation::Directory),
             if kind == Kind::Check {
                 RunMode::DryRun
             } else {
@@ -303,8 +337,11 @@ impl DesktopController {
             },
         );
         let result = request
-            .map_err(io::Error::other)
-            .and_then(|request| WorkerRun::start(&self.cli, &request, &self.home));
+            .map_err(|e| eml_core::InvalidRequest::Paths(e).into_failure())
+            .and_then(|request| {
+                WorkerRun::start(self.runner.clone(), request)
+                    .map_err(eml_core::OperationFailure::delivery)
+            });
         match result {
             Ok(worker) => {
                 runtime.batch.slot_mut(kind).unwrap().report = Some(worker.report().clone());
@@ -313,15 +350,18 @@ impl DesktopController {
                     generation,
                     worker,
                     stop_at: None,
-                    forced: false,
                     estimate: state::ProgressEstimate::start(now_ms()),
                 });
             }
-            Err(_) => {
+            Err(error) => {
                 if kind == Kind::Create {
                     runtime.batch.previous_create = None;
                 }
-                runtime.batch.slot_mut(kind).unwrap().launch_error = true;
+                let completion = worker::WorkerCompletion::rejected(error);
+                let slot = runtime.batch.slot_mut(kind).unwrap();
+                slot.launch_error = true;
+                slot.report = Some(completion.report.clone());
+                slot.completion = Some(completion);
                 runtime.batch.active = None;
             }
         }
@@ -333,7 +373,7 @@ impl DesktopController {
             && active.stop_at.is_none()
         {
             active.stop_at = Some(now_ms());
-            let _ = active.worker.stop();
+            active.worker.stop();
         }
     }
     /// Cooperative create cancellation, sent once.
@@ -343,7 +383,7 @@ impl DesktopController {
             self.refresh();
         }
     }
-    /// Reap and drain completed workers before dispatching pending work.
+    /// Drain typed observations and settle workers before dispatching pending work.
     pub fn tick(&self) {
         let expired = self
             .notice
@@ -371,42 +411,24 @@ impl DesktopController {
             let mut runtime = self.runtime.borrow_mut();
             let active = runtime.active.as_mut();
             if let Some(active) = active {
-                if active.kind == Kind::Check
-                    && active
-                        .stop_at
-                        .is_some_and(|at| now_ms().saturating_sub(at) >= 2000)
-                    && !active.forced
-                {
-                    active.forced = true;
-                    let _ = active.worker.force_stop();
-                }
-                let processed = active
-                    .worker
-                    .report()
-                    .with_report(|r| r.items().len())
-                    .unwrap_or(0);
+                let processed = active.worker.report().with_report(|r| r.items().len());
                 active.estimate.observe(now_ms(), processed as u32);
-                match active.worker.poll() {
-                    Ok(Some(completion)) => {
-                        let stopped = matches!(
-                            completion.state,
-                            WorkerState::Stopped
-                                | WorkerState::StoppedBeforeStart
-                                | WorkerState::ForceStopped
-                        );
-                        let (kind, generation) = (active.kind, active.generation);
-                        runtime.batch.settle(kind, generation, completion, stopped);
-                        runtime.active = None;
-                    }
-                    Ok(None) => {}
-                    Err(error) => {
-                        drop(runtime);
-                        self.message(&error.to_string());
-                        return;
-                    }
+                if let Some(completion) = active.worker.poll() {
+                    let stopped = completion.state == WorkerState::Stopped;
+                    let (kind, generation) = (active.kind, active.generation);
+                    runtime.batch.settle(kind, generation, completion, stopped);
+                    runtime.active = None;
                 }
             }
-            if runtime.quitting && runtime.active.is_none() && runtime.export.is_none() {
+            if let Some(old) = &mut runtime.retired_check
+                && old.poll().is_some()
+            {
+                runtime.retired_check = None;
+            }
+            if runtime.quitting
+                && (runtime.active.is_none() || runtime.force_exit)
+                && runtime.export.is_none()
+            {
                 runtime.should_exit = true;
             }
             platform::set_busy(runtime.active.is_some() || runtime.export.is_some());
@@ -424,7 +446,7 @@ impl DesktopController {
         let r = self.runtime.borrow();
         r.active.is_some() || r.batch.pending.is_some() || r.export.is_some()
     }
-    /// Apply create confirmation rules; read-only checks are killed without a dialog.
+    /// Apply create confirmation rules; obsolete checks receive cooperative stop.
     pub fn request_quit(&self) -> bool {
         let mut r = self.runtime.borrow_mut();
         if r.quitting {
@@ -444,11 +466,13 @@ impl DesktopController {
         } else {
             r.quitting = true;
             r.batch.pending = None;
-            if let Some(active) = &mut r.active {
-                let _ = active.worker.force_stop();
-                active.forced = true;
+            if let Some(mut active) = r.active.take() {
+                active.worker.stop();
+                debug_assert!(active.kind == Kind::Check && r.retired_check.is_none());
+                r.retired_check = Some(active.worker);
+                r.batch.active = None;
             }
-            r.should_exit = r.active.is_none();
+            r.should_exit = r.export.is_none();
             let ready = r.should_exit;
             drop(r);
             self.refresh();
@@ -464,7 +488,7 @@ impl DesktopController {
         drop(r);
         self.refresh();
     }
-    /// Stop cooperatively, wait for owned exports and child reaping, then quit.
+    /// Stop cooperatively and wait for the create and owned exports before quitting.
     pub fn stop_and_quit(&self) {
         {
             let mut r = self.runtime.borrow_mut();
@@ -478,21 +502,19 @@ impl DesktopController {
         self.interrupt();
         self.refresh();
     }
-    /// Force a confirmed create after five seconds, keeping export and reaping ownership.
+    /// Exit after five seconds without awaiting the create; owned exports still settle.
     pub fn quit_now(&self) {
         if !self.can_quit_now() {
             return;
         }
         let mut r = self.runtime.borrow_mut();
         r.quitting = true;
-        if let Some(active) = &mut r.active {
-            let _ = active.worker.force_stop();
-            active.forced = true;
-        }
+        r.force_exit = true;
+        r.should_exit = r.export.is_none();
         drop(r);
         self.refresh();
     }
-    /// Whether the outer event loop can terminate after all owned work has settled.
+    /// Whether the event loop may exit, including an explicitly confirmed Quit Now.
     pub fn should_exit(&self) -> bool {
         self.runtime.borrow().should_exit
     }
