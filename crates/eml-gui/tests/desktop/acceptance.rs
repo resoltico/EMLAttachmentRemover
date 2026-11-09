@@ -833,6 +833,21 @@ fn w5_panic_retains_report_prefix_and_a_responsive_controller() {
         c.window().get_rows().row_data(0).unwrap().status,
         "Result unknown"
     );
+    assert!(
+        c.window().get_view().diagnostics.is_empty(),
+        "A panic has no core diagnostic"
+    );
+    assert!(
+        ElementHandle::find_by_accessible_label(&c.window(), "Details…")
+            .next()
+            .is_none()
+    );
+    select_first(&c);
+    assert!(
+        !c.clipboard_text()
+            .unwrap_or_default()
+            .contains("Result delivery did not complete")
+    );
     let target = root.path().join("panic.jsonl");
     c.start_export(target.clone());
     pump(&c, || !c.is_busy());

@@ -187,9 +187,15 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn native_destination_recents_and_report_folder_survive_reload() {
+    fn x3_native_destination_recents_and_report_folder_survive_reload() {
         use std::{ffi::OsString, os::unix::ffi::OsStringExt};
         let root = tempfile::tempdir().unwrap();
+        assert!(
+            !include_str!("preferences.rs")
+                .lines()
+                .any(|line| line.starts_with("use eml_protocol")),
+            "Settings must own their path encoding"
+        );
         assert_native_folder_round_trip(
             root.path()
                 .join(OsString::from_vec(b"destination-\xff".to_vec())),
@@ -202,7 +208,7 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
-    fn native_destination_recents_and_report_folder_survive_reload() {
+    fn x3_native_destination_recents_and_report_folder_survive_reload() {
         use std::{ffi::OsString, os::windows::ffi::OsStringExt};
         let root = tempfile::tempdir().unwrap();
         assert_native_folder_round_trip(

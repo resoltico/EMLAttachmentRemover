@@ -431,3 +431,47 @@ fn report_delivery_failure_keeps_the_typed_published_item() {
     assert!(bytes.starts_with(b"{\"type\":\"start\""));
     assert_eq!(bytes.iter().filter(|b| **b == b'\n').count(), 1);
 }
+
+#[test]
+fn x2_real_delivery_failure_uses_core_explanation_and_details() {
+    i_slint_backend_testing::init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let input = root.path().join("mail.eml");
+    std::fs::write(&input, b"Subject: Plain\r\n\r\nBody\r\n").unwrap();
+    let c = crate::DesktopController::new(
+        |r, control, sink| {
+            sink.json = JsonSink::new(BoundedEventBuffer::new(0));
+            eml_core::run(r, control, sink)
+        },
+        root.path().to_owned(),
+        crate::preferences::Preferences::load(root.path().join("settings")),
+    )
+    .unwrap();
+    c.stage(vec![input]).unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    while c.is_busy() {
+        c.tick();
+        assert!(std::time::Instant::now() < deadline);
+        std::thread::yield_now();
+    }
+    assert_eq!(
+        c.runtime
+            .borrow()
+            .batch
+            .check
+            .as_ref()
+            .unwrap()
+            .completion
+            .as_ref()
+            .unwrap()
+            .state,
+        WorkerState::Incomplete
+    );
+    assert_eq!(
+        c.window().get_view().banner,
+        eml_core::vocabulary::RunFailure(ErrorCode::OutputFailed).explanation()
+    );
+    assert!(c.window().get_view().diagnostics.contains(
+        "Code: OUTPUT_FAILED\nPhase: delivery\nDetail: Result delivery did not complete."
+    ));
+}
