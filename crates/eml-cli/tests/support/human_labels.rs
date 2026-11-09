@@ -20,6 +20,11 @@ fn u1_cli_renders_every_core_outcome_label() {
             .map(Outcome::Failed),
     );
     for outcome in outcomes {
+        assert!(
+            outcome.label().chars().count() <= LABEL_WIDTH,
+            "{}",
+            outcome.label()
+        );
         let mut line = Vec::new();
         write_label(&mut line, outcome, std::path::Path::new("message.eml")).unwrap();
         assert!(

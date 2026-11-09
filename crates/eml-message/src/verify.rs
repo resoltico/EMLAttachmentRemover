@@ -581,6 +581,26 @@ mod tests {
         crate::message::parse(b"Content-Type: multipart/alternative; boundary=B\r\n\r\n--B\r\nContent-Type: text/plain\r\n\r\nplain\r\n--B\r\nContent-Type: text/html\r\n\r\n<p>html</p>\r\n--B--\r\n", control).unwrap()
     }
     #[test]
+    fn z2_compare_rejects_retained_epilogues_and_changed_suffixes() {
+        let control = RunControl::default();
+        let message = source(&control);
+        let proof = authorize_deletions(&message, &[], &control).unwrap();
+        for bytes in [
+            [message.input, b"hidden"].concat(),
+            message
+                .input
+                .strip_suffix(b"--B--\r\n")
+                .unwrap()
+                .iter()
+                .copied()
+                .chain(b"--B-- \r\n".iter().copied())
+                .collect(),
+        ] {
+            let output = crate::message::parse(&bytes, &control).unwrap();
+            assert!(compare(&message, &proof, 0, &output, 0, &control).is_err());
+        }
+    }
+    #[test]
     fn rejects_forged_kept_html_even_when_plain_survives() {
         let control = RunControl::default();
         let message = source(&control);

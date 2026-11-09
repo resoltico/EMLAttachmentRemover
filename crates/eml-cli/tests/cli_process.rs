@@ -1092,3 +1092,44 @@ fn y7_request_document_names_the_reason_once() {
         assert!(text.contains(reason), "{text}");
     }
 }
+
+#[test]
+fn z6_failure_labels_and_file_destination_are_truthful() {
+    let root = root();
+    fs::write(root.path().join("empty.eml"), b"").unwrap();
+    fs::write(
+        root.path().join("damaged.eml"),
+        include_bytes!("../../../tests/contract/mime/inputs/18-incomplete-multipart.eml"),
+    )
+    .unwrap();
+    let output = invoke(
+        root.path(),
+        &["--dry-run", "--", "empty.eml", "damaged.eml"],
+        None,
+    );
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(
+        text.lines().any(|l| l.starts_with("Not an email ")),
+        "{text}"
+    );
+    assert!(
+        text.lines().any(|l| l.starts_with("Damaged email ")),
+        "{text}"
+    );
+    let target = root.path().join("file");
+    fs::write(&target, b"owned").unwrap();
+    let output = invoke(
+        root.path(),
+        &[
+            "--output-dir",
+            target.to_str().unwrap(),
+            "--",
+            "damaged.eml",
+        ],
+        None,
+    );
+    assert!(String::from_utf8(output.stderr).unwrap().contains(&format!(
+        "The save folder is a file, not a folder: {}. Choose a folder.",
+        target.display()
+    )));
+}
