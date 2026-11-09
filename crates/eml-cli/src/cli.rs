@@ -4,8 +4,9 @@ use clap::{
     Parser, ValueEnum,
     error::{ContextKind, ContextValue, ErrorKind},
 };
+use eml_core::display::DisplayPath;
 use eml_core::{InvalidRequest, OutputLocation, RunControl, RunMode, RunRequest};
-use eml_protocol::{DisplayPath, JsonSink, MAX_REQUEST_BYTES, decode_request};
+use eml_protocol::{JsonSink, MAX_REQUEST_BYTES, decode_request};
 use std::{
     ffi::{OsStr, OsString},
     fs::File,
@@ -158,7 +159,7 @@ fn argument_error_text(mut error: clap::Error) -> String {
             if kind == ContextKind::Usage {
                 return None;
             }
-            let escape = |text: &str| eml_protocol::DisplayText::new(text).to_string();
+            let escape = |text: &str| eml_core::display::DisplayText::new(text).to_string();
             let value = match value {
                 ContextValue::String(text) => ContextValue::String(escape(text)),
                 ContextValue::Strings(text) => {

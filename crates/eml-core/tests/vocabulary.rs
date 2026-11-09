@@ -278,24 +278,36 @@ fn comparison_plans_require_stable_known_unattempted_observations() {
 #[test]
 fn preview_offers_and_complete_results_are_domain_decisions_not_tones() {
     assert!(can_offer_copy([Outcome::Ready], None));
-    assert!(can_offer_copy([Outcome::Unknown], Some("FUTURE_CODE")));
+    assert!(can_offer_copy([Outcome::Unknown], None));
     assert!(can_offer_copy([Outcome::NotProcessed], None));
     assert!(!can_offer_copy(
         [Outcome::Failed(eml_core::ErrorCode::Malformed)],
         None
     ));
-    assert!(!can_offer_copy([], Some("INPUT_ADMISSION_FAILED")));
-    for error in ["NO_INPUTS", "INPUT_LIMIT_EXCEEDED", "OUTPUT_OVERLAP"] {
+    assert!(!can_offer_copy(
+        [],
+        Some(eml_core::ErrorCode::InputAdmissionFailed)
+    ));
+    for error in [
+        eml_core::ErrorCode::NoInputs,
+        eml_core::ErrorCode::InputLimitExceeded,
+        eml_core::ErrorCode::OutputOverlap,
+    ] {
         assert!(!can_offer_copy([Outcome::Ready], Some(error)));
     }
     assert!(results_cover_inventory(true, false, 0, None));
-    assert!(results_cover_inventory(true, false, 0, Some("NO_INPUTS")));
+    assert!(results_cover_inventory(
+        true,
+        false,
+        0,
+        Some(eml_core::ErrorCode::NoInputs)
+    ));
     for (complete, interrupted, remaining, error) in [
         (false, false, 0, None),
         (true, true, 0, None),
         (true, false, 1, None),
-        (true, false, 0, Some("FUTURE_CODE")),
-        (true, false, 0, Some("OUTPUT_OVERLAP")),
+        (true, false, 0, Some(eml_core::ErrorCode::ReadFailed)),
+        (true, false, 0, Some(eml_core::ErrorCode::OutputOverlap)),
     ] {
         assert!(!results_cover_inventory(
             complete,
@@ -403,17 +415,9 @@ fn headline_done_failure() {
 }
 #[test]
 fn headline_done_all_existing() {
-    for (outcomes, verdict, part) in [
-        (
-            vec![Outcome::AlreadyExists],
-            "1 copy already exists",
-            "1 already existed",
-        ),
-        (
-            vec![Outcome::AlreadyExists; 40],
-            "40 copies already exist",
-            "40 already existed",
-        ),
+    for (outcomes, verdict) in [
+        (vec![Outcome::AlreadyExists], "1 copy already exists"),
+        (vec![Outcome::AlreadyExists; 40], "40 copies already exist"),
     ] {
         assert_headline(
             &outcomes,
@@ -421,7 +425,7 @@ fn headline_done_all_existing() {
                 incomplete_create: false,
             },
             verdict,
-            &[part],
+            &[],
         );
     }
 }

@@ -260,7 +260,7 @@ fn emit_item(
     if let Err(error) = sink.emit(Event::Item(&event)) {
         outcome.delivery_failure = Some(DeliveryFailure {
             phase: DeliveryPhase::Item,
-            error,
+            error: error.into(),
         });
         false
     } else {
@@ -400,7 +400,7 @@ fn emit_start(
     if let Err(error) = sink.emit(Event::Start(&start)) {
         outcome.delivery_failure = Some(DeliveryFailure {
             phase: DeliveryPhase::Start,
-            error,
+            error: error.into(),
         });
         outcome.interrupted |= control.is_stopped();
         return false;
@@ -415,7 +415,7 @@ fn emit_summary(outcome: &mut RunOutcome, control: &RunControl, sink: &mut impl 
     {
         outcome.delivery_failure = Some(DeliveryFailure {
             phase: DeliveryPhase::Summary,
-            error,
+            error: error.into(),
         });
         outcome.interrupted |= control.is_stopped();
     }

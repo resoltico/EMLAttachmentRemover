@@ -221,7 +221,7 @@ pub(super) const OPEN_SENT: &str = "Open command sent.";
 pub(super) const OPEN_FAILED: &str = "The native open operation did not complete.";
 
 pub(super) fn attachment_name(part: &eml_protocol::records::RemovedRecord) -> String {
-    eml_protocol::DisplayText::new(eml_core::vocabulary::part_name(
+    eml_core::display::DisplayText::new(eml_core::vocabulary::part_name(
         part.filename.value().map(String::as_str),
         part.reason,
         &part.content_type,

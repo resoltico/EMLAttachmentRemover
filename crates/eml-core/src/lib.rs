@@ -12,6 +12,10 @@ mod existing;
 #[cfg(any(unix, windows))]
 mod outcome;
 #[cfg(any(unix, windows))]
+mod settled;
+#[cfg(any(unix, windows))]
+pub use settled::SettledItem;
+#[cfg(any(unix, windows))]
 mod run;
 #[cfg(any(unix, windows))]
 pub use existing::{
@@ -63,6 +67,7 @@ pub use request::{
 #[cfg(any(unix, windows))]
 pub use source::{PreparedSource, SourcePreparationError, prepare_source};
 
+pub mod display;
 pub mod product;
 /// Pure domain qualification shared by execution and report consumers.
 pub mod qualification;

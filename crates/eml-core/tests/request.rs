@@ -277,3 +277,45 @@ fn request_path_diagnostics_explain_location_cause_and_action() {
         assert!(!text.contains("InvalidPath"));
     }
 }
+
+#[test]
+fn absolute_frontend_constructor_owns_admission_without_io() {
+    let source = root().join("not-required-to-exist/mail.eml");
+    let request = RunRequest::from_absolute(
+        vec![source.clone()],
+        OutputLocation::BesideSource,
+        RunMode::DryRun,
+    )
+    .unwrap();
+    assert_eq!(request.paths, [source]);
+    assert_eq!(request.working_directory, root());
+    assert_eq!(request.mode, RunMode::DryRun);
+    assert_eq!(
+        RunRequest::from_absolute(vec![], OutputLocation::BesideSource, RunMode::DryRun),
+        Err(RequestPathError::AbsoluteSelectionRequired)
+    );
+    assert_eq!(
+        RunRequest::from_absolute(
+            vec!["relative.eml".into()],
+            OutputLocation::BesideSource,
+            RunMode::Create
+        ),
+        Err(RequestPathError::AbsoluteSelectionRequired)
+    );
+    assert_eq!(
+        RunRequest::from_absolute(
+            vec![root().join("mail.eml")],
+            OutputLocation::Directory("relative".into()),
+            RunMode::Create
+        ),
+        Err(RequestPathError::AbsoluteDestinationRequired)
+    );
+    assert!(matches!(
+        RunRequest::from_absolute(
+            vec![root().join("mail.eml"); MAX_INPUT_PATHS + 1],
+            OutputLocation::BesideSource,
+            RunMode::Create
+        ),
+        Err(RequestPathError::TooManyInputs)
+    ));
+}
