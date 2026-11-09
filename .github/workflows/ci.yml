@@ -204,8 +204,12 @@ jobs:
         id: tools
         run: cargo run --locked -p xtask --target "$TARGET_TRIPLE" -- tool-versions >> "$GITHUB_OUTPUT"
       - uses: taiki-e/install-action@b80e2bb2635f28eb98b9fce1e2f0887e1535c6b2
+        if: matrix.target != 'x86_64-apple-darwin'
         with:
           tool: cargo-about@${{ steps.tools.outputs.cargo_about }}
+      - name: Install pinned notices generator with its CLI feature on Intel Mac
+        if: matrix.target == 'x86_64-apple-darwin'
+        run: cargo install --locked --version '${{ steps.tools.outputs.cargo_about }}' --features cli cargo-about
       - name: Shells for startup-file checks
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y zsh fish
