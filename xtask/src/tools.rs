@@ -30,18 +30,6 @@ pub(crate) fn print() -> Result<()> {
     }
     Ok(())
 }
-/// Check the same SDK pin in local and hosted native Linux gates.
-pub(crate) fn qt() -> Result<()> {
-    let versions = read()?;
-    let expected = versions.get("qt").ok_or("missing Qt SDK pin")?;
-    let qmake = std::env::var_os("QMAKE").unwrap_or_else(|| "qmake".into());
-    let reported =
-        crate::capture(std::process::Command::new(qmake).args(["-query", "QT_VERSION"]))?;
-    if &reported != expected {
-        return Err(format!("Qt SDK must be {expected}; qmake reported {reported}").into());
-    }
-    Ok(())
-}
 pub(crate) fn reported_version<'a>(name: &str, output: &'a str) -> Option<&'a str> {
     match name {
         "cargo-deny" | "cargo-about" => output

@@ -11,28 +11,28 @@ pub(crate) fn run() -> Result<()> {
         tool(name, key)?;
     }
     // Native backends are platform selections, not an all-features union.
-    // Headless covers every target; native passes include both CPU architectures.
+    // Headless covers macOS/Linux; Windows audits core and CLI only.
     for (features, targets) in [
-        ("eml-gui/renderer-software", &[][..]),
         (
-            "eml-gui/desktop-winit,eml-gui/renderer-software",
+            "eml-gui/renderer-software",
+            &[
+                "aarch64-apple-darwin",
+                "x86_64-apple-darwin",
+                "x86_64-unknown-linux-gnu",
+                "aarch64-unknown-linux-gnu",
+            ][..],
+        ),
+        (
+            "eml-gui/desktop,eml-gui/renderer-software",
             &["aarch64-apple-darwin", "x86_64-apple-darwin"][..],
         ),
         (
-            "eml-gui/desktop-winit,eml-gui/renderer-skia",
+            "eml-gui/desktop,eml-gui/renderer-skia",
             &["aarch64-apple-darwin", "x86_64-apple-darwin"][..],
         ),
         (
-            "eml-gui/desktop-winit,eml-gui/renderer-software,eml-gui/renderer-skia",
+            "eml-gui/desktop,eml-gui/renderer-software,eml-gui/renderer-skia",
             &["aarch64-apple-darwin", "x86_64-apple-darwin"][..],
-        ),
-        (
-            "eml-gui/desktop-qt",
-            &["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"][..],
-        ),
-        (
-            "eml-gui/desktop-qt,eml-gui/renderer-software",
-            &["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"][..],
         ),
     ] {
         if targets.is_empty() {
@@ -41,6 +41,17 @@ pub(crate) fn run() -> Result<()> {
         for target in targets {
             dependency_graph(features, Some(target))?;
         }
+    }
+    for target in ["x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"] {
+        command(Command::new("cargo").args([
+            "deny",
+            "--manifest-path",
+            "crates/eml-cli/Cargo.toml",
+            "--locked",
+            "--target",
+            target,
+            "check",
+        ]))?;
     }
     command(Command::new("cargo").args([
         "deny",

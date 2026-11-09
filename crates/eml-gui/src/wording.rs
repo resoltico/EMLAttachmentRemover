@@ -364,18 +364,3 @@ pub(super) const LICENSES_FAILED: &str = "Couldn’t open bundled third-party no
 
 pub(super) const REQUEST_REFUSED: &str = "The request was refused before processing any emails.";
 pub(super) const DIAGNOSTICS_TRUNCATED: &str = "\nDiagnostic output was truncated.";
-
-#[cfg(feature = "desktop-qt")]
-pub(crate) const ABSOLUTE_REVEAL: &str = "Showing a file requires an absolute path";
-
-#[cfg(feature = "desktop-qt")]
-pub(crate) const PORTAL_PARENT_UNAVAILABLE: &str =
-    "The file chooser could not be attached to this window.";
-#[cfg(feature = "desktop-qt")]
-pub(crate) const PORTAL_SELECTION_INVALID: &str =
-    "The file chooser returned an invalid local file selection.";
-#[cfg(feature = "desktop-qt")]
-pub(crate) const PORTAL_DIALOG_FAILED: &str = "Couldn’t open the desktop file chooser. Check that XDG Desktop Portal and your desktop’s file chooser backend are running";
-
-#[cfg(target_os = "linux")]
-pub(crate) const LINUX_CLI_MISSING: &str = "The CLI executable must be beside the GUI executable. Build both emlattachmentremover and eml-gui before launching the Linux GUI.";

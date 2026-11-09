@@ -52,13 +52,6 @@ pub fn validate_launch(executable: &std::path::Path, cli: &std::path::Path) -> s
             ));
         }
     }
-    #[cfg(target_os = "linux")]
-    if !cli.is_file() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            crate::wording::LINUX_CLI_MISSING,
-        ));
-    }
     let _ = (executable, cli);
     Ok(())
 }
@@ -78,18 +71,4 @@ pub fn take_opened() -> Vec<std::path::PathBuf> {
     return macos::take_opened();
     #[cfg(not(all(feature = "native", target_os = "macos")))]
     Vec::new()
-}
-
-#[cfg(test)]
-mod tests {
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn linux_launch_requires_the_sibling_cli() {
-        let root = tempfile::tempdir().unwrap();
-        let gui = root.path().join("emlattachmentremover-gui");
-        let cli = root.path().join(eml_core::product::CLI_NAME);
-        assert!(super::validate_launch(&gui, &cli).is_err());
-        std::fs::write(&cli, b"fixture").unwrap();
-        assert!(super::validate_launch(&gui, &cli).is_ok());
-    }
 }

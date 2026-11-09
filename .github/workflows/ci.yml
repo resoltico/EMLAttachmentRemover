@@ -69,8 +69,8 @@ jobs:
       matrix:
         include:
           - { runner: macos-26 }
-          - { runner: ubuntu-26.04, qt-host: linux, qt-arch: linux_gcc_64 }
-          - { runner: ubuntu-26.04-arm, qt-host: linux_arm64, qt-arch: linux_gcc_arm64 }
+          - { runner: ubuntu-26.04 }
+          - { runner: ubuntu-26.04-arm }
           # The desktop crates are Unix-only until a Windows GUI is designed.
           - { runner: windows-2022 }
           - { runner: windows-11-arm }
@@ -93,28 +93,6 @@ jobs:
         shell: bash
         run: |
           if [ "$RUNNER_OS" = Linux ]; then sudo apt-get update && sudo apt-get install -y libfontconfig1-dev libwayland-dev pkg-config; fi
-      - name: Read Linux SDK versions
-        if: runner.os == 'Linux'
-        id: tools
-        run: cargo xtask tool-versions >> "$GITHUB_OUTPUT"
-      - name: Install the pinned native Linux Qt SDK
-        if: runner.os == 'Linux'
-        id: qt
-        uses: jurplel/install-qt-action/action@b344308e4483fc892e0d27b3cd1b173ebdd95f06 # v4.5.0
-        with:
-          version: ${{ steps.tools.outputs.qt }}
-          host: ${{ matrix.qt-host }}
-          arch: ${{ matrix.qt-arch }}
-          archives: qtbase qtwayland icu
-          aqtversion: ==${{ steps.tools.outputs.aqtinstall }}
-          py7zrversion: ==${{ steps.tools.outputs.py7zr }}
-          cache: false
-      - name: Select the native Qt SDK
-        if: runner.os == 'Linux'
-        env:
-          QT_ROOT: ${{ steps.qt.outputs.qt-root-dir }}
-        run: |
-          echo "QMAKE=$QT_ROOT/bin/qmake" >> "$GITHUB_ENV"
       - name: Verify native MSVC tools
         if: runner.os == 'Windows'
         shell: pwsh

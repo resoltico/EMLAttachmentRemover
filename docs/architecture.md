@@ -185,12 +185,9 @@ Buttons, menus and controller boundaries share predicates in `actions.rs`.
 Slint uses Cupertino on macOS and Fluent on Linux. Native open/reveal requests run
 off the UI thread, bounded to one per initiating window. Acceptance is advisory,
 not proof of viewer contents or current file identity. About and Licenses retain
-their focus/reset behavior. Native Linux uses Qt with parented XDG portal panels; macOS uses Winit.
-The Qt accessibility adapter translates the existing Slint model and active popup
-trees, including readonly text/selection and native state/live events. Linux's
-published Fluent widget source supplies menu labels/actions without duplicating
-the application's command definitions; its compiler configuration is explicit.
-macOS retains builtin Cupertino/native menus. Human path formatting is shared in `eml-protocol`, separate from
+their focus/reset behavior. The native GUI uses Winit on macOS only, with builtin
+Cupertino widgets and native menus. Linux uses the testing backend for headless development; Windows supports core
+and the CLI only. Human path formatting is shared in `eml-protocol`, separate from
 unchanged wire display strings. Preferences keep native paths in memory and use
 native encoding at the settings boundary, validated by core's path policy.
 Unreadable, invalid or old string settings give defaults silently and are replaced

@@ -236,8 +236,6 @@ pub fn install_native(
         .and_then(Path::parent)
         .ok_or(crate::wording::BUNDLE_CONTENTS_MISSING)?
         .join("Resources/THIRD-PARTY-NOTICES.txt");
-    #[cfg(target_os = "linux")]
-    let notices = std::env::current_exe()?.with_file_name("THIRD-PARTY-NOTICES.txt");
     let weak = Rc::downgrade(controller);
     controller.license_window().on_third_party(move || {
         if let Some(c) = weak.upgrade() {
@@ -252,7 +250,7 @@ pub fn install_native(
     Ok(())
 }
 
-#[cfg(feature = "desktop-winit")]
+#[cfg(feature = "desktop")]
 fn install_drops(controller: &std::rc::Rc<crate::DesktopController>) {
     use slint::{
         ComponentHandle,
@@ -273,79 +271,4 @@ fn install_drops(controller: &std::rc::Rc<crate::DesktopController>) {
             }
             EventResult::Propagate
         });
-}
-
-#[cfg(feature = "desktop-qt")]
-fn install_drops(controller: &std::rc::Rc<crate::DesktopController>) {
-    let ui = controller.window();
-    ui.set_use_slint_drops(true);
-    let weak = std::rc::Rc::downgrade(controller);
-    ui.on_accept_drop(move |event| {
-        if weak.upgrade().is_some_and(|c| c.inputs_enabled()) && event.data.has_file_paths() {
-            i_slint_core::items::DragAction::Copy
-        } else {
-            i_slint_core::items::DragAction::None
-        }
-    });
-    let weak = std::rc::Rc::downgrade(controller);
-    ui.on_drop_files(move |event| {
-        let Some(c) = weak.upgrade() else {
-            return i_slint_core::items::DragAction::None;
-        };
-        if !c.inputs_enabled() {
-            return i_slint_core::items::DragAction::None;
-        }
-        let Ok(paths) = event.data.file_paths() else {
-            return i_slint_core::items::DragAction::None;
-        };
-        for path in paths {
-            c.deliver_drop(path.to_owned());
-        }
-        i_slint_core::items::DragAction::Copy
-    });
-}
-
-#[cfg(test)]
-mod tests {
-    #[cfg(feature = "desktop-qt")]
-    #[test]
-    fn qt_drop_callbacks_keep_native_paths_and_reject_text_or_locked_inputs() {
-        use super::*;
-        use i_slint_core::{
-            DataTransfer,
-            items::{DragAction, DropEvent},
-        };
-        use std::{ffi::OsString, os::unix::ffi::OsStringExt};
-        i_slint_backend_testing::init_no_event_loop();
-        let root = tempfile::tempdir().unwrap();
-        let controller = crate::DesktopController::new(
-            root.path().join("unused-cli"),
-            root.path().to_owned(),
-            crate::preferences::Preferences::load(root.path().join("preferences.json")),
-        )
-        .unwrap();
-        install_drops(&controller);
-        let ui = controller.window();
-        let paths = vec![
-            root.path()
-                .join(OsString::from_vec(b"native-\xff.eml".to_vec())),
-            root.path().join("line\nbreak.eml"),
-        ];
-        let mut event = DropEvent::default();
-        event.data = DataTransfer::default();
-        event.data.set_file_paths(&paths);
-        assert_eq!(ui.invoke_accept_drop(event.clone()), DragAction::Copy);
-        assert_eq!(ui.invoke_drop_files(event.clone()), DragAction::Copy);
-        assert_eq!(controller.drops.borrow_mut().commit(), Some(paths));
-        let mut text = DropEvent::default();
-        text.data
-            .set_plain_text("/tmp/not-a-native-selection.eml".into());
-        assert_eq!(ui.invoke_accept_drop(text.clone()), DragAction::None);
-        assert_eq!(ui.invoke_drop_files(text), DragAction::None);
-        assert!(controller.drops.borrow_mut().commit().is_none());
-        controller.runtime.borrow_mut().quit = true;
-        assert_eq!(ui.invoke_accept_drop(event.clone()), DragAction::None);
-        assert_eq!(ui.invoke_drop_files(event), DragAction::None);
-        assert!(controller.drops.borrow_mut().commit().is_none());
-    }
 }

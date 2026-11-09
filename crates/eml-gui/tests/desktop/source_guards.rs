@@ -346,3 +346,29 @@ fn u4_controls_reject_expression_colours_and_comment_only_references() {
     let used = slint("export component X inherits Rectangle { height: Theme.unused; }");
     assert!(unused_tokens(&theme, &[theme.clone(), used]).is_empty());
 }
+
+#[test]
+fn v1_no_toolkit_fork() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let text = fs::read_to_string(root.join("Cargo.toml")).unwrap();
+    let patches = text.split("[patch.crates-io]").nth(1).unwrap_or("");
+    for line in patches
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+    {
+        assert!(
+            line.starts_with("spin_on ="),
+            "Unsupported toolkit patch: {line}"
+        );
+    }
+    for entry in fs::read_dir(root.join("crates")).unwrap() {
+        assert!(
+            !entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .starts_with("slint-")
+        );
+    }
+}
