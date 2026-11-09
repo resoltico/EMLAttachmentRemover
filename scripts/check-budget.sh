@@ -20,8 +20,8 @@ while IFS= read -r -d '' path; do
   category=
   if [[ "${path}" =~ ^crates/[^/]+/(src|ui)/.*\.(rs|slint)$ ]]; then
     category=product
-  elif [[ "${path}" =~ ^(xtask|tests|scripts|\.github)/|^crates/[^/]+/tests/ ]] \
-    && [[ "${path}" =~ \.(rs|slint|swift|sh|ps1|yml|yaml|toml|jq)$ ]]; then
+  elif [[ "${path}" =~ ^(xtask|tests|scripts|install|\.github)/|^crates/[^/]+/tests/ ]] \
+    && [[ "${path}" =~ \.(rs|slint|swift|sh|ps1|psd1|py|yml|yaml|toml|jq)$ ]]; then
     category=harness
   fi
   [[ -n "${category}" ]] || continue

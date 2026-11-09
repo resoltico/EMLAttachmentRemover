@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Add user-local CLI installers for all six targets, with verified release downloads, native execution checks, retained legal files, private staging and exact file/PATH ownership receipts.
+- Installer update/removal refuses unowned or changed files. Remove older/manual binaries yourself or select a fresh directory; the CLI installer does not manage the desktop app or mail data.
+- Synchronize installer engines with PDFConcat through literal product settings and a reviewed upstream pin; validate the real release archives on their native platforms.
 - Ship separate Apple Silicon (`macos-aarch64`) and Intel (`macos-x86_64`) CLI and app archives. Build, sign, attribute and smoke each architecture independently; keep macOS 15 and Intel support.
 - Fix nested multipart epilogue framing with mixed line endings; distinguish damaged emails from non-email files, fit status labels to the CLI and identify save paths that are files.
 - Run full fuzz and mutation campaigns weekly with shared corpus seeds, bounded contributor micro commands and pre-merge fuzz-crate lint; retire the separate weekly Intel full-suite job.

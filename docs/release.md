@@ -97,6 +97,35 @@ features remain independent. Each archive includes notices for its selected norm
 Rust standard-library material. App notices cover its selected architecture’s GUI
 graph, with required upstream supplements. See [legal materials](../legal/README.md).
 
+## CLI installers
+
+Publish `install/install.sh` and `install/install.ps1` beside the CLI archives.
+Both scripts belong in `SHA256SUMS` and the release attestation, while preserving
+the independent eight-archive completeness check. Do not include a desktop app
+or native document probe in CLI installer selection. The scripts download exact
+CLI filenames for one CPU and retain `LICENSE` / `THIRD-PARTY-NOTICES.txt` under
+an installer-owned sibling directory.
+
+Latest must resolve once to a stable tag, so the archive, version and checksum
+cannot accidentally come from different releases. Native installation tests must
+exercise the real generated CLI archives on all six targets, using isolated user
+paths. Windows tests cover both PowerShell versions when available and restore
+raw registry PATH text, value kind and existence. A local EML mirror requires an
+explicit stable version because filenames include the version. See the
+[installer contract](INSTALL.md) and [contributor guidance](../CONTRIBUTING.md#cli-installer-verification).
+
+PDFConcat is the canonical owner of the synchronized engines. Product settings
+are the only permitted copy differences; EML records a reviewed upstream commit
+for parity verification. Releases remain independent and install scripts have no
+runtime dependency on the other repository.
+
+Installer publication is planned for v8.0.0 after this implementation work; it
+has not been published. Published v7.0.0 has no installer assets and still uses
+universal Mac files. The new latest-download commands require v8.0.0; do not fall
+back to universal assets or rewrite an old release's checksums/attestations.
+This work leaves the workspace at 7.0.0. The version bump, release dating, tag and
+publication remain separate owner-authorized release actions.
+
 ## CI and owner release steps
 
 The [release workflow](../.github/workflows/release.yml) builds archives once,
@@ -160,7 +189,7 @@ Before the owner tags or publishes:
    GitHub artifact attestations can be checked with
    `gh attestation verify <archive> --repo resoltico/EMLAttachmentRemover`.
 5. Test first launch of the downloaded ad hoc app using the
-   [README opening steps](../README.md#install). Preserve corresponding MPL source
+   [README opening steps](../README.md#manual-downloads). Preserve corresponding MPL source
    availability and notices when redistributing.
 
 The scheduled Weekly workflow runs full fuzz and mutation campaigns once a week,

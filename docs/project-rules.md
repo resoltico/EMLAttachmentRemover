@@ -7,7 +7,7 @@ changes them.
 ## Verification budget
 
 1. Harness code stays smaller than product code. `scripts/check-budget.sh` measures
-   it (product: `crates/*/src`, `crates/*/ui`; harness: `xtask/`, `tests/`,
+   it (product: `crates/*/src`, `crates/*/ui`; harness: `xtask/`, `install/`, `tests/`,
    `crates/*/tests/`, `scripts/`, `.github/`). CI fails when harness ≥ product.
 2. The merge gate finishes in about 20 minutes or less with a warm cache.
 3. Every gate names the property it protects and has a case it must reject

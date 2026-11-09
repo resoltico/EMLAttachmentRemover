@@ -67,6 +67,27 @@ pub(crate) fn run() -> Result<()> {
         "fuzz/Cargo.toml",
         "--all-targets",
     ]))?;
+    command(Command::new("python3").args([
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "install",
+        "-p",
+        "*_test.py",
+    ]))?;
+    command(Command::new("python3").arg("install/check-sync.py"))?;
+    let analyzer = crate::tools::read()?
+        .get("psscriptanalyzer")
+        .ok_or("missing psscriptanalyzer tool pin")?
+        .to_owned();
+    command(Command::new("pwsh").args([
+        "-NoProfile",
+        "-File",
+        "install/lint.ps1",
+        "-RequiredVersion",
+        &analyzer,
+    ]))?;
     command(&mut Command::new("actionlint"))?;
     command(Command::new("bash").arg("scripts/check-shell.sh"))?;
     command(Command::new("bash").arg("scripts/check-budget.sh"))

@@ -3,3 +3,4 @@
 *.eml -text -diff
 legal/** -text
 tests/contract/notices/*.txt -text
+*.ps1 text eol=crlf

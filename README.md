@@ -10,6 +10,35 @@ documentation at the matching release tag.
 
 ## Install
 
+### CLI installer
+
+This checkout adds user-local installers for all six CLI targets, planned for
+v8.0.0. That release has not been published yet. Published v7.0.0 has no installer
+assets and uses universal Mac archives; the commands below become available only
+when v8.0.0 publishes the scripts and separate CPU archives. Until then, follow
+manual instructions at the matching published release tag.
+
+On macOS or Linux:
+
+```sh
+curl -fsSL https://github.com/resoltico/EMLAttachmentRemover/releases/latest/download/install.sh | sh
+```
+
+On Windows in PowerShell:
+
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://github.com/resoltico/EMLAttachmentRemover/releases/latest/download/install.ps1 | iex"
+```
+
+The installers verify the selected release, test the binary and record ownership
+before updating or removing it. They retain the CLI's license material in a
+private directory beside the executable, and edit only their own PATH entries.
+An existing unowned or changed target is refused; remove it yourself or choose a
+fresh directory. Read [install, update and uninstall](docs/INSTALL.md) for paths,
+options, mirrors, trust and recovery. They do not install the Mac desktop app.
+
+### Manual downloads
+
 Download from [Releases](https://github.com/resoltico/EMLAttachmentRemover/releases).
 Choose the archive matching your platform and CPU:
 

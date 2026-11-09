@@ -61,10 +61,21 @@ rustup target add aarch64-apple-darwin x86_64-apple-darwin # macOS distribution
 cargo xtask ci
 ```
 
+Installer source checks also need Python 3 (standard library only) and PowerShell 7
+(`pwsh`) on PATH. Install PSScriptAnalyzer at the version declared in tools.toml;
+from PowerShell in the repository:
+
+```powershell
+$toolLines = cargo xtask tool-versions
+if ($LASTEXITCODE -ne 0) { throw 'Could not read the declared tool versions.' }
+$toolPins = ($toolLines -join "`n") | ConvertFrom-StringData
+Install-Module PSScriptAnalyzer -RequiredVersion $toolPins.psscriptanalyzer -Scope CurrentUser -Force
+```
+
 Obtain actionlint and shellcheck from their upstream releases or a package manager,
 using the versions in tools.toml. `cargo xtask ci` checks tool versions, formatting,
 dependency policy for the headless graph, macOS native renderers alone/together, the separate fuzz lockfile, workflows, shell scripts and the
-working-tree verification budget;
+working-tree verification budget, installer body parity and installer source regressions;
 then runs Clippy and tests. On macOS it also builds separate signed Apple Silicon
 and Intel apps in a fresh temporary directory. Structural complexity thresholds
 warn; other Clippy findings fail. Inline exceptions use `#[expect(..., reason = "...")]`.
@@ -145,6 +156,48 @@ run the floor checks before releasing.
 Add `--app` for the GUI graph and select the same target as the app archive.
 It requires cargo-about, the selected Rust sysroot's copyright file and the retained upstream
 legal texts. See [legal materials](legal/README.md).
+
+## CLI installer verification
+
+The user contract is [install, update and uninstall](docs/INSTALL.md). The installers
+manage user-local CLI files and their own PATH entries, not the desktop app or
+email data. Keep the Unix installer POSIX `sh` and the Windows installer compatible
+with Windows PowerShell 5.1 and PowerShell 7. The PowerShell script stays ASCII.
+
+The common engine bodies are owned by PDFConcat. Only literal product settings
+may differ inside `BEGIN PRODUCT SETTINGS` / `END PRODUCT SETTINGS`. Changes to
+behavior must be synchronized in both repositories, with EML's reviewed upstream
+pin updated. The published scripts are self-contained; neither installer fetches
+code or configuration from the other repository at runtime. `install/engine-source.txt`
+contains the full reviewed PDF commit. Check body parity locally against that Git
+object, or fetch its files over HTTPS for development/CI:
+
+```sh
+python3 install/check-sync.py /absolute/path/to/PDFConcat
+python3 install/check-sync.py
+```
+
+Preserve EML's literal product block, copy both canonical engine bodies and update
+the pin together. Commit the PDF engine first; a dirty working tree is not what
+the offline check reads.
+
+Use only isolated HOME/config/install paths for tests. Native Windows registry
+PATH tests run only in CI and restore the original raw value, kind and existence.
+The real archive checks must cover each of the six shipped CLI targets on its
+native host, including PowerShell 5.1 and 7 when both exist. They exercise install,
+update, uninstall, ownership refusal, changed data, lock refusal, PATH handling,
+checksum/version rejection and regular-file extraction. Preserve original files
+and arbitrary pre-existing directory contents. No test may adopt or remove an
+unowned program just because it prints the expected name/version.
+
+A local EML mirror contains versioned archives, so supply a stable version along
+with `EMLATTACHMENTREMOVER_DOWNLOAD_BASE`. Use fresh output directories and the
+actual generated `SHA256SUMS`. See [release checks](docs/release.md) for archive
+production and native verification. Installer publication is planned for v8.0.0,
+which has not been published; v7.0.0 has no installer assets. During development,
+use the version in the actual locally built archives, not the future v8.0.0 pin
+shown in user examples. Source testing leaves the current workspace version at
+7.0.0 and does not publish the commands or mutate old release assets.
 
 ## Focused investigation
 
