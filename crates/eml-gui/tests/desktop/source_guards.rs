@@ -498,3 +498,66 @@ fn w3_rows_do_not_decode_protocol_records() {
         "GUI tests still replay canned CLI JSON"
     );
 }
+
+#[test]
+fn x1_protocol_has_no_core_outcome_converter_or_wire_lookup() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    assert!(
+        !root.join("crates/eml-protocol/src/observation.rs").exists(),
+        "Protocol still owns core observation conversion"
+    );
+    assert!(
+        !fs::read_to_string(root.join("crates/eml-core/src/diagnostic.rs"))
+            .unwrap()
+            .contains("fn from_wire_name"),
+        "Core still exposes wire-name lookup"
+    );
+    for path in rust_sources(&root.join("crates/eml-protocol/src")) {
+        let source = fs::read_to_string(path).unwrap();
+        assert!(
+            !source.contains("OutcomeFacts") && !source.contains("vocabulary::Outcome"),
+            "Wire records still convert to core outcomes"
+        );
+    }
+}
+fn protocol_uses(tree: &syn::UseTree, prefix: &str, names: &mut Vec<String>) {
+    match tree {
+        syn::UseTree::Path(p) => protocol_uses(&p.tree, &format!("{prefix}{}::", p.ident), names),
+        syn::UseTree::Group(g) => {
+            for item in &g.items {
+                protocol_uses(item, prefix, names);
+            }
+        }
+        syn::UseTree::Name(n) => names.push(format!("{prefix}{}", n.ident)),
+        syn::UseTree::Rename(n) => names.push(format!("{prefix}{}", n.ident)),
+        syn::UseTree::Glob(_) => names.push(format!("{prefix}*")),
+    }
+}
+#[test]
+fn x4_gui_protocol_imports_are_only_report_output() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    for path in rust_sources(&root.join("src")) {
+        let file = syn::parse_file(&fs::read_to_string(&path).unwrap()).unwrap();
+        let mut names = Vec::new();
+        for item in file.items {
+            if let syn::Item::Use(item) = item {
+                protocol_uses(&item.tree, "", &mut names);
+            }
+        }
+        for name in names
+            .iter()
+            .filter(|name| name.starts_with("eml_protocol::"))
+        {
+            assert!(
+                [
+                    "eml_protocol::JsonSink",
+                    "eml_protocol::BoundedEventBuffer",
+                    "eml_protocol::MAX_RUN_BYTES"
+                ]
+                .contains(&name.as_str()),
+                "GUI imports non-output protocol item in {}: {name}",
+                path.display()
+            );
+        }
+    }
+}
