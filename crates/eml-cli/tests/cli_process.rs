@@ -741,8 +741,7 @@ fn u3_plain_outcomes_and_diagnostics_preserve_process_exit_contract() {
             assert!(text.contains("It may be empty or not an email at all"));
         }
         assert!(text.contains(&format!("Exit {code}")));
-        assert!(text.contains("can’t be copied"));
-        assert!(text.contains("not processed"));
+        assert!(!text.contains("0 not processed"));
     }
     assert_eq!(
         observed,
@@ -873,5 +872,67 @@ fn v9_cli_item_layout() {
         if line.starts_with(' ') {
             assert!(line.starts_with(&" ".repeat(25)), "{line}");
         }
+    }
+}
+
+#[test]
+fn v3_cli_final_line_uses_shared_verdict_and_parts() {
+    use eml_core::vocabulary::{BatchTotals, HeadlineMode, Outcome};
+    let root = root();
+    fs::write(root.path().join("one.eml"), INPUT).unwrap();
+    fs::write(
+        root.path().join("plain.eml"),
+        b"Subject: Plain\r\n\r\nBody\r\n",
+    )
+    .unwrap();
+    fs::write(root.path().join("bad.eml"), b"").unwrap();
+    for dry in [true, false] {
+        let args = if dry {
+            vec!["--dry-run", "--", "one.eml", "plain.eml", "bad.eml"]
+        } else {
+            vec!["--", "one.eml", "plain.eml", "bad.eml"]
+        };
+        let output = invoke(root.path(), &args, None);
+        let totals = BatchTotals::from(
+            [
+                (
+                    Some(if dry {
+                        Outcome::Ready
+                    } else {
+                        Outcome::CopySaved
+                    }),
+                    1,
+                    Some((INPUT.len() as u64, GOLDEN.len() as u64)),
+                ),
+                (
+                    Some(if dry {
+                        Outcome::NothingToRemove
+                    } else {
+                        Outcome::CopiedAsIs
+                    }),
+                    0,
+                    None,
+                ),
+                (
+                    Some(Outcome::Failed(eml_core::ErrorCode::Malformed)),
+                    0,
+                    None,
+                ),
+            ],
+            0,
+        );
+        let h = totals.headline(if dry {
+            HeadlineMode::Check { total: Some(3) }
+        } else {
+            HeadlineMode::Done {
+                incomplete_create: false,
+            }
+        });
+        let text = String::from_utf8(output.stdout).unwrap();
+        assert_eq!(
+            text.lines().last().unwrap(),
+            format!("{} · {}. Exit 1", h.verdict, h.parts.join(" · "))
+        );
+        assert!(h.parts.iter().all(|p| !p.starts_with("0 ")));
     }
 }

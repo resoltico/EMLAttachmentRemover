@@ -1,6 +1,8 @@
 //! One-list product language; protocol diagnostics remain verbatim in exports.
 use crate::state::{Batch, State};
-use eml_core::vocabulary::{BatchTotals, Outcome, attachment_count, email_count, format_bytes};
+use eml_core::vocabulary::{
+    BatchTotals, HeadlineMode, ORIGINALS_UNCHANGED, attachment_count, format_bytes,
+};
 pub(super) struct Header {
     pub title: String,
     pub summary: String,
@@ -20,9 +22,6 @@ pub(super) fn header(
     } else {
         totals.problem_label()
     };
-    let saved = totals.saved();
-    let attachments = totals.attachments;
-    let removed = totals.bytes_removed;
     let incomplete_create = batch
         .create
         .as_ref()
@@ -47,69 +46,30 @@ pub(super) fn header(
                 .unwrap_or_default(),
         ),
         State::Ready => {
-            let mut parts = if attachments == 0 {
-                let known = totals.count(Outcome::NothingToRemove);
-                if known > 0 {
-                    vec![Outcome::NothingToRemove.count_label(known)]
-                } else {
-                    vec![]
-                }
-            } else {
-                vec![attachment_count(attachments), totals.removal_summary(true)]
-            };
-            let existing = totals.count(Outcome::WillVerify);
-            if existing > 0 {
-                parts.push(Outcome::WillVerify.count_label(existing));
-            }
-            (
-                inventory
+            let h = totals.headline(HeadlineMode::Check {
+                total: inventory
                     .filter(|(n, complete)| *complete || *n > 0)
-                    .map_or_else(
-                        || "Emails not checked".into(),
-                        |(n, _)| email_count(n as usize),
-                    ),
-                parts,
-            )
+                    .map(|(n, _)| n as usize),
+            });
+            (h.verdict, h.parts)
         }
         State::Removing => (
             "Removing attachments…".into(),
-            vec!["Your originals are not changed".into()],
+            vec![ORIGINALS_UNCHANGED.into()],
         ),
         State::Stopped => {
-            let settled = stopped_totals.unwrap_or(totals);
-            (
-                "Stopped".into(),
-                vec![
-                    Outcome::CopySaved.count_label(settled.saved()),
-                    Outcome::NotProcessed.count_label(settled.count(Outcome::NotProcessed)),
-                ],
-            )
+            let h = stopped_totals
+                .unwrap_or(totals)
+                .headline(HeadlineMode::Stopped);
+            (h.verdict, h.parts)
         }
-        State::Done => (
-            if saved == 0 && (totals.has_attention() || incomplete_create) {
-                "Results need attention".into()
-            } else if saved == 0 && problems > 0 {
-                "No copies saved".into()
-            } else {
-                Outcome::CopySaved.count_label(saved)
-            },
-            {
-                let mut parts = Vec::new();
-                if removed > 0 {
-                    parts.push(totals.removal_summary(false));
-                }
-                for outcome in [Outcome::CopiedAsIs, Outcome::AlreadyExists] {
-                    let n = totals.count(outcome);
-                    if n > 0 {
-                        parts.push(outcome.count_label(n));
-                    }
-                }
-                if missing > 0 {
-                    parts.push(format!("{missing} no longer found"));
-                }
-                parts
-            },
-        ),
+        State::Done => {
+            let mut h = totals.headline(HeadlineMode::Done { incomplete_create });
+            if missing > 0 {
+                h.parts.push(format!("{missing} no longer found"));
+            }
+            (h.verdict, h.parts)
+        }
     };
     Header {
         title,
@@ -198,7 +158,7 @@ pub(super) fn controls() -> crate::AppWords {
         licenses: "Licenses".into(),
         about: "About".into(),
         quit_title: "Stop and quit?".into(),
-        quit_body: "Copies already saved are kept. Your originals are not changed.".into(),
+        quit_body: format!("Copies already saved are kept. {ORIGINALS_UNCHANGED}").into(),
         export_body: "A report is still being saved. The app quits when it finishes.".into(),
         cancel: "Cancel".into(),
         stop_quit: "Stop and Quit".into(),
@@ -222,11 +182,11 @@ pub(super) fn primary(state: State) -> &'static str {
         "Remove Attachments"
     }
 }
-pub(super) fn footer(state: State) -> &'static str {
+pub(super) fn footer(state: State) -> String {
     match state {
-        State::Stopped => "Continue checks existing copies and saves the remaining copies.",
-        State::Done => "Your originals are unchanged. Drop more emails to start a new batch.",
-        _ => "",
+        State::Stopped => "Continue checks existing copies and saves the remaining copies.".into(),
+        State::Done => format!("{ORIGINALS_UNCHANGED} Drop more emails to start a new batch."),
+        _ => String::new(),
     }
 }
 pub(super) fn progress(done: usize, total: u32, remaining: Option<u64>) -> String {

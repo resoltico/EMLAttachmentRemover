@@ -73,9 +73,18 @@ impl Row {
         {
             let meaning = eml_core::vocabulary::classify(&facts);
             lines.extend(meaning.consequences.iter().map(|c| c.text()));
-            lines.extend(meaning.related_notice);
         }
         lines.join("\n")
+    }
+    fn notice(&self) -> &'static str {
+        if self.status == RowStatus::Settled(self.item.outcome()) {
+            self.item
+                .outcome_facts()
+                .and_then(|f| eml_core::vocabulary::classify(&f).related_notice)
+                .unwrap_or("")
+        } else {
+            ""
+        }
     }
     pub(super) fn size_text(&self) -> String {
         match (self.item.source_bytes.value(), self.item.copy_bytes.value()) {
@@ -152,6 +161,10 @@ impl Row {
                 format_bytes(part.bytes),
                 part.reason
             );
+        }
+        if !self.notice().is_empty() {
+            text += self.notice();
+            text.push('\n');
         }
         text
     }
@@ -489,6 +502,7 @@ impl crate::DesktopController {
                 .to_string()
                 .into(),
                 sentence: row.explanation().into(),
+                notice: row.notice().into(),
                 path_prefix: {
                     let path = row.copy.as_ref().unwrap_or(&row.key);
                     path.parent().map_or(String::new(), |p| {

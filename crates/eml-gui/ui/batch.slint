@@ -160,6 +160,7 @@ export component BatchPane inherits Rectangle {
                             if part.kind != "": Label { text: part.kind; horizontal-stretch: 0; font-size: Theme.small; color: Theme.muted; overflow: elide; }
                             Label { text: part.size; width: 75px; font-size: Theme.small; color: Theme.muted; horizontal-alignment: right; overflow: elide; }
                         }
+                        if root.detail.notice != "": Label { text: root.detail.notice; wrap: word-wrap; }
                         Rectangle { min-height: 18px; vertical-stretch: 0; accessible-role: text; accessible-label: root.detail.path;
                             path-prefix := Label { x: 0px; width: min(self.preferred-width,max(0px,parent.width - path-suffix.preferred-width)); height: parent.height; text: root.detail.path-prefix; font-size: Theme.caption; color: Theme.muted; overflow: elide; accessible-role: none; }
                             path-suffix := Label { x: path-prefix.width; width: min(self.preferred-width,max(0px,parent.width - path-prefix.width)); height: parent.height; text: root.detail.path-suffix; font-size: Theme.caption; color: Theme.muted; overflow: elide; accessible-role: none; }

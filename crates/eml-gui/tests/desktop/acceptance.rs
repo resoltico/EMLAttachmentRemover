@@ -350,7 +350,7 @@ fn s6_s7_headers_filter_and_selection_come_from_authoritative_rows() {
     let c = gate(root.path());
     let ui = c.window();
     assert_eq!(ui.get_view().title, "Removing attachments…");
-    assert_eq!(ui.get_view().summary, "Your originals are not changed");
+    assert_eq!(ui.get_view().summary, "Your originals are not changed.");
     assert!(ui.get_view().problems.is_empty());
     assert!(!ui.get_view().can_filter);
     assert!(
@@ -411,10 +411,7 @@ fn s8_stop_continue_reuses_exact_request_and_existing_copy_wording() {
     assert!(!c.window().get_view().can_stop);
     pump(&c, || !c.is_busy());
     assert_eq!(c.window().get_view().state, BatchState::Stopped);
-    assert_eq!(
-        c.window().get_view().summary,
-        "0 copies saved · 1 not processed"
-    );
+    assert_eq!(c.window().get_view().summary, "1 not processed");
     assert_eq!(c.window().get_view().primary, "Continue");
     assert_words(&c.window());
     c.start_selection();
@@ -2102,7 +2099,7 @@ fn u6_every_state_family_and_filter_preserves_first_row_y() {
     assert!(
         (label(
             &ui,
-            "Your originals are unchanged. Drop more emails to start a new batch."
+            "Your originals are not changed. Drop more emails to start a new batch."
         )
         .absolute_position()
         .x - label(&ui, &ui.get_view().title).absolute_position().x)
@@ -2227,19 +2224,19 @@ fn core_consequences_reach_selected_details_and_copy_details() {
     for (scenario, expected) in [
         (
             "published-with-error",
-            "A complete copy was published; qualification did not complete. Inspect the destination before retrying.",
+            "The copy was written, but saving it to disk couldn't be confirmed. Check the copy before running again.",
         ),
         (
             "existing-sync-failure",
-            "Existing bytes matched; synchronization/address qualification did not complete.",
+            "A matching copy already exists, but its save to disk couldn't be confirmed.",
         ),
         (
             "unknown-publication",
-            "A complete copy may exist. Inspect the destination before retrying.",
+            "A copy may have been written. Check the destination before running again.",
         ),
         (
             "complete-cleanup-with-error",
-            "Cleanup completed, but reported a native error. Inspect the cleanup details.",
+            "A temporary file was removed, but the system reported an error. See the details.",
         ),
     ] {
         let root = tempfile::tempdir().unwrap();
@@ -2311,10 +2308,22 @@ fn core_related_notices_distinguish_preview_created_and_existing() {
             pump(&c, || !c.is_busy());
         }
         select_first(&c);
+        assert!(c.window().get_detail().notice == expected, "{scenario}");
+        let pane = label(&c.window(), "Email details");
+        let descendants = pane.query_descendants().find_all();
+        let find = |text: &str| {
+            descendants
+                .iter()
+                .find(|e| e.accessible_label().as_deref() == Some(text))
+                .unwrap()
+        };
         assert!(
-            c.window().get_detail().sentence.contains(expected),
-            "{scenario}"
+            find(&c.window().get_detail().sentence)
+                .absolute_position()
+                .y
+                < find("report.pdf").absolute_position().y
         );
+        assert!(find("report.pdf").absolute_position().y < find(expected).absolute_position().y);
         assert!(c.clipboard_text().unwrap().contains(expected), "{scenario}");
     }
 }
@@ -2398,7 +2407,7 @@ fn residual_cleanup_detail_keeps_the_resource_and_separate_native_cause() {
         c.window()
             .get_detail()
             .sentence
-            .contains("A known owned temporary resource remains. Inspect the cleanup details.")
+            .contains("A temporary file was left behind. Its name is in the details.")
     );
     let text = c.clipboard_text().unwrap();
     assert!(text.contains("Cleanup: Residual\nNative code: 13\nResidual resource: .emlattachmentremover-\\n\\u{202e}.tmp"), "{text}");
@@ -2422,7 +2431,7 @@ fn unknown_create_does_not_repeat_a_stale_preview_notice() {
     assert!(
         c.window()
             .get_detail()
-            .sentence
+            .notice
             .contains(eml_core::vocabulary::PREPARED_RELATED_RESOURCE_NOTICE)
     );
     c.start_selection();
@@ -2431,6 +2440,7 @@ fn unknown_create_does_not_repeat_a_stale_preview_notice() {
         c.window().get_detail().sentence,
         eml_core::vocabulary::Outcome::Unknown.explanation()
     );
+    assert!(c.window().get_detail().notice.is_empty());
 }
 
 #[test]
@@ -2894,4 +2904,66 @@ fn v6_status_header_aligns_with_text() {
         header.absolute_position(),
         cell.absolute_position()
     );
+}
+
+#[test]
+fn v3_gui_uses_core_headlines_for_check_done_and_stopped() {
+    use eml_core::vocabulary::{BatchTotals, HeadlineMode, Outcome};
+    init_no_event_loop();
+    for stopped in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        let names = ["one.eml", "plain.eml", "bad.eml"];
+        let check = check_stream(root.path(), &names);
+        let create = stream(
+            root.path(),
+            &[
+                (names[0], "created-attachment"),
+                (names[1], "created"),
+                (
+                    names[2],
+                    if stopped {
+                        "started-preedge-cancellation"
+                    } else {
+                        "prepublication-failure"
+                    },
+                ),
+            ],
+            false,
+        );
+        let c = controller(root.path(), dual(root.path(), &check, &create));
+        c.stage(vec![root.path().join("inputs")]).unwrap();
+        pump(&c, || !c.is_busy());
+        let check = BatchTotals::from([(Some(Outcome::Ready), 1, Some((1028, 513))); 3], 0)
+            .headline(HeadlineMode::Check { total: Some(3) });
+        assert_eq!(c.window().get_view().title, check.verdict);
+        assert_eq!(c.window().get_view().summary, check.parts.join(" · "));
+        c.start_selection();
+        pump(&c, || !c.is_busy());
+        let totals = BatchTotals::from(
+            [
+                (Some(Outcome::CopySaved), 1, Some((1028, 513))),
+                (Some(Outcome::CopiedAsIs), 0, None),
+                (
+                    Some(if stopped {
+                        Outcome::NotProcessed
+                    } else {
+                        Outcome::Failed(eml_core::ErrorCode::Malformed)
+                    }),
+                    0,
+                    None,
+                ),
+            ],
+            0,
+        );
+        let h = totals.headline(if stopped {
+            HeadlineMode::Stopped
+        } else {
+            HeadlineMode::Done {
+                incomplete_create: false,
+            }
+        });
+        assert_eq!(c.window().get_view().title, h.verdict);
+        assert_eq!(c.window().get_view().summary, h.parts.join(" · "));
+        assert!(h.parts.iter().all(|p| !p.starts_with("0 ")));
+    }
 }

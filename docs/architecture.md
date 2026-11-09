@@ -113,6 +113,8 @@ eviction or lazy reload. Continue creates a fresh request with the same operands
 previous attempt stopped before any observations. Core owns the advisory preview
 copy offer and complete-results interpretation; GUI busy/quit/lifecycle gates do
 not depend on display severity.
+Core owns the settled batch headline, nonzero supporting facts and originals promise;
+the CLI and GUI render the same verdict and parts. Detail notices follow the part list.
 A settled stopped summary uses core totals from current create records and
 unprocessed work, including sources without preview rows. Retained preview rows
 are not added a second time.
