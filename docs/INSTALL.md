@@ -1,12 +1,5 @@
 # Install, update and uninstall the CLI
 
-The first release planned to contain these CLI installers is v8.0.0; it is not
-published yet. Published v7.0.0 has no installer assets and uses universal Mac
-archives. The latest-download commands below require v8.0.0 with the scripts and
-separate CPU archives; they do not work against v7.0.0. Until v8.0.0 is published,
-use manual downloads and documentation at the matching published release tag.
-There is no universal-archive fallback in these installers.
-
 The installer downloads EML Attachment Remover for the current user, verifies the archive's
 SHA-256 checksum and test-runs the program before replacing an owned installation.
 No administrator account, background updater, scheduled task or file association
@@ -71,8 +64,7 @@ A failed download, checksum or candidate test happens before replacing the activ
 program. An update requires the existing binary, legal files and ownership state
 to match their receipt.
 
-After v8.0.0 is published, select it explicitly with the examples below. These
-are future-release examples and cannot install v8.0.0 before publication:
+Select a release explicitly, for example:
 
 ```sh
 curl -fsSL https://github.com/resoltico/EMLAttachmentRemover/releases/latest/download/install.sh | sh -s -- --version 8.0.0
@@ -108,17 +100,17 @@ On Windows an update can retain one uniquely named, receipt-owned running
 executable. Close processes using it before another update or uninstall if
 cleanup is refused. The installer never adopts or deletes arbitrary `.old` files.
 
-## Ownership and older installations
+## Ownership and unmanaged installations
 
-The current installer uses `.emlattachmentremover-install` beside the executable
+The installer uses `.emlattachmentremover-install` beside the executable
 for ownership receipts and managed data. It verifies managed file hashes before
-update or removal and refuses existing unowned or changed files. It does not
-adopt older installs from their filename, version output or old PATH marker.
+update or removal and refuses existing unowned or changed files. A matching
+filename, version output or PATH entry does not establish ownership.
 
-For a previous installer or manual/source installation without a valid receipt,
-remove the old executable yourself or select a fresh directory. Keep any files
-you need and remove obsolete PATH settings by hand after reviewing them. Do not
-copy a receipt from another directory or edit hashes to bypass a refusal.
+For any installation without a valid receipt, remove the executable yourself or
+select a fresh directory. Keep any files you need and review PATH settings before
+removing them by hand. Do not copy a receipt from another directory or edit hashes
+to bypass a refusal.
 A non-directory target or non-regular managed entry is also left alone.
 
 Pre-existing directories may be shared with other tools. They are never removed
@@ -127,9 +119,7 @@ merely because they became empty. Unrelated files are preserved.
 ## Uninstall
 
 Use the same reviewed installer, saved as `install.sh` / `install.ps1`, to remove
-an unchanged installation and only the PATH entries it owns. In particular, do not
-fetch the currently published older installer to remove this checkout's new
-receipt-based installation:
+an unchanged installation and only the PATH entries it owns:
 
 ```sh
 sh ./install.sh --uninstall

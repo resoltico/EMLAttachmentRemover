@@ -1,9 +1,8 @@
 # spin_on source maintenance patch
 
-This workspace patch replaces the current `spin_on` 0.1.1 dependency of Slint
-1.18.1. Upstream uses `pin-utils::pin_mut!`; `pin-utils` is archived and is covered
+This workspace patch replaces Slint 1.18.1's `spin_on` 0.1.1 dependency.
+The published executor uses `pin-utils::pin_mut!`; `pin-utils` is archived and is covered
 by [RUSTSEC-2026-0441](https://rustsec.org/advisories/RUSTSEC-2026-0441.html).
-No published `spin_on` or Slint update removes that dependency as of 2026-11-05.
 
 The implementation uses `core::pin::pin!`, `Waker::noop()` and
 `core::hint::spin_loop()`, available under the workspace's Rust toolchain.

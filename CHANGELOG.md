@@ -2,64 +2,49 @@
 
 ## [Unreleased]
 
-- Add user-local CLI installers for all six targets, with verified release downloads, native execution checks, retained legal files, private staging and exact file/PATH ownership receipts.
-- Installer update/removal refuses unowned or changed files. Remove older/manual binaries yourself or select a fresh directory; the CLI installer does not manage the desktop app or mail data.
-- Synchronize installer engines with PDFConcat through literal product settings and a reviewed upstream pin; validate the real release archives on their native platforms.
-- Ship separate Apple Silicon (`macos-aarch64`) and Intel (`macos-x86_64`) CLI and app archives. Build, sign, attribute and smoke each architecture independently; keep macOS 15 and Intel support.
-- Fix nested multipart epilogue framing with mixed line endings; distinguish damaged emails from non-email files, fit status labels to the CLI and identify save paths that are files.
-- Run full fuzz and mutation campaigns weekly with shared corpus seeds, bounded contributor micro commands and pre-merge fuzz-crate lint; retire the separate weekly Intel full-suite job.
-- Keep checked emails when the save folder is unavailable, with plain recovery guidance and strict create admission. Show unreadable-settings fallback, a clear filter state and the action’s scope.
+## [8.0.0] - 2026-11-09
+
+- Ship separate Apple Silicon (`macos-aarch64`) and Intel (`macos-x86_64`) CLI and app archives, each built, signed and checked independently; both retain macOS 15 support.
+- The native desktop GUI is macOS-only. Linux retains the CLI and headless GUI tests on Ubuntu 26.04; Windows supports the CLI. Linux binaries require Ubuntu 26.04.
+- Add user-local CLI installers for all six targets, with verified downloads, native execution checks, retained legal files, private staging and file/PATH ownership receipts.
+- Installer update/removal refuses unowned or changed files. Remove older/manual binaries yourself or select a fresh directory; installers do not manage the desktop app or mail data.
+- Synchronize installer engines with PDFConcat through literal product settings and a reviewed upstream pin; qualify the release archives on their native platforms.
+- The Mac app runs core in process and contains no CLI. Install the separate macOS CLI archive for Terminal use.
+- CLI human output uses plain language and lists attachment names and kinds. Scripts reading human output must use protocol-1 JSON instead; its event shapes remain unchanged.
 - Refuse mailbox exports containing several emails; export messages one at a time. Single-message From envelopes remain supported.
-- Omit multipart epilogues and report their non-whitespace bytes. Preambles stay unchanged; older copies with epilogues now differ and are never overwritten.
-- Fix help placeholders and request-document error reasons. Core owns plain folder refusals, cause-specific guidance and failure counts in CLI and app summaries.
-- A crash during processing is reported as such, rather than as a result-delivery failure.
-- The Mac app no longer contains the CLI; install the macOS CLI archive to use it from Terminal.
-- Run the desktop directly on core with typed results and cooperative stop. Keep report export as protocol-1 JSON; unwinding failures retain earlier results.
-- Move shared display and request admission into core; omit the repeated existing-copy count from re-run summaries.
-- Linux builds and CLI binaries require Ubuntu 26.04.
-- CLI human output is rewritten in plain language; JSON is unchanged. Update scripts that read human output to use protocol-1 JSON instead.
-- Saved folders use lossless GUI-owned native encoding; incompatible settings reset to defaults. CLI and GUI path labels distinguish invalid native units without changing protocol-1 JSON.
-- The desktop GUI builds on macOS only; Linux builds the CLI and runs headless GUI tests; Windows builds the CLI.
-- Use plain copy and cleanup explanations. Align CLI details under paths, omit failed destinations and redundant sizes, and share verdict-first summaries with the app.
-- Put detail actions beside the email name, cap the pane at 30%/200 px and align column headers with their text. Theme owns UI geometry.
-- Audit supported desktop, headless, core/CLI and fuzz dependency graphs without advisory waivers; use Slint 1.18.1 as published.
-- Run Windows CI from a copied driver so Cargo can rebuild its original executable; locate that driver from Cargo's artifact output rather than assuming a target directory.
-- Close Rust wording and Slint visual-token guard bypasses, and share the transparent colour token.
-- Check dirty and newly added source in the verification budget and shell lint; include verification scripts in harness size and fail on empty/missing inputs.
-- Share local/hosted lint commands, read tool pins from the invoking workspace and reuse trusted CI caches for release builds. Remove obsolete Windows sentinel artifacts.
-- Share receipt qualification across execution and outcome interpretation; reject inconsistent successful sync, cleanup and read-only plan claims.
-- Use core phase/removal vocabularies and capability decisions in adapters; reject known code/phase mismatches. Valid protocol-1 JSON stays unchanged.
-- Keep Continue available after stopping before observations; show thread-start failures without inventing a core outcome.
-- Use core’s remaining-work aggregation for CLI and stopped app summaries, including work that never produced a preview row.
-- Keep incomplete selection checking separate from unreadable inputs; a blocked inventory no longer appears as zero emails.
-- Distinguish completed cleanup with a retained native error from unconfirmed cleanup, preserving failure status and receipt facts.
-- Show core publication, cleanup and inline-resource notices in app details; keep cleanup resource names and native causes in human diagnostics.
-- List attachment names and kinds in human CLI output. Use shared request errors, canonical diagnostic phases and known-result counts in the app.
-- Continue describes verification of existing copies; exact JSON report export is unchanged.
-- Keep numeric native error causes in human CLI diagnostics; protocol-1 JSON stays unchanged.
-- Show readable fallbacks for whitespace-only attachment names, escape filename controls in the app, and avoid false zero-save or new-write claims when results need checking.
-- The CLI and app share outcome labels, explanations, attachment names, size formatting and settled headlines from core.
-- Center row cells, use one button hierarchy and keep the header and detail pane stable. Popups follow their controls; results complete in displayed worker order.
-- Replace desktop run history and its queue with one batch and one list; adding emails after completion starts a new batch immediately.
+- Reject headerless message roots as MALFORMED without writing; minimal header-bearing exports and headerless MIME body parts remain supported.
+- Omit multipart epilogues and report their non-whitespace bytes. Preambles stay unchanged; existing copies containing epilogues now differ and are never overwritten.
+- Fix processing of nested multipart epilogues with mixed line endings; distinguish damaged emails from non-email files.
+- Keep checked emails when a save folder is unavailable, with recovery guidance and strict create admission. Identify save paths that are files.
 - Preview files and folders automatically without writing. Remove Attachments saves copies and updates the same list; the CLI keeps --dry-run.
-- Show attachment names, before/after sizes and plain-language results, with one problems filter and a scrolling detail pane. Copy Details includes native paths and diagnostics.
-- Use Stop and Continue for interrupted batches. Quit Now is offered after five seconds of Stop and Quit; exit still waits for active report exports.
-- Restore Finder Open With for emails and folders; Dock-icon drops use the same handler.
-- Keep batch reports in memory; Save Report exports exact settled bytes through the native save panel, preserving approved replacement and prior targets on failure.
-- Silently use defaults for unreadable or invalid desktop preferences and replace them on the next save; keep three recent destinations and the last report folder.
-- Center desktop content, keep detail actions visible at minimum size and support keyboard navigation and light/dark appearance.
-- Keep native open/reveal work off the UI thread and reject stale native-panel submissions after a Quit decision.
-- Reject headerless message roots as MALFORMED without creating copies; minimal header-bearing exports and headerless MIME body parts remain supported.
-- Group explicitly interrupted items as Not processed in the GUI and human CLI summary; preserve raw JSON counts, unknown outcomes, publication qualifications and cleanup warnings.
-- Resolve build commands from the invoking Cargo workspace, so a shared target cache cannot silently package a different worktree.
-- Preserve literal punctuation in packaged plaintext license notices.
-- Replace the manual build counter with one release version and optional source revision; CLI/GUI --version shows the full hash and About shows 12 characters. Protocol version fields remain unchanged.
+- Use one batch and one list instead of run history and a queue. Adding emails after completion starts a new batch; results settle in displayed worker order.
+- Show attachment names, before/after sizes and plain-language results, with one problems filter and scrolling details. Copy Details includes native paths and diagnostics.
+- Use Stop and Continue for interrupted batches, retaining completed results. Continue verifies existing copies and remains available after stopping before any result arrives.
+- Group interrupted items as Not processed in app and CLI summaries; retain unknown outcomes, work without preview rows, publication qualifications and cleanup warnings.
+- Offer Quit Now after five seconds of Stop and Quit; exit still waits for active report exports. Keep native open/reveal work off the UI thread and reject stale panel submissions.
+- Keep batch reports in memory. Save Report exports exact protocol-1 bytes, including partial output after failure, through the native save panel and preserves prior targets on failed replacement.
+- Restore Finder Open With for emails and folders; Dock-icon drops and launch-by-document use the same native handler.
+- Saved folders use lossless native encoding; incompatible settings reset to defaults. CLI and app path labels distinguish invalid native units without changing protocol-1 path data.
+- Show a notice when unreadable or invalid preferences require defaults; replace them on the next save. Retain three recent destinations and the last report folder.
+- Center desktop content, support keyboard navigation and light/dark appearance, and keep detail actions visible at minimum size.
+- Put detail actions beside the email name, cap details at 30%/200 px, align row cells and headers, stabilize the header and detail pane, and anchor popups to their controls.
+- Route native Copy and Select All to focused text. Refine About focus, scaled buttons and license-view reset behavior.
+- Share outcome labels, explanations, attachment names, sizes and settled headlines through core; omit repeated existing-copy counts from re-run summaries.
+- Keep native numeric error causes, cleanup resource names and publication notices in human details. Distinguish completed cleanup with a retained error from unconfirmed cleanup.
+- Show readable fallbacks for blank attachment names, escape filename controls and avoid false zero-save or new-write claims when results require checking.
+- Distinguish incomplete selection checking from unreadable inputs, so blocked inventory is not presented as zero emails.
+- Report processing crashes separately from delivery failures and retain earlier results. Show thread-start failures without inventing a core outcome.
+- Core owns request admission, phase/removal vocabulary, capability decisions, failure counts and receipt qualification; reject inconsistent success and known code/phase mismatches.
+- Fix help placeholders and request-document error reasons; share plain folder refusals and cause-specific recovery guidance across the CLI and app.
+- Use one release version and an optional source revision; CLI/GUI --version shows the full hash and About shows 12 characters. Protocol version fields remain unchanged.
 - Derive the macOS bundle build from semver; increase semver before distributing changed binaries. See [release identity](docs/release.md).
-- Match Auditory Lab’s About focus, scaled buttons and license-view reset behavior while retaining EML content and licenses.
-- Optimize distribution builds with Thin LTO and stripped symbols, and honor Cargo-configured artifact directories.
-- Remove unmaintained pin-utils from Slint’s dependency graph using standard Rust pinning in a small, tested spin_on source patch.
-- Update runtime and developer dependencies, including encoding_rs, rustix, mail-parser, TOML, ZIP and cargo-about.
-- Restore nightly AddressSanitizer fuzzing on GNU Linux, include retained MIME seeds, save crash artifacts and fix its build cache.
+- Build distribution binaries with Thin LTO and stripped symbols. Resolve commands from the invoking Cargo workspace and honor configured artifact directories.
+- Preserve literal punctuation in packaged plaintext notices and include upstream Slint graphic licenses.
+- Use Slint 1.18.1 as published. Remove archived pin-utils through a separate spin_on executor source patch using standard Rust pinning; toolkit crates remain unpatched.
+- Update runtime and developer dependencies, including encoding_rs, rustix, mail-parser, TOML, ZIP and cargo-about; audit supported graphs without advisory waivers.
+- Share local/hosted lint and tool pins, check dirty/new source and scripts in the verification budget, reject missing inputs, and reuse trusted CI caches for release builds.
+- Run Windows CI from a copied driver located through Cargo artifact output, allowing Cargo to rebuild its original executable.
+- Run full fuzz and mutation campaigns weekly on Ubuntu 26.04 with shared corpus seeds and retained findings; keep contributor micro runs bounded and fuzz-crate lint in the merge gate.
 
 ## [7.0.0] - 2026-10-26
 

@@ -19,9 +19,20 @@ require Ubuntu 26.04 or newer. Headless GUI development needs `pkg-config`,
 Windows CLI development uses Visual Studio C++ Build Tools with the native x64
 or ARM64 MSVC tools. CI builds a static CRT.
 
+On macOS and Linux:
+
 ```sh
 cargo build --locked -p emlattachmentremover
 cargo test --locked --workspace
+```
+
+On Windows, select your native MSVC target explicitly and exclude the unsupported
+GUI package from workspace commands:
+
+```powershell
+$target = 'x86_64-pc-windows-msvc' # use aarch64-pc-windows-msvc on ARM64
+cargo build --locked -p emlattachmentremover --target $target
+cargo test --locked --workspace --exclude eml-gui --target $target
 ```
 
 Install the tools listed under Checks first. For a native GUI on macOS, build
@@ -57,8 +68,6 @@ from the repository on Unix:
 ```sh
 cargo install --locked cargo-deny --version "$(awk -F '"' '/^cargo_deny = / {print $2}' xtask/tools.toml)"
 cargo install --locked cargo-about --features cli --version "$(awk -F '"' '/^cargo_about = / {print $2}' xtask/tools.toml)"
-rustup target add aarch64-apple-darwin x86_64-apple-darwin # macOS distribution
-cargo xtask ci
 ```
 
 Installer source checks also need Python 3 (standard library only) and PowerShell 7
@@ -73,7 +82,20 @@ Install-Module PSScriptAnalyzer -RequiredVersion $toolPins.psscriptanalyzer -Sco
 ```
 
 Obtain actionlint and shellcheck from their upstream releases or a package manager,
-using the versions in tools.toml. `cargo xtask ci` checks tool versions, formatting,
+using the versions in tools.toml. On macOS the full gate builds both app targets,
+so install both Rust targets:
+
+```sh
+rustup target add aarch64-apple-darwin x86_64-apple-darwin
+```
+
+On macOS and Linux, once the prerequisites are installed, run:
+
+```sh
+cargo xtask ci
+```
+
+`cargo xtask ci` checks tool versions, formatting,
 dependency policy for the headless graph, macOS native renderers alone/together, the separate fuzz lockfile, workflows, shell scripts and the
 working-tree verification budget, installer body parity and installer source regressions;
 then runs Clippy and tests. On macOS it also builds separate signed Apple Silicon
@@ -193,11 +215,9 @@ unowned program just because it prints the expected name/version.
 A local EML mirror contains versioned archives, so supply a stable version along
 with `EMLATTACHMENTREMOVER_DOWNLOAD_BASE`. Use fresh output directories and the
 actual generated `SHA256SUMS`. See [release checks](docs/release.md) for archive
-production and native verification. Installer publication is planned for v8.0.0,
-which has not been published; v7.0.0 has no installer assets. During development,
-use the version in the actual locally built archives, not the future v8.0.0 pin
-shown in user examples. Source testing leaves the current workspace version at
-7.0.0 and does not publish the commands or mutate old release assets.
+production and native verification. During development, select the version in
+the actual locally built archives. Installer testing does not publish releases
+or modify published assets.
 
 ## Focused investigation
 
@@ -240,13 +260,8 @@ cargo mutants --in-diff /absolute/path/product.diff
 ```
 
 Weekly mutation uses 16 round-robin shards, each with runner CPUs minus one workers
-(at least one). At introduction, 2,848 mutants divide into 178 per shard. The four
-bounded samples took at most 43.9 seconds per mutant including build and tests:
-178 × 43.9 / 3,600 = 2.18 hours even with one worker, plus baseline/setup; three
-workers predict about 0.73 hours. This is a sizing estimate, not a Linux campaign
-measurement; the first scheduled run will establish actual costs.
-A baseline failure, missed mutant or timeout fails the shard; unviable mutants do
-not. Every shard uploads `mutants.out`. The first scheduled run is the survivor
-baseline survey, not PR verification; triaging pre-existing survivors is follow-up.
+(at least one). A baseline failure, missed mutant or timeout fails the shard;
+unviable mutants do not. Every shard uploads `mutants.out` for review. Campaign
+cost and surviving mutants must be assessed from the actual scheduled results.
 Keep oracles independent and add tests for concrete behavior rather than campaign
 or evidence frameworks.

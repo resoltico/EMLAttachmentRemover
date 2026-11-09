@@ -65,7 +65,7 @@ lossless native encoding. Retain the native value for operations. Human output
 escapes terminal controls and bidi controls. Shared human path rendering exposes
 invalid Unix bytes as `<0xFF>` and unpaired UTF-16 units as `<U+D800>`; literal
 `<` is doubled. This supplies readable native-unit distinctions rather than
-shell quoting. The JSON display field and native encoding are unchanged.
+shell quoting. The JSON display field remains lossy; its native encoding is lossless.
 
 A missing summary, partial final line or malformed record leaves an incomplete
 stream. Retain accepted earlier records and publication observations. A failure

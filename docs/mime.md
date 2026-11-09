@@ -13,10 +13,9 @@ separator-only roots, orphan continuations and text or binary input without an
 initial header block return `MALFORMED` during preparation, without publishing a
 copy. A header appearing after an invalid first line does not rescue the input.
 
-This intentionally replaces headerless-root acceptance. Subject-only,
-extension-field-only and Content-Type-only exports remain supported, including
-empty bodies and headers ending at EOF. Existing CRLF, LF, CR and outer Unix
-`From ` envelope tolerance remains. Ordinary MIME parts can still omit fields;
+Subject-only, extension-field-only and Content-Type-only exports are supported,
+including empty bodies and headers ending at EOF. CRLF, LF, CR and a single outer
+Unix `From ` envelope are accepted. Ordinary MIME parts can still omit fields;
 removable attachments and discarded related resources remain opaque. Body bytes,
 including binary and non-UTF-8 bytes, are preserved rather than validated.
 
@@ -66,6 +65,28 @@ their fields. Independent source authorization and byte/structure verification
 must accept every prepared result. Retained HTML, remote references and mislabeled
 data inside text bodies are not sanitized; an attachment-free result is not a
 malware or safe-rendering assessment.
+
+## Mailbox and multipart framing
+
+An input beginning with a `From ` envelope is refused as `MAILBOX_FILE` if it
+contains another `From ` line immediately after a blank line and immediately
+before a header field. Refusal happens before writing a copy. A single outer
+`From ` envelope is retained. This rule distinguishes mailbox containers from
+supported single-message exports without requiring a filename extension.
+
+Every retained multipart closing delimiter ends its content. Root and nested
+epilogues are omitted; non-whitespace bytes are independently authorized and
+reported as `after_message_end`. Whitespace-only epilogues produce no removal
+entry. Preambles remain exact, including hidden data. Text bodies, including
+uuencoded text, remain body text. The tool does not search retained body text or
+preambles for disguised attachments.
+
+A nested multipart's non-empty epilogue is omitted with its close-delimiter
+line break: RFC 2046's optional `CRLF epilogue` is one unit. The enclosing
+delimiter's own framing break terminates the retained close line. Transport
+padding stays exact. Empty nested epilogues retain both original framing breaks;
+root epilogues start after the close line's break. No line endings are normalized.
+The `after_message_end` byte count includes the entire omitted unit.
 
 ## Unquoted parameter whitespace and comments
 

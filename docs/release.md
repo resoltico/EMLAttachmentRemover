@@ -81,8 +81,8 @@ Commit reviewed inputs before distributing: packages built from a dirty checkout
 carry the base revision and are development evidence, not exact source snapshots.
 
 `CFBundleShortVersionString` is the workspace version. `CFBundleVersion` is derived
-as `major * 10000 + minor * 100 + patch` (7.0.0 becomes 70000, greater than the old
-Build 44). App packaging requires X.Y.Z without suffixes, minor/patch at most 99,
+as `major * 10000 + minor * 100 + patch` (8.0.0 becomes 80000). App packaging
+requires X.Y.Z without suffixes, minor/patch at most 99,
 and a result representable as a u32. These bounds keep the mapping ordered and
 collision-free. Increase the release version before distributing changed builds;
 changing only the source hash does not increase the native bundle version.
@@ -119,14 +119,15 @@ are the only permitted copy differences; EML records a reviewed upstream commit
 for parity verification. Releases remain independent and install scripts have no
 runtime dependency on the other repository.
 
-Installer publication is planned for v8.0.0 after this implementation work; it
-has not been published. Published v7.0.0 has no installer assets and still uses
-universal Mac files. The new latest-download commands require v8.0.0; do not fall
-back to universal assets or rewrite an old release's checksums/attestations.
-This work leaves the workspace at 7.0.0. The version bump, release dating, tag and
-publication remain separate owner-authorized release actions.
-
 ## CI and owner release steps
+
+Public release requires two successful workflows at the same final merged `main`
+commit: automatic [CI](../.github/workflows/ci.yml) for the full merge gate, and
+[Release](../.github/workflows/release.yml) on its version tag for archive
+qualification and the draft. Release does not invoke the CI workflow. The tag
+build may run in parallel with automatic main CI; publish the draft only after
+both succeed for that exact commit. A separate branch build rehearsal is not
+required before the tag build.
 
 The [release workflow](../.github/workflows/release.yml) builds archives once,
 smokes those exact bytes, and runs the Apple Silicon CLI/app on macos-15 and the
@@ -156,8 +157,10 @@ A branch `workflow_dispatch` builds, smokes and uploads archives and SHA256SUMS.
 The checksum job requires exactly eight product archives: six CLI archives
 (macOS, Linux and Windows, each for both CPUs) and two macOS app ZIPs. The
 architecture-matched document probes are separate test artifacts and are excluded
-from this set. After downloading the complete product set again, the tag-only
-draft job checks every archive against SHA256SUMS before attestation and drafting.
+from this set. The checksum job also stages both standalone installers, producing
+a ten-entry manifest. All six native installer jobs consume those checksum-bound
+files. After they pass, the tag-only draft job downloads the complete set and
+checks every manifest entry before attestation and drafting.
 Producer archives and CLI extraction folders use runner-temporary directories
 outside restored Cargo caches. A branch run skips attestation and draft-release
 creation. On an existing `v*` tag, successful
@@ -174,7 +177,9 @@ Before the owner tags or publishes:
    Move the reviewed `Unreleased` bullets into `## [VERSION] - YYYY-MM-DD`, leaving
    an empty `Unreleased` section above it. Commit that entry before creating the
    matching `vVERSION` tag; tag annotations do not supply the release notes.
-   Review the final PR's native CI and both macOS floor-smoke results.
+   Merge the release commit to `main`, then tag that exact commit. Before publishing
+   the draft, confirm its automatic main CI and tagged Release run both succeeded,
+   including native CI, all installer jobs and both macOS floor-smoke results.
 2. On Intel and Apple Silicon, manually check real window drag delivery, native
    file/folder dialogs, automatic preview, Remove Attachments and destination selection,
    keyboard navigation, appearance,
@@ -196,6 +201,5 @@ The scheduled Weekly workflow runs full fuzz and mutation campaigns once a week,
 separately from the merge gate. Only the owner may dispatch it manually. Development
 is limited to fuzz micro runs of at most 120 seconds (10 minutes total) and mutation
 runs of at most 60 selected mutants. See [CONTRIBUTING](../CONTRIBUTING.md) for commands.
-Intel Macs retain their own builds and macOS 15 Intel archive smoke coverage; the
-separate weekly Intel full-suite job is retired. The first scheduled Weekly run
-establishes the survivor baseline and is not part of the gates follow-up PR.
+Intel Macs have their own builds and macOS 15 Intel archive smoke coverage.
+The full fuzz and mutation campaigns run on Ubuntu 26.04.

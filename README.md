@@ -12,11 +12,8 @@ documentation at the matching release tag.
 
 ### CLI installer
 
-This checkout adds user-local installers for all six CLI targets, planned for
-v8.0.0. That release has not been published yet. Published v7.0.0 has no installer
-assets and uses universal Mac archives; the commands below become available only
-when v8.0.0 publishes the scripts and separate CPU archives. Until then, follow
-manual instructions at the matching published release tag.
+User-local installers support all six CLI platform and CPU targets. They select
+the native executable and keep installation separate from the Mac desktop app.
 
 On macOS or Linux:
 
@@ -76,7 +73,7 @@ emlattachmentremover --output-dir copies -- mail-folder
 emlattachmentremover --format json -- message.eml
 ```
 
-Human output uses the app’s core outcome labels and batch headline (JSON is unchanged):
+Human output uses core’s outcome labels and batch headline:
 
 ```text
 Ready                    message.eml → message.no-attachments.eml · 1 attachment · 392 B → 183 B
@@ -104,8 +101,8 @@ and reported cleanup failures before retrying. Recognizable staging files use
 
 ## Desktop app
 
-The Mac app runs core in process and needs no CLI installation. The app no longer
-contains a CLI executable; install the separate macOS CLI archive for Terminal use.
+The Mac app runs core in process and needs no CLI installation. Install the
+separate macOS CLI for Terminal use.
 
 Add `.eml` files or folders with **Add Files…**, **Add Folder…**, a window drop,
 launch arguments, Finder **Open With**, or a drop on the Dock icon. Folder contents
@@ -145,9 +142,9 @@ waiting, **Quit Now** exits the app without waiting for the create thread;
 report exports already in progress still settle first. Read-only checks receive
 cooperative stop automatically, without a dialog.
 The app remembers three recent save folders, the last destination and the last
-report folder. Invalid or unreadable settings silently use defaults and are
-replaced on the next successful save. Folder settings now use native encoding;
-earlier string settings reset to defaults. About and Licenses are in the menus.
+report folder. Invalid or unreadable settings use defaults with a note beside
+the destination; a successful save replaces them. Folder settings preserve native
+path encoding. About and Licenses are in the menus.
 Finder Services remain unsupported. Open With uses rank Alternate, keeping the
 existing default mail application.
 

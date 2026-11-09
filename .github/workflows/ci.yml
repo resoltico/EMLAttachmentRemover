@@ -38,7 +38,7 @@ jobs:
         id: tools
         shell: bash
         run: cargo xtask tool-versions >> "$GITHUB_OUTPUT"
-      - uses: taiki-e/install-action@b80e2bb2635f28eb98b9fce1e2f0887e1535c6b2
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39
         with:
           tool: cargo-deny@${{ steps.tools.outputs.cargo_deny }},shellcheck@${{ steps.tools.outputs.shellcheck }}
       - name: Install pinned actionlint from its upstream release
@@ -153,7 +153,7 @@ jobs:
         id: tools
         shell: bash
         run: cargo xtask tool-versions >> "$GITHUB_OUTPUT"
-      - uses: taiki-e/install-action@b80e2bb2635f28eb98b9fce1e2f0887e1535c6b2
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39
         with:
           tool: cargo-about@${{ steps.tools.outputs.cargo_about }}
       - run: rustup target add ${{ matrix.target }}
@@ -203,7 +203,7 @@ jobs:
       - name: Read tool versions
         id: tools
         run: cargo run --locked -p xtask --target "$TARGET_TRIPLE" -- tool-versions >> "$GITHUB_OUTPUT"
-      - uses: taiki-e/install-action@b80e2bb2635f28eb98b9fce1e2f0887e1535c6b2
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39
         if: matrix.target != 'x86_64-apple-darwin'
         with:
           tool: cargo-about@${{ steps.tools.outputs.cargo_about }}
