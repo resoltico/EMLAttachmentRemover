@@ -1,4 +1,7 @@
 //! Standard text commands use editor context independently of Copy Details.
+//! Uses pinned `i_slint_core` internals: `WindowInner::focus_item`/`active_popups`,
+//! `WindowKind`, `ItemRc`/`ItemWeak` and `TextInput::{copy, select_all}`.
+//! Re-verify these paths when upgrading Slint.
 use crate::DesktopController;
 use i_slint_core::{
     item_tree::{ItemRc, ItemWeak},
