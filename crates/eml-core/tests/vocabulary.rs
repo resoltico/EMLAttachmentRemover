@@ -473,3 +473,47 @@ fn w6_existing_headline_does_not_repeat_its_count() {
     assert_eq!(h.verdict, "2 copies already exist");
     assert!(h.parts.is_empty(), "Repeated existing count: {:?}", h.parts);
 }
+
+#[test]
+fn y5_headlines_count_failures_and_keep_existing_success() {
+    for existing in [false, true] {
+        let good = if existing {
+            Outcome::AlreadyExists
+        } else {
+            Outcome::CopySaved
+        };
+        let items =
+            std::iter::repeat_n((Some(good), 1, Some((100, 50))), 17).chain(std::iter::repeat_n(
+                (
+                    Some(Outcome::Failed(eml_core::ErrorCode::Malformed)),
+                    0,
+                    None,
+                ),
+                6,
+            ));
+        let totals = BatchTotals::from(items, 0);
+        let h = totals.headline(HeadlineMode::Done {
+            incomplete_create: false,
+        });
+        assert!(
+            h.parts.iter().any(|p| p == "6 can’t be copied"),
+            "{:?}",
+            h.parts
+        );
+        assert_eq!(
+            h.verdict,
+            if existing {
+                "17 copies already exist"
+            } else {
+                "17 copies saved"
+            }
+        );
+        assert!(
+            totals
+                .headline(HeadlineMode::Check { total: Some(23) })
+                .parts
+                .iter()
+                .any(|p| p == "6 can’t be copied")
+        );
+    }
+}
