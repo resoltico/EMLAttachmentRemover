@@ -2,44 +2,35 @@
 
 ## [Unreleased]
 
-- Complete Linux accessibility for control states, read-only text, popup menus, focus and live notices. Menu commands and appearance stay unchanged.
-
+- Linux builds and CLI binaries require Ubuntu 26.04.
+- CLI human output is rewritten in plain language; JSON is unchanged. Update scripts that read human output to use protocol-1 JSON instead.
 - Saved folders use lossless native encoding; earlier string settings reset to defaults. CLI and GUI path labels distinguish invalid native units without changing protocol-1 JSON.
-
+- The desktop GUI builds on macOS only; Linux builds the CLI and runs headless GUI tests; Windows builds the CLI.
+- Use plain copy and cleanup explanations. Align CLI details under paths, omit failed destinations and redundant sizes, and share verdict-first summaries with the app.
+- Put detail actions beside the email name, cap the pane at 30%/200 px and align column headers with their text. Theme owns UI geometry.
+- Audit supported desktop, headless, core/CLI and fuzz dependency graphs without advisory waivers; use Slint 1.18.1 as published.
 - Run Windows CI from a copied driver so Cargo can rebuild its original executable; locate that driver from Cargo's artifact output rather than assuming a target directory.
-
-- Raise the Linux build and CLI runtime baseline to Ubuntu 26.04. Native GUI builds select desktop-winit on macOS or desktop-qt on Linux; the desktop feature is removed.
-- Keep Slint 1.18.1 with Qt 6.12 on Linux, preserving Wayland, X11 and native accessibility. Portal file panels and drops preserve native filenames; failed parent export is reported.
-- Remove maintenance advisory waivers; check every supported native dependency profile. Reject missing Qt and a runtime that differs from its build SDK.
-- Close Rust wording and Slint visual-token guard bypasses, and share the transparent colour token. Validate the Linux GUI sibling CLI before opening its window.
-
+- Close Rust wording and Slint visual-token guard bypasses, and share the transparent colour token.
 - Check dirty and newly added source in the verification budget and shell lint; include verification scripts in harness size and fail on empty/missing inputs.
 - Share local/hosted lint commands, read tool pins from the invoking workspace and reuse trusted CI caches for release builds. Remove obsolete Windows sentinel artifacts.
-
 - Share receipt qualification across execution, outcome interpretation and report reading; reject inconsistent successful sync, cleanup and read-only plan claims.
 - Use core phase/removal vocabularies and capability decisions in adapters; reject known code/phase mismatches and incompatible native-worker paths. Valid protocol-1 JSON stays unchanged.
 - Keep Continue available after stopping before observations; count known launch failures without inventing a core outcome.
-
 - Use core’s remaining-work aggregation for CLI and stopped app summaries, including work that never produced a preview row.
-
 - Keep incomplete selection checking separate from unreadable inputs; a blocked inventory no longer appears as zero emails.
-
 - Distinguish completed cleanup with a retained native error from unconfirmed cleanup, preserving failure status and receipt facts.
 - Show core publication, cleanup and inline-resource notices in app details; keep cleanup resource names and native causes in human diagnostics.
 - List attachment names and kinds in human CLI output. Use shared request errors, canonical diagnostic phases and known-result counts in the app.
 - Retain CLI refusal diagnostics in expandable app details; Continue describes verification of existing copies. Exact JSON report export is unchanged.
-
-- CLI human output is rewritten in plain language; JSON is unchanged. Update scripts that read human output to use protocol-1 JSON instead.
 - Keep numeric native error causes in human CLI diagnostics; protocol-1 JSON stays unchanged.
 - Show readable fallbacks for whitespace-only attachment names, escape filename controls in the app, and avoid false zero-save or new-write claims when results need checking.
-- The CLI and app share outcome labels, explanations, attachment names, size formatting and summary vocabulary from core.
+- The CLI and app share outcome labels, explanations, attachment names, size formatting and settled headlines from core.
 - Center row cells, use one button hierarchy and keep the header and detail pane stable. Popups follow their controls; results complete in displayed worker order.
-
 - Replace desktop run history and its queue with one batch and one list; adding emails after completion starts a new batch immediately.
 - Preview files and folders automatically without writing. Remove Attachments saves copies and updates the same list; the CLI keeps --dry-run.
 - Show attachment names, before/after sizes and plain-language results, with one problems filter and a scrolling detail pane. Copy Details includes native paths and diagnostics.
 - Use Stop and Continue for interrupted batches. Force is limited to Quit Now after five seconds of Stop and Quit; exiting waits for the worker and report exports.
-- Restore Finder Open With for emails and folders; Dock-icon drops use the same handler (not verified by hand).
+- Restore Finder Open With for emails and folders; Dock-icon drops use the same handler.
 - Keep batch reports in memory; Save Report exports exact settled bytes through the native save panel, preserving approved replacement and prior targets on failure.
 - Silently use defaults for unreadable or invalid desktop preferences and replace them on the next save; keep three recent destinations and the last report folder.
 - Center desktop content, keep detail actions visible at minimum size and support keyboard navigation and light/dark appearance.
@@ -55,7 +46,6 @@
 - Remove unmaintained pin-utils from Slint’s dependency graph using standard Rust pinning in a small, tested spin_on source patch.
 - Update runtime and developer dependencies, including encoding_rs, rustix, mail-parser, TOML, ZIP and cargo-about.
 - Restore nightly AddressSanitizer fuzzing on GNU Linux, include retained MIME seeds, save crash artifacts and fix its build cache.
-- Audit desktop features and the separate fuzz lockfile; accept four unmaintained Linux desktop dependencies pending upstream migration, with reasons in [dependency policy](deny.toml).
 
 ## [7.0.0] - 2026-10-26
 

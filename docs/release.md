@@ -7,6 +7,10 @@ its first 12 characters. There is no separate manually maintained build counter.
 The compiler comes from rust-toolchain.toml and developer tools from xtask/tools.toml. Distribution requires native platform
 linkers; macOS uses Command Line Tools rather than a full Xcode installation.
 
+When upgrading pinned Slint, re-verify native Edit → Copy and Select All routing in
+[`text_commands.rs`](../crates/eml-gui/src/text_commands.rs), including its private
+`i_slint_core` focus and popup access.
+
 ## Build and inspect locally
 
 ```sh
