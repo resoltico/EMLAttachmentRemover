@@ -375,3 +375,120 @@ fn v1_no_toolkit_fork() {
         );
     }
 }
+
+#[test]
+fn w1_front_ends_do_not_depend_on_each_other() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let output = std::process::Command::new("cargo")
+        .args(["metadata", "--no-deps", "--format-version", "1"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let metadata: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let packages = metadata["packages"].as_array().unwrap();
+    assert!(
+        packages.iter().all(|p| p["name"] != "eml-app"),
+        "eml-app still exists"
+    );
+    let gui = packages.iter().find(|p| p["name"] == "eml-gui").unwrap();
+    for dep in gui["dependencies"].as_array().unwrap() {
+        if dep["kind"].is_null() || dep["kind"] == "build" {
+            assert!(!["eml-cli", "emlattachmentremover"].contains(&dep["name"].as_str().unwrap()));
+        }
+    }
+    for path in rust_sources(&root.join("crates/eml-gui/src")) {
+        let text = fs::read_to_string(&path).unwrap();
+        for line in text.lines().filter(|line| line.contains("Command::new")) {
+            assert!(
+                path.ends_with("native_dialogs.rs") && line.contains("\"/usr/bin/open\""),
+                "Front end invokes a process: {}: {line}",
+                path.display()
+            );
+        }
+    }
+    assert!(
+        !fs::read_to_string(root.join("xtask/src/dist.rs"))
+            .unwrap()
+            .contains("Helpers"),
+        "App still packages Helpers"
+    );
+}
+fn rust_sources(root: &Path) -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    for entry in fs::read_dir(root).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_dir() {
+            paths.extend(rust_sources(&path));
+        } else if path.extension().is_some_and(|ext| ext == "rs") {
+            paths.push(path);
+        }
+    }
+    paths
+}
+#[derive(Default)]
+struct WireLookups(Vec<String>);
+impl<'ast> Visit<'ast> for WireLookups {
+    fn visit_expr_call(&mut self, call: &'ast syn::ExprCall) {
+        if let syn::Expr::Path(path) = call.func.as_ref()
+            && path
+                .path
+                .segments
+                .last()
+                .is_some_and(|s| s.ident == "from_wire_name")
+        {
+            self.0.push("from_wire_name".into());
+        }
+        syn::visit::visit_expr_call(self, call);
+    }
+    fn visit_item_mod(&mut self, item: &'ast syn::ItemMod) {
+        if !item.attrs.iter().any(|a| {
+            a.path().is_ident("cfg")
+                && a.parse_args::<syn::Path>()
+                    .is_ok_and(|p| p.is_ident("test"))
+        }) {
+            syn::visit::visit_item_mod(self, item);
+        }
+    }
+}
+#[test]
+fn w2_policy_uses_typed_errors() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    for entry in fs::read_dir(root.join("crates")).unwrap() {
+        let src = entry.unwrap().path().join("src");
+        if !src.is_dir() {
+            continue;
+        }
+        for path in rust_sources(&src) {
+            if ["request.rs", "records.rs", "observation.rs"]
+                .iter()
+                .any(|name| path.ends_with(Path::new("eml-protocol/src").join(name)))
+            {
+                continue;
+            }
+            let mut visitor = WireLookups::default();
+            visitor.visit_file(&syn::parse_file(&fs::read_to_string(&path).unwrap()).unwrap());
+            assert!(
+                visitor.0.is_empty(),
+                "Wire code lookup outside decoding: {}",
+                path.display()
+            );
+        }
+    }
+}
+#[test]
+fn w3_rows_do_not_decode_protocol_records() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    for name in ["present.rs", "state.rs", "lib.rs"] {
+        let text = fs::read_to_string(root.join("src").join(name)).unwrap();
+        assert!(
+            !text.contains("eml_protocol::records") && !text.contains("serde_json::from_"),
+            "Rows still depend on protocol decoding: {name}"
+        );
+    }
+    let tests = fs::read_to_string(root.join("tests/desktop.rs")).unwrap();
+    assert!(
+        !tests.contains("eml-gui-cli-fixture") && !tests.contains("fn fixture("),
+        "GUI tests still replay canned CLI JSON"
+    );
+}
