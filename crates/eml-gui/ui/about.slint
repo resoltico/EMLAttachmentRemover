@@ -3,7 +3,7 @@ import { AppWords } from "models.slint";
 // Copyright 2026 Ervins Strauhmanis
 // SPDX-License-Identifier: MPL-2.0
 import { AboutSlint, TextEdit, VerticalBox, HorizontalBox } from "std-widgets.slint";
-import { ActionButton, TextButton, UiMetrics } from "controls.slint";
+import { ActionButton, TextButton } from "controls.slint";
 component AboutLabel inherits TextInput {
     read-only: true; single-line: true; horizontal-alignment: center;
     accessible-label: self.text; vertical-stretch: 0;
@@ -27,8 +27,8 @@ export component AboutWindow inherits Window {
     title: root.words.about-prefix + root.product-name;
     icon: @image-url("eml-icon.png");
     default-font-size: Theme.body;
-    preferred-width: 440px;
-    preferred-height: 490px + (root.notice != "" ? 64px : 0px) + (root.show-notice-details ? Theme.diagnostic-height : 0px);
+    preferred-width: Theme.about-width;
+    preferred-height: Theme.about-height + (root.notice != "" ? Theme.about-notice-height : 0px) + (root.show-notice-details ? Theme.diagnostic-height : 0px);
     callback website(); callback licenses(); callback dismiss();
     callback focus-website();
     focus-website => { website.focus(); }
@@ -51,7 +51,7 @@ export component AboutWindow inherits Window {
         key-pressed(event) => { if event.text == Key.Escape { root.dismiss(); return accept; } return reject; }
         VerticalBox { padding: Theme.space-6; spacing: Theme.space-2; alignment: center;
             HorizontalBox { alignment: center; padding: 0px;
-                Image { source: root.icon; width: 64px; height: 64px; image-fit: contain; accessible-label: root.words.application-icon; }
+                Image { source: root.icon; width: Theme.about-icon-size; height: Theme.about-icon-size; image-fit: contain; accessible-label: root.words.application-icon; }
             }
             name-text := AboutLabel { focus-changed => { root.text-focus-changed(); } text: root.product-name; font-size: Theme.title; font-weight: 600; }
             version-text := AboutLabel { focus-changed => { root.text-focus-changed(); } text: root.words.version-prefix + root.version; }
@@ -68,7 +68,7 @@ export component AboutWindow inherits Window {
                     changed has-focus => { root.text-focus-changed(); }
                     text: root.notice-details; read-only: true; min-height: Theme.diagnostic-height; preferred-height: Theme.diagnostic-height; max-height: Theme.diagnostic-height; accessible-label: root.words.website-details; }
             HorizontalBox { alignment: center; vertical-stretch: 0; padding: 0px;
-                AboutSlint { width: 280px; height: 100px; horizontal-stretch: 0; vertical-stretch: 0; }
+                AboutSlint { width: Theme.slint-notice-width; height: Theme.slint-notice-height; horizontal-stretch: 0; vertical-stretch: 0; }
             }
         }
     }
@@ -77,7 +77,7 @@ export component LicenseWindow inherits Window {
     in property <AppWords> words;
     title: root.words.license-title;
     icon: @image-url("eml-icon.png");
-    preferred-width: 720px; preferred-height: 560px;
+    preferred-width: Theme.license-width; preferred-height: Theme.license-height;
     in property <string> licenses;
     in property <string> notice;
     in property <string> notice-details;

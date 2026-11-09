@@ -2879,13 +2879,55 @@ fn v5_detail_actions_share_title_line() {
     ui.window().set_size(slint::LogicalSize::new(1080., 700.));
     ui.invoke_select_email(ui.get_rows().row_data(0).unwrap().key);
     mock_elapsed_time(Duration::from_millis(1));
-    let name = label(&ui, "one.eml");
-    let action = label(&ui, "Show Original");
+    let mut detail = ui.get_detail();
+    let part = detail.parts.row_data(0).unwrap();
+    let mut heights = Vec::new();
+    for count in [0, 1, 5] {
+        detail.parts = Rc::new(slint::VecModel::from(vec![part.clone(); count])).into();
+        ui.set_detail(detail.clone());
+        mock_elapsed_time(Duration::from_millis(1));
+        let name = label(&ui, "one.eml");
+        for action in ["Show Copy", "Show Original", "Copy Details"] {
+            assert!(
+                (name.absolute_position().y - label(&ui, action).absolute_position().y).abs() <= 1.,
+                "{action} is not beside the name"
+            );
+        }
+        let viewport = label(&ui, "Emails")
+            .query_descendants()
+            .match_type_name("Flickable")
+            .find_first()
+            .unwrap();
+        heights.push(viewport.size().height);
+    }
     assert!(
-        (name.absolute_position().y - action.absolute_position().y).abs() <= 1.,
-        "title={:?}, action={:?}",
-        name.absolute_position(),
-        action.absolute_position()
+        heights.iter().all(|h| (h - heights[0]).abs() <= 1.),
+        "{heights:?}"
+    );
+    ui.window().set_size(slint::LogicalSize::new(760., 520.));
+    mock_elapsed_time(Duration::from_millis(1));
+    let list = label(&ui, "Emails");
+    let viewport = list
+        .query_descendants()
+        .match_type_name("Flickable")
+        .find_first()
+        .unwrap();
+    let top = viewport.absolute_position().y;
+    let bottom = top + viewport.size().height;
+    let complete = list
+        .query_descendants()
+        .find_all()
+        .into_iter()
+        .filter(|e| {
+            e.accessible_role() == Some(i_slint_backend_testing::AccessibleRole::ListItem)
+                && e.absolute_position().y >= top - 0.1
+                && e.absolute_position().y + e.size().height <= bottom + 0.1
+        })
+        .count();
+    assert!(
+        complete >= 3,
+        "Only {complete} complete rows in {:?}",
+        viewport.size()
     );
 }
 
@@ -2896,14 +2938,21 @@ fn v6_status_header_aligns_with_text() {
     let c = done(root.path(), &["one.eml"]);
     let ui = c.window();
     mock_elapsed_time(Duration::from_millis(1));
-    let header = label(&ui, "Status");
-    let cell = label(&ui, "Copy saved");
-    assert!(
-        (header.absolute_position().x - cell.absolute_position().x).abs() <= 1.,
-        "header={:?}, cell={:?}",
-        header.absolute_position(),
-        cell.absolute_position()
-    );
+    for (heading, text) in [
+        ("Email", "one"),
+        ("Attachments", "report.pdf"),
+        ("Size", "1.0 kB → 513 B"),
+        ("Status", "Copy saved"),
+    ] {
+        let header = label(&ui, heading);
+        let cell = label(&ui, text);
+        assert!(
+            (header.absolute_position().x - cell.absolute_position().x).abs() <= 1.,
+            "{heading}: header={:?}, cell={:?}",
+            header.absolute_position(),
+            cell.absolute_position()
+        );
+    }
 }
 
 #[test]

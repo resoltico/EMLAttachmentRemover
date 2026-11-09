@@ -12,7 +12,7 @@ outcomes; they do not verify MIME classification or native operating-system UI.
 | Done | [PNG](done-light.png) | [PNG](done-dark.png) |
 
 The main images are 1080×700. [Ready at 760×520](ready-light-narrow.png) shows the
-minimum layout with Size hidden. Geometry tests separately check two visible rows,
+minimum layout with Size hidden. Geometry tests separately check three visible rows at minimum size,
 stable headers and details, aligned cells, command roles and anchored popups.
 
 Regenerate outside the merge gate:
@@ -27,9 +27,10 @@ The capture writes lossless PPMs. Convert each to PNG with, for example,
 
 ## Native app gallery
 
-These window captures show the current macOS desktop with freshly built debug
-executables. The archive gate separately verifies universal distribution binaries. Normal and minimum sizes
-refer to client areas; the native title bar adds to the outer frame (32 px on this macOS host). Full-size images capture the host’s available 1474×938 client region; the window manager constrains larger requests.
+These native captures show the macOS universal app built from the branch, with
+its production controller and bundled CLI. Images retain the complete client area
+at PR 75's sizes. OS title bars are excluded to omit the live-control sharing badge;
+application content is not retouched or scaled.
 
 | Window | Light | Dark |
 |---|---|---|
@@ -38,5 +39,5 @@ refer to client areas; the native title bar adds to the outer frame (32 px on th
 | Minimum, 760×520 client | [JPEG](manual/minimum-light.jpg) | [JPEG](manual/minimum-dark.jpg) |
 
 The selected inline-image detail includes the core warning about omitted related
-resources. Normal/minimum captures retain visible actions below the scrolling
+resources. Normal/minimum captures keep actions beside the email name above the scrolling
 details. Capture appearance and application preferences were restored afterward.
