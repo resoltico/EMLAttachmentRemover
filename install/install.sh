@@ -65,9 +65,9 @@ parse_args() {
     [ "${no_modify}" != 1 ] || modify_path=0
     while [ "$#" -gt 0 ]; do
         case "$1" in
-            --version) [ "$#" -ge 2 ] && [ -n "$2" ] || die '--version needs a nonempty value.'; version=$2; version_requested=1; shift ;;
+            --version) if [ "$#" -ge 2 ] && [ -n "$2" ]; then :; else die '--version needs a nonempty value.'; fi; version=$2; version_requested=1; shift ;;
             --version=*) version=${1#*=}; [ -n "${version}" ] || die '--version needs a nonempty value.'; version_requested=1 ;;
-            --install-dir) [ "$#" -ge 2 ] && [ -n "$2" ] || die '--install-dir needs a nonempty directory.'; install_dir=$2; shift ;;
+            --install-dir) if [ "$#" -ge 2 ] && [ -n "$2" ]; then :; else die '--install-dir needs a nonempty directory.'; fi; install_dir=$2; shift ;;
             --install-dir=*) install_dir=${1#*=}; [ -n "${install_dir}" ] || die '--install-dir needs a nonempty directory.' ;;
             --no-modify-path) modify_path=0 ;;
             --uninstall) action=uninstall ;;
@@ -95,7 +95,7 @@ sha256_of() {
     else die 'A SHA-256 tool (sha256sum, shasum or openssl) is required.'; fi
     printf '%s\n' "${digest_output}" | awk '{ if (length($1)==64) print tolower($1); else print tolower($NF) }'
 }
-require_regular() { [ -f "$1" ] && [ ! -h "$1" ] || owned_error; }
+require_regular() { if [ -f "$1" ] && [ ! -h "$1" ]; then :; else owned_error; fi; }
 owned_error() { die "Existing files in ${install_dir} have missing, changed or invalid installer ownership; nothing was replaced or removed." 'Review and remove the old/manual installation yourself, or use a new directory.'; }
 
 # Receipt files are data, never shell code. Its manifest covers every owned file.
@@ -120,10 +120,10 @@ seal_state() {
     cp "${tmp}/state-manifest" "$1/state.sha256"
 }
 validate_state() {
-    [ -d "${state}" ] && [ ! -h "${state}" ] || owned_error
+    if [ -d "${state}" ] && [ ! -h "${state}" ]; then :; else owned_error; fi
     for member in format owner location binary.sha256 version created-dir path-count state.sha256; do require_regular "${state}/${member}"; done
     format=$(cat "${state}/format"); owner=$(cat "${state}/owner"); location=$(cat "${state}/location")
-    [ "${format}" = 1 ] && [ "${owner}" = "${command_name}" ] && [ "${location}" = "${install_dir}" ] || owned_error
+    if [ "${format}" = 1 ] && [ "${owner}" = "${command_name}" ] && [ "${location}" = "${install_dir}" ]; then :; else owned_error; fi
     created_dir=$(cat "${state}/created-dir"); case "${created_dir}" in 0 | 1) ;; *) owned_error ;; esac
     record_count=$(cat "${state}/path-count")
     printf '%s\n' "${record_count}" | grep -Eq '^(0|[1-9][0-9]*)$' || owned_error
@@ -344,9 +344,11 @@ plan_path() {
         path_created=1; match_status=1
         if [ -e "${file}" ] || [ -h "${file}" ]; then
             [ -f "${file}" ] || die "Startup path is not a regular file: ${file}"
-            [ -r "${file}" ] && [ -w "${file}" ] || die "Startup file is not readable and writable: ${file}"
+            if [ -r "${file}" ] && [ -w "${file}" ]; then :; else die "Startup file is not readable and writable: ${file}"; fi
             path_created=0
-        else [ -d "${file%/*}" ] && [ -w "${file%/*}" ] || die "Startup directory is not writable: ${file%/*}"; fi
+        else
+            if [ -d "${file%/*}" ] && [ -w "${file%/*}" ]; then :; else die "Startup directory is not writable: ${file%/*}"; fi
+        fi
         case "${file}" in "${fish}") line=$(fish_line) ;; *) line=$(posix_line) ;; esac
         if [ "${path_created}" = 0 ]; then
             match_status=0; grep -Fxq -- "${line}" "${file}" || match_status=$?
@@ -449,7 +451,7 @@ remove_owned_paths() {
     while [ "${record_index}" -lt "${record_count}" ]; do
         file=$(cat "${state}/paths/${record_index}.file"); line=$(cat "${state}/paths/${record_index}.line")
         if [ -e "${file}" ] || [ -h "${file}" ]; then
-            [ -f "${file}" ] && [ -r "${file}" ] || die "Could not read startup file: ${file}"
+            if [ -f "${file}" ] && [ -r "${file}" ]; then :; else die "Could not read startup file: ${file}"; fi
             cat "${file}" > "${tmp}/path-original.${record_index}" || die "Could not read startup file: ${file}"
             match_status=0; grep -Fxq -- "${line}" "${tmp}/path-original.${record_index}" || match_status=$?
             case "${match_status}" in
@@ -471,7 +473,7 @@ remove_owned_paths() {
         # Earlier entries can alias this same physical file. Read current bytes
         # rather than restoring a stale prepared image or reintroducing lines.
         if [ ! -e "${file}" ] && [ ! -h "${file}" ]; then continue; fi
-        [ -f "${file}" ] && [ -r "${file}" ] || die "Could not read startup file: ${file}"
+        if [ -f "${file}" ] && [ -r "${file}" ]; then :; else die "Could not read startup file: ${file}"; fi
         cat "${file}" > "${tmp}/path-current.${record_index}" || die "Could not read startup file: ${file}"
         match_status=0; grep -Fxq -- "${line}" "${tmp}/path-current.${record_index}" || match_status=$?
         case "${match_status}" in 0) : ;; 1) continue ;; *) die "Could not read startup file: ${file}" ;; esac

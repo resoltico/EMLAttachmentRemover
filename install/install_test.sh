@@ -440,7 +440,7 @@ for downloader in curl wget; do
     printf '%s/releases/tag/v1.2.3\n' "${repo_url}" > "${mock}/effective"
     # Isolate tool discovery so both supported downloaders are exercised, even
     # when the host has curl. These are external-dependency stubs, not product hooks.
-    for utility in awk cat chmod cmp cp cut find grep head mkdir mktemp mv rm rmdir sed sh sort tail tar tr uname wc sha256sum shasum openssl sw_vers sysctl; do
+    for utility in awk cat chmod cmp cp cut find grep gzip head mkdir mktemp mv rm rmdir sed sh sort tail tar tr uname wc sha256sum shasum openssl sw_vers sysctl; do
         if tool_path=$(command -v "${utility}"); then ln -s "${tool_path}" "${mock}/tools/${utility}"; fi
     done
     if [[ "${downloader}" == curl ]]; then
