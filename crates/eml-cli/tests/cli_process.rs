@@ -942,3 +942,133 @@ fn v3_cli_final_line_uses_shared_verdict_and_parts() {
         assert!(h.parts.iter().all(|p| !p.starts_with("0 ")));
     }
 }
+
+#[test]
+fn y1_help_and_usage_are_exact_prose() {
+    let root = root();
+    let help = invoke(root.path(), &["--help"], None);
+    assert_eq!(help.stdout, include_bytes!("support/field-help.txt"));
+    assert!(help.stderr.is_empty());
+    let usage = invoke(root.path(), &["--format", "bogus"], None);
+    assert_eq!(usage.stderr, include_bytes!("support/field-usage.txt"));
+}
+#[test]
+fn y2_mailbox_and_after_end_payloads_cannot_survive_in_copies() {
+    let root = root();
+    for (name, wire) in [
+        (
+            "mailbox",
+            include_bytes!("../../../tests/contract/mime/inputs/15-mailbox-export.eml").as_slice(),
+        ),
+        (
+            "epilogue",
+            include_bytes!("../../../tests/contract/mime/inputs/16-content-after-end.eml"),
+        ),
+    ] {
+        fs::write(root.path().join(format!("{name}.eml")), wire).unwrap();
+    }
+    let mailbox = invoke(
+        root.path(),
+        &["--format", "json", "--", "mailbox.eml"],
+        None,
+    );
+    assert!(
+        !root.path().join("mailbox.no-attachments.eml").exists(),
+        "Mailbox must be refused before writing"
+    );
+    assert!(
+        String::from_utf8(mailbox.stdout)
+            .unwrap()
+            .contains("MAILBOX_FILE")
+    );
+}
+#[test]
+fn y2_epilogue_payload_is_removed_and_reported() {
+    let root = root();
+    fs::write(
+        root.path().join("epilogue.eml"),
+        include_bytes!("../../../tests/contract/mime/inputs/16-content-after-end.eml"),
+    )
+    .unwrap();
+    let result = invoke(
+        root.path(),
+        &["--format", "json", "--", "epilogue.eml"],
+        None,
+    );
+    let output = fs::read(root.path().join("epilogue.no-attachments.eml")).unwrap();
+    assert_eq!(
+        output,
+        include_bytes!("../../../tests/contract/mime/golden/16-content-after-end.eml")
+    );
+    assert!(
+        !output
+            .windows(b"payroll.xlsx".len())
+            .any(|s| s == b"payroll.xlsx")
+    );
+    assert!(
+        String::from_utf8(result.stdout)
+            .unwrap()
+            .contains("after_message_end")
+    );
+}
+#[test]
+fn y3_unavailable_save_folder_has_one_plain_core_explanation() {
+    let root = root();
+    fs::write(root.path().join("a.eml"), INPUT).unwrap();
+    let missing = root.path().join("missing");
+    let output = invoke(
+        root.path(),
+        &["--output-dir", missing.to_str().unwrap(), "--", "a.eml"],
+        None,
+    );
+    assert!(String::from_utf8(output.stderr).unwrap().contains(&format!(
+        "The save folder isn't available: {}. Reconnect it or choose another folder.",
+        missing.display()
+    )));
+    assert!(!root.path().join("a.no-attachments.eml").exists());
+}
+#[test]
+fn y6_damaged_mail_has_different_guidance_from_non_mail() {
+    let root = root();
+    fs::write(
+        root.path().join("damaged.eml"),
+        include_bytes!("../../../tests/contract/mime/inputs/18-incomplete-multipart.eml"),
+    )
+    .unwrap();
+    fs::write(root.path().join("empty.eml"), b"").unwrap();
+    let output = invoke(root.path(), &["--", "damaged.eml", "empty.eml"], None);
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(
+        text.contains("This email is damaged or incomplete. Export it again from your mail app.")
+    );
+    assert!(
+        text.contains("This file isn't an email. It may be empty or a different kind of file.")
+    );
+}
+#[test]
+fn y7_request_document_names_the_reason_once() {
+    let root = root();
+    for (wire, reason) in [
+        (
+            r#"{"protocol":1,"paths":[],"output_directory":null,"dry_run":true,"colour":"red"}"#,
+            "unknown field `colour`",
+        ),
+        (
+            r#"{"protocol":1,"protocol":1,"paths":[],"output_directory":null,"dry_run":true}"#,
+            "duplicate field `protocol`",
+        ),
+        (
+            r#"{"protocol":1,"paths":[],"output_directory":null,"dry_run":true} trailing"#,
+            "trailing characters",
+        ),
+    ] {
+        let output = invoke(root.path(), &["--request", "-"], Some(wire.as_bytes()));
+        let text = String::from_utf8(output.stderr).unwrap();
+        assert_eq!(
+            text.matches("Invalid request document").count(),
+            1,
+            "{text}"
+        );
+        assert!(text.contains(reason), "{text}");
+    }
+}

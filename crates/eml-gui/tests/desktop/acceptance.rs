@@ -1783,3 +1783,45 @@ fn s6_selection_filter_and_escape_keep_or_clear_the_native_identity() {
     c.window().invoke_clear_selected();
     assert!(c.selected_original().is_none());
 }
+
+#[test]
+fn y3_request_banner_uses_the_plain_folder_explanation() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let input = write(root.path(), "mail.eml", ATTACHMENT);
+    let missing = root.path().join("missing");
+    let mut preferences = Preferences::load(root.path().join("preferences.json"));
+    preferences.set_destination(Some(missing.clone())).unwrap();
+    let c = controller(root.path(), eml_core::run);
+    c.stage(vec![input]).unwrap();
+    pump(&c, || !c.is_busy());
+    assert!(c.window().get_view().banner.contains(&format!(
+        "The save folder isn't available: {}. Reconnect it or choose another folder.",
+        missing.display()
+    )));
+}
+#[test]
+fn y4_unavailable_destination_keeps_checked_rows_and_disables_create() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let input = write(root.path(), "mail.eml", ATTACHMENT);
+    let mut preferences = Preferences::load(root.path().join("preferences.json"));
+    preferences
+        .set_destination(Some(root.path().join("missing")))
+        .unwrap();
+    let c = controller(root.path(), eml_core::run);
+    c.stage(vec![input]).unwrap();
+    pump(&c, || !c.is_busy());
+    assert_eq!(
+        c.window().get_rows().row_count(),
+        1,
+        "The save folder must not erase the selected emails"
+    );
+    c.start_selection();
+    assert!(!c.is_busy(), "Unavailable folder must disable create");
+    c.set_destination(None);
+    pump(&c, || !c.is_busy());
+    c.start_selection();
+    pump(&c, || !c.is_busy());
+    assert!(root.path().join("mail.no-attachments.eml").exists());
+}

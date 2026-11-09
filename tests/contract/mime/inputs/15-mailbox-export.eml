@@ -1,0 +1,72 @@
+From x@example.test Mon Nov  9 10:00:00 2026
+From: a@example.test
+To: b@example.test
+Subject: m0
+Date: Mon, 09 Nov 2026 10:00:00 +0000
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="===============4882289114020751031=="
+
+--===============4882289114020751031==
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+Hello body
+
+--===============4882289114020751031==
+Content-Type: application/pdf
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="report.pdf"
+MIME-Version: 1.0
+
+JVBERi0xLjQgZmFrZQ==
+
+--===============4882289114020751031==--
+
+From x@example.test Mon Nov  9 10:00:00 2026
+From: a@example.test
+To: b@example.test
+Subject: m1
+Date: Mon, 09 Nov 2026 10:00:00 +0000
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="===============2969730636665509364=="
+
+--===============2969730636665509364==
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+Hello body
+
+--===============2969730636665509364==
+Content-Type: application/pdf
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="report.pdf"
+MIME-Version: 1.0
+
+JVBERi0xLjQgZmFrZQ==
+
+--===============2969730636665509364==--
+
+From x@example.test Mon Nov  9 10:00:00 2026
+From: a@example.test
+To: b@example.test
+Subject: m2
+Date: Mon, 09 Nov 2026 10:00:00 +0000
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="===============5408118915240871478=="
+
+--===============5408118915240871478==
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+Hello body
+
+--===============5408118915240871478==
+Content-Type: application/pdf
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="report.pdf"
+MIME-Version: 1.0
+
+JVBERi0xLjQgZmFrZQ==
+
+--===============5408118915240871478==--
+

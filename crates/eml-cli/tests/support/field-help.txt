@@ -1,0 +1,20 @@
+Create body-only copies of EML messages.
+Keep original messages unchanged.
+
+Usage: emlattachmentremover [OPTIONS] [PATH]...
+
+Arguments:
+  [PATH]...  EML files or folders to process. Use '--' before filenames starting with '-'
+
+Options:
+      --output-dir <DIR>  Save copies in an existing folder; mirror selected directory trees
+      --dry-run           Check inputs and planned destinations without writing copies
+      --format <FORMAT>   Choose readable results or protocol-1 JSON lines [default: human] [possible values: human, json]
+      --request <FILE|->  Read a protocol-1 JSON request from FILE, or from stdin with '-'
+  -h, --help              Print help
+  -V, --version           Print version
+
+Examples:
+  emlattachmentremover -- message.eml
+  emlattachmentremover --dry-run --output-dir copies -- mail-folder
+  emlattachmentremover --format json -- message.eml
