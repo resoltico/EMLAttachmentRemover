@@ -389,7 +389,8 @@ fn row_size_and_missing_wording_stay_independent_of_protocol() {
 }
 
 #[test]
-fn report_delivery_failure_keeps_the_typed_published_item() {
+fn x2_real_delivery_failure_uses_core_explanation_and_details() {
+    i_slint_backend_testing::init_no_event_loop();
     let root = tempfile::tempdir().unwrap();
     let input = root.path().join("mail.eml");
     std::fs::write(
@@ -397,75 +398,53 @@ fn report_delivery_failure_keeps_the_typed_published_item() {
         include_bytes!("../../../../tests/contract/mime/inputs/01-gmail-attachment.eml"),
     )
     .unwrap();
-    let request = RunRequest::from_absolute(
-        vec![input],
-        eml_core::OutputLocation::BesideSource,
-        eml_core::RunMode::Create,
-    )
-    .unwrap();
-    let (sender, receiver) = mpsc::channel();
-    let mut sink = RunSink {
-        sender,
-        json: JsonSink::new(BoundedEventBuffer::new(256)),
-    };
-    let result = eml_core::run(&request, &RunControl::default(), &mut sink).unwrap();
-    assert!(result.delivery_failure().is_some());
-    let observed: Vec<_> = receiver.try_iter().collect();
-    let item = observed
-        .iter()
-        .find_map(|e| {
-            if let Observation::Item(item) = e {
-                Some(item)
-            } else {
-                None
-            }
-        })
-        .expect("published typed observation retained");
-    assert_eq!(item.outcome(), Outcome::CopySaved);
-    assert!(item.reveal_path().is_some());
-    assert_eq!(
-        std::fs::read(root.path().join("mail.no-attachments.eml")).unwrap(),
-        include_bytes!("../../../../tests/contract/mime/golden/01-gmail-attachment.eml")
-    );
-    let bytes = sink.json.into_inner().into_bytes();
-    assert!(bytes.starts_with(b"{\"type\":\"start\""));
-    assert_eq!(bytes.iter().filter(|b| **b == b'\n').count(), 1);
-}
-
-#[test]
-fn x2_real_delivery_failure_uses_core_explanation_and_details() {
-    i_slint_backend_testing::init_no_event_loop();
-    let root = tempfile::tempdir().unwrap();
-    let input = root.path().join("mail.eml");
-    std::fs::write(&input, b"Subject: Plain\r\n\r\nBody\r\n").unwrap();
     let c = crate::DesktopController::new(
         |r, control, sink| {
-            sink.json = JsonSink::new(BoundedEventBuffer::new(0));
+            if r.mode == eml_core::RunMode::Create {
+                sink.json = JsonSink::new(BoundedEventBuffer::new(256));
+            }
             eml_core::run(r, control, sink)
         },
         root.path().to_owned(),
         crate::preferences::Preferences::load(root.path().join("settings")),
     )
     .unwrap();
+    c.window().show().unwrap();
     c.stage(vec![input]).unwrap();
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
-    while c.is_busy() {
-        c.tick();
-        assert!(std::time::Instant::now() < deadline);
-        std::thread::yield_now();
+    for create in [false, true] {
+        if create {
+            c.start_selection();
+        }
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while c.is_busy() {
+            c.tick();
+            assert!(std::time::Instant::now() < deadline);
+            thread::yield_now();
+        }
     }
+    let runtime = c.runtime.borrow();
+    let completion = runtime
+        .batch
+        .create
+        .as_ref()
+        .unwrap()
+        .completion
+        .as_ref()
+        .unwrap();
+    assert_eq!(completion.state, WorkerState::Incomplete);
     assert_eq!(
-        c.runtime
-            .borrow()
-            .batch
-            .check
-            .as_ref()
-            .unwrap()
-            .completion
-            .as_ref()
-            .unwrap()
-            .state,
-        WorkerState::Incomplete
+        completion.failure.as_ref().unwrap().code(),
+        ErrorCode::OutputFailed
+    );
+    completion.report.with_report(|r| {
+        assert_eq!(r.items()[0].outcome(), Outcome::CopySaved);
+        assert!(r.items()[0].reveal_path().is_some());
+    });
+    assert!(completion.jsonl.starts_with(b"{\"type\":\"start\""));
+    assert_eq!(completion.jsonl.iter().filter(|b| **b == b'\n').count(), 1);
+    assert_eq!(
+        std::fs::read(root.path().join("mail.no-attachments.eml")).unwrap(),
+        include_bytes!("../../../../tests/contract/mime/golden/01-gmail-attachment.eml")
     );
     assert_eq!(
         c.window().get_view().banner,
@@ -474,4 +453,44 @@ fn x2_real_delivery_failure_uses_core_explanation_and_details() {
     assert!(c.window().get_view().diagnostics.contains(
         "Code: OUTPUT_FAILED\nPhase: delivery\nDetail: Result delivery did not complete."
     ));
+    assert!(
+        i_slint_backend_testing::ElementHandle::find_by_accessible_label(&c.window(), "Details…")
+            .next()
+            .is_some()
+    );
+}
+
+#[test]
+fn x2_caught_and_join_panics_have_no_core_failure() {
+    let root = tempfile::tempdir().unwrap();
+    let request = RunRequest::from_absolute(
+        vec![root.path().join("mail.eml")],
+        eml_core::OutputLocation::BesideSource,
+        eml_core::RunMode::DryRun,
+    )
+    .unwrap();
+    for join_panic in [false, true] {
+        let mut worker = if join_panic {
+            let (_, receiver) = mpsc::channel();
+            WorkerRun {
+                control: RunControl::default(),
+                stopped: false,
+                receiver,
+                task: Some(thread::spawn(|| panic!("outside runner boundary"))),
+                report: ReportHandle::default(),
+            }
+        } else {
+            WorkerRun::start(Arc::new(|_, _, _| panic!("runner panic")), request.clone()).unwrap()
+        };
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        let completion = loop {
+            if let Some(c) = worker.poll() {
+                break c;
+            }
+            assert!(std::time::Instant::now() < deadline);
+            thread::yield_now();
+        };
+        assert_eq!(completion.state, WorkerState::Panicked);
+        assert!(completion.failure.is_none());
+    }
 }

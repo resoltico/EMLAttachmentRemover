@@ -1,4 +1,4 @@
-//! Shared frontend transport for the native Rust business library.
+//! Protocol-1 wire representation for the native Rust business library.
 //!
 //! Request decoding and native path output are independent of stdin reading,
 //! signals and execution. Successful transport is not filesystem admission or a run.
@@ -9,7 +9,6 @@
 pub const PROGRAM_ID: &str = eml_core::product::CLI_NAME;
 
 mod event;
-mod observation;
 mod output;
 mod output_buffer;
 mod path;

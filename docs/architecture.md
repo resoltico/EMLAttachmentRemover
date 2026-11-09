@@ -7,7 +7,7 @@ and human outcome vocabulary. Frontends adapt inputs and render those facts.
 |---|---|
 | `eml-message` | Pure byte-based MIME parsing, body classification, plans, independent retained-span authorization and verification |
 | `eml-core` | Native request admission, collection, destination preflight, filesystem execution, receipt qualification, settled-item facts, human display, diagnostics, product identity and vocabulary |
-| `eml-protocol` | Wire-only protocol-1 request decoding, native path encoding, records, core-fact adaptation and bounded JSON output |
+| `eml-protocol` | Wire-only protocol-1 request decoding, native path encoding, records and bounded JSON output |
 | `emlattachmentremover` | Public CLI arguments, request transport, signals and human/JSON sinks |
 | `eml-gui` | Pure batch transitions, Slint views and GUI wording, exact report export, native ingress/preferences and macOS adapters |
 | `xtask` | Distribution archives, notices and the local merge gate |
@@ -24,8 +24,9 @@ inventing core outcomes; the interface keeps the failure cause and lifecycle.
 outcome interpretation and report consumers. Complete namespace edge accounting,
 method-specific native witnesses and cleanup facts must agree. Private success
 constructors and actual native binding/readback checks remain separate safeguards.
-The protocol crate converts owned records to core facts and uses core's phase and
-removal-reason types through local serde bridges; core has no JSON dependency.
+The protocol crate structurally decodes records and uses core's phase and
+removal-reason types through local serde bridges; it does not convert wire records
+into domain outcomes. Core has no JSON dependency.
 The GUI does not implement a second outcome converter or native-path decoder.
 Independent reports can retain relative or foreign-host evidence without
 turning it into native navigation. The GUI retains core’s native operational
@@ -149,7 +150,10 @@ still settle first. Read-only checks do not delay quit. Decisions invalidate
 native-panel epochs and refuse drops; committed shutdown admits no more work.
 
 The worker catches unwinding panics, retains earlier typed observations and report
-bytes, and settles a whole-run failure. Abort and out-of-memory end the app; this
+bytes, and settles a distinct panic state without inventing a core failure. Its
+unexpected-stop banner has no Processing details because no core diagnostic exists.
+Real report delivery failures keep core’s explanation and diagnostic fields.
+Abort and out-of-memory end the app; this
 is accepted. As with a crash, Quit Now may leave a private staging file; abandoned
 stages are never swept. Final copies are complete or absent.
 
@@ -174,8 +178,8 @@ power loss is not promised; a crash can leave a private staging file.
 `eml_core::vocabulary` owns `Outcome`, severity, explanations, run failures,
 part names, decimal byte formatting and `BatchTotals`. The CLI and GUI render
 these values; `wording.rs` holds only desktop interaction and layout wording.
-`eml_protocol` adapts accepted records into core facts without changing protocol-1
-JSON; `RunReport` projects settled totals through core aggregation. `present.rs` unites check/create rows by lossless native source
+`eml_protocol` owns only protocol-1 wire representation; `RunReport` projects
+settled core facts through core aggregation. `present.rs` unites check/create rows by lossless native source
 path. A current create item takes precedence; before it arrives, the previous
 create result or a known check failure remains visible. Otherwise the row waits.
 Interrupted work is Not processed. Completed missing sources are No longer found;
@@ -205,7 +209,8 @@ their focus/reset behavior. The native GUI uses Winit on macOS only, with builti
 Cupertino widgets and native menus. Linux uses the testing backend for headless development; Windows supports core
 and the CLI only. Human path formatting is shared in `eml-core`, separate from
 unchanged wire display strings. Preferences keep native paths in memory and use
-native encoding at the settings boundary, validated by core's path policy.
+their own Unix-byte/base64 encoding at the settings boundary, validated by
+core's path policy.
 Unreadable, invalid or old string settings give defaults silently and are replaced
 on the next save, without migration.
 
@@ -226,5 +231,5 @@ a no-op waker to remove archived `pin-utils`; the audit policy is unchanged.
 
 Processing details shows the whole-run core diagnostic's Code, Phase and Detail,
 plus its native cause. Item-only failures stay in selected-item details; without a
-whole-run failure the expandable control is absent. Core owns request admission
+whole-run core failure, including a panic, the expandable control is absent. Core owns request admission
 wording. There is no stderr capture or subprocess protocol reducer in the GUI.

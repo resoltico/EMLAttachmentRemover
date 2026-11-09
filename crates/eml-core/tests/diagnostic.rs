@@ -96,19 +96,17 @@ fn source_publish_and_interruption_phase_boundaries_are_distinct() {
 }
 
 #[test]
-fn known_wire_guidance_does_not_invent_meanings_for_future_or_misspelled_codes() {
-    use eml_core::ErrorCode;
-    assert_eq!(
-        ErrorCode::from_wire_name("MALFORMED"),
-        Some(ErrorCode::Malformed)
-    );
+fn wire_names_are_unique_exact_and_do_not_invent_unknown_codes() {
+    let names: BTreeSet<_> = ErrorCode::ALL.iter().map(|code| code.as_str()).collect();
+    assert_eq!(names.len(), ErrorCode::ALL.len());
+    assert!(names.contains("MALFORMED"));
+    assert!(!names.contains("malformed"));
+    assert!(!names.contains("FUTURE_CODE"));
     assert!(
         eml_core::vocabulary::Outcome::Failed(ErrorCode::Malformed)
             .explanation()
             .contains("export")
     );
-    assert!(ErrorCode::from_wire_name("malformed").is_none());
-    assert!(ErrorCode::from_wire_name("FUTURE_CODE").is_none());
 }
 
 #[test]
