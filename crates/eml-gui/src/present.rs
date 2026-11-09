@@ -249,6 +249,13 @@ pub(super) fn rows(batch: &Batch) -> Vec<Row> {
 }
 fn run_failure(batch: &Batch) -> Option<OperationFailure> {
     let slot = batch.create.as_ref().or(batch.check.as_ref())?;
+    if slot
+        .completion
+        .as_ref()
+        .is_some_and(|c| c.state == crate::worker::WorkerState::Panicked)
+    {
+        return None;
+    }
     if let Some(failure) = slot.completion.as_ref().and_then(|c| c.failure.as_ref()) {
         return Some(failure.clone());
     }
@@ -268,9 +275,9 @@ pub(super) fn banner(batch: &Batch) -> String {
     if slot
         .completion
         .as_ref()
-        .is_some_and(|c| c.state == crate::worker::WorkerState::Incomplete)
+        .is_some_and(|c| c.state == crate::worker::WorkerState::Panicked)
     {
-        return words::WORKER_FAILED.into();
+        return words::STOPPED_UNEXPECTEDLY.into();
     }
     run_failure(batch).map_or_else(String::new, |error| {
         if slot

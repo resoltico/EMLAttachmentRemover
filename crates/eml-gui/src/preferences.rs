@@ -1,6 +1,7 @@
 //! Recent destination and report folders, replacing invalid settings on the next save.
-use eml_protocol::{NativePathValue, records::NativePathRecord};
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::os::unix::{ffi::OsStrExt, ffi::OsStringExt};
 use std::{
     fs,
     io::{self, Write},
@@ -30,20 +31,33 @@ struct Settings {
 fn folder_valid(path: &Path) -> bool {
     path.is_absolute() && eml_core::validate_native_path(path).is_ok()
 }
-fn decode_folder(record: NativePathRecord) -> Option<PathBuf> {
-    record.native_path().filter(|path| folder_valid(path))
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SavedFolder {
+    unix_bytes: String,
+}
+fn encode_folder(path: &Path) -> SavedFolder {
+    SavedFolder {
+        unix_bytes: STANDARD.encode(path.as_os_str().as_bytes()),
+    }
+}
+fn decode_folder(record: SavedFolder) -> Option<PathBuf> {
+    let path = PathBuf::from(std::ffi::OsString::from_vec(
+        STANDARD.decode(record.unix_bytes).ok()?,
+    ));
+    folder_valid(&path).then_some(path)
 }
 fn serialize_recent<S: Serializer>(paths: &[PathBuf], serializer: S) -> Result<S::Ok, S::Error> {
     paths
         .iter()
-        .map(|path| NativePathValue::new(path))
+        .map(|path| encode_folder(path))
         .collect::<Vec<_>>()
         .serialize(serializer)
 }
 fn deserialize_recent<'de, D: Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Vec<PathBuf>, D::Error> {
-    let records = Vec::<NativePathRecord>::deserialize(deserializer)?;
+    let records = Vec::<SavedFolder>::deserialize(deserializer)?;
     if records.len() > 3 {
         return Err(serde::de::Error::custom(
             crate::wording::INVALID_SAVED_FOLDERS,
@@ -61,14 +75,12 @@ fn serialize_folder<S: Serializer>(
     path: &Option<PathBuf>,
     serializer: S,
 ) -> Result<S::Ok, S::Error> {
-    path.as_deref()
-        .map(NativePathValue::new)
-        .serialize(serializer)
+    path.as_deref().map(encode_folder).serialize(serializer)
 }
 fn deserialize_folder<'de, D: Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Option<PathBuf>, D::Error> {
-    Option::<NativePathRecord>::deserialize(deserializer)?
+    Option::<SavedFolder>::deserialize(deserializer)?
         .map(|record| {
             decode_folder(record)
                 .ok_or_else(|| serde::de::Error::custom(crate::wording::INVALID_SAVED_FOLDERS))
@@ -206,23 +218,8 @@ mod tests {
         );
     }
 
-    #[cfg(windows)]
-    #[test]
-    fn x3_native_destination_recents_and_report_folder_survive_reload() {
-        use std::{ffi::OsString, os::windows::ffi::OsStringExt};
-        let root = tempfile::tempdir().unwrap();
-        assert_native_folder_round_trip(
-            root.path()
-                .join(OsString::from_wide(&[b'd' as u16, 0xd800])),
-            root.path()
-                .join(OsString::from_wide(&[b'r' as u16, 0xdc00])),
-            root.path()
-                .join(OsString::from_wide(&[b's' as u16, 0xd801])),
-        );
-    }
-
     fn native(path: &Path) -> serde_json::Value {
-        serde_json::to_value(NativePathValue::new(path)).unwrap()
+        serde_json::to_value(encode_folder(path)).unwrap()
     }
 
     #[test]
@@ -233,21 +230,13 @@ mod tests {
         let valid = native(root.path());
         let settings = json!({"recent_destinations": [valid.clone()],
             "last_destination": valid.clone(), "last_report_folder": valid.clone()});
-        let mut foreign = valid.clone();
-        foreign["encoding"] = if cfg!(unix) {
-            "windows-utf16le"
-        } else {
-            "unix-bytes"
-        }
-        .into();
         let mut malformed = valid.clone();
-        malformed["base64"] = "%%%".into();
+        malformed["unix_bytes"] = "%%%".into();
         let oversized = root.path().join("x".repeat(eml_core::MAX_PATH_UNITS + 1));
         let deep = root
             .path()
             .join("x/".repeat(eml_core::MAX_PATH_COMPONENTS + 1));
         let bad = [
-            foreign,
             malformed,
             native(Path::new("relative")),
             native(&root.path().join("bad\0")),
@@ -266,6 +255,14 @@ mod tests {
                 } else {
                     record.clone()
                 };
+                let error = serde_json::from_value::<Settings>(invalid.clone())
+                    .err()
+                    .expect("invalid settings refused");
+                assert!(
+                    error
+                        .to_string()
+                        .contains(crate::wording::INVALID_SAVED_FOLDERS)
+                );
                 fs::write(&file, serde_json::to_vec(&invalid).unwrap()).unwrap();
                 let mut preferences = Preferences::load(file.clone());
                 assert!(preferences.destination().is_none(), "{field}: {record}");
@@ -285,6 +282,15 @@ mod tests {
             "last_destination": valid.clone(), "last_report_folder": valid}),
             json!({"recent_destinations": ["/old/destination"], "last_destination": "/old/destination", "last_report_folder": null}),
         ] {
+            if invalid["recent_destinations"].as_array().unwrap().len() > 3 {
+                assert!(
+                    serde_json::from_value::<Settings>(invalid.clone())
+                        .err()
+                        .unwrap()
+                        .to_string()
+                        .contains(crate::wording::INVALID_SAVED_FOLDERS)
+                );
+            }
             fs::write(&file, serde_json::to_vec(&invalid).unwrap()).unwrap();
             let mut preferences = Preferences::load(file.clone());
             assert!(preferences.destination().is_none());

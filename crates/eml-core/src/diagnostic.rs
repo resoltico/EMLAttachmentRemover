@@ -85,10 +85,6 @@ macro_rules! error_codes {
             pub const fn as_str(self) -> &'static str {
                 match self { $(Self::$name => $wire,)+ }
             }
-            /// Resolve only a known wire name; future frontend codes remain unknown.
-            pub fn from_wire_name(name: &str) -> Option<Self> {
-                match name { $($wire => Some(Self::$name),)+ _ => None }
-            }
             /// Phases allowed by this semantic code's contract.
             pub const fn allowed_phases(self) -> &'static [ErrorPhase] {
                 match self { $(Self::$name => &[$(ErrorPhase::$phase,)+],)+ }

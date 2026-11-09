@@ -101,13 +101,55 @@ fn w4_report_is_the_protocol_one_contract_from_real_core() {
                     eml_core::ErrorPhase::Prepare
                 );
             } else {
-                assert!(
-                    item.publication.is_qualified()
-                        || item
-                            .existing_observation
-                            .value()
-                            .is_some_and(records::ExistingRecord::is_qualified)
-                );
+                let (address, file, namespace) = if existing {
+                    let observed = item.existing_observation.value().unwrap();
+                    assert!(observed.identity.value().is_some());
+                    assert_eq!(observed.bytes_equal.value(), Some(&true));
+                    assert!(observed.stable);
+                    (
+                        observed.address,
+                        &observed.file_sync,
+                        &observed.namespace_sync,
+                    )
+                } else {
+                    let published = &item.publication;
+                    assert_eq!(published.state, records::Publication::Published);
+                    assert!(published.candidate_identity.value().is_some());
+                    assert!(matches!(
+                        published.cleanup.state,
+                        records::Cleanup::Complete | records::Cleanup::NotNeeded
+                    ));
+                    assert!(published.cleanup.native_code.value().is_none());
+                    assert!(published.cleanup.residual_name.value().is_none());
+                    (
+                        published.address,
+                        &published.file_sync,
+                        &published.namespace_sync,
+                    )
+                };
+                assert_eq!(address, records::Address::Verified);
+                for (method, state, code) in [
+                    (file.method, file.state, file.native_code.value()),
+                    (
+                        namespace.method,
+                        namespace.state,
+                        namespace.native_code.value(),
+                    ),
+                ] {
+                    assert_eq!(state, records::Synchronization::Succeeded);
+                    match method {
+                        records::SynchronizationMethod::NotRequested => {
+                            panic!("synchronization was required")
+                        }
+                        records::SynchronizationMethod::FsyncFullfsyncUnsupported => {
+                            assert!(matches!(code, Some(22 | 45 | 102)))
+                        }
+                        _ => assert!(code.is_none()),
+                    }
+                }
+                assert!(namespace.required_edges > 0 && namespace.required_edges <= 513);
+                assert_eq!(namespace.completed_edges, namespace.required_edges);
+                assert!(namespace.failed_edge_index.value().is_none());
                 assert!(
                     item.destination
                         .value()

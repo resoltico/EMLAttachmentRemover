@@ -46,6 +46,7 @@ pub(super) enum WorkerState {
     Stopped,
     Rejected,
     Incomplete,
+    Panicked,
 }
 #[derive(Default)]
 pub(super) struct RunReport {
@@ -121,7 +122,7 @@ impl WorkerCompletion {
 struct Finished {
     outcome: Option<RunOutcome>,
     failure: Option<OperationFailure>,
-    rejected: bool,
+    state: WorkerState,
     jsonl: Arc<[u8]>,
 }
 pub(super) struct WorkerRun {
@@ -149,26 +150,27 @@ impl WorkerRun {
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 runner(&request, &run_control, &mut sink)
             }));
-            let (outcome, failure, rejected) = match result {
+            let (outcome, failure, state) = match result {
                 Ok(Ok(outcome)) => {
                     let failure = outcome
                         .delivery_failure()
                         .map(eml_core::DeliveryFailure::operation_failure);
-                    (Some(outcome), failure, false)
+                    let state = if failure.is_some() {
+                        WorkerState::Incomplete
+                    } else if outcome.interrupted() {
+                        WorkerState::Stopped
+                    } else {
+                        WorkerState::Completed
+                    };
+                    (Some(outcome), failure, state)
                 }
-                Ok(Err(error)) => (None, Some(error.into_failure()), true),
-                Err(_) => (
-                    None,
-                    Some(OperationFailure::delivery(io::Error::other(
-                        crate::wording::WORKER_FAILED,
-                    ))),
-                    false,
-                ),
+                Ok(Err(error)) => (None, Some(error.into_failure()), WorkerState::Rejected),
+                Err(_) => (None, None, WorkerState::Panicked),
             };
             Finished {
                 outcome,
                 failure,
-                rejected,
+                state,
                 jsonl: sink.json.into_inner().into_bytes().into(),
             }
         })?;
@@ -201,26 +203,11 @@ impl WorkerRun {
             .join()
             .unwrap_or_else(|_| Finished {
                 outcome: None,
-                failure: Some(OperationFailure::delivery(io::Error::other(
-                    crate::wording::WORKER_FAILED,
-                ))),
-                rejected: false,
+                failure: None,
+                state: WorkerState::Panicked,
                 jsonl: Arc::from([]),
             });
         self.drain();
-        let state = if finished.rejected {
-            WorkerState::Rejected
-        } else if finished.failure.is_some() {
-            WorkerState::Incomplete
-        } else if finished
-            .outcome
-            .as_ref()
-            .is_some_and(RunOutcome::interrupted)
-        {
-            WorkerState::Stopped
-        } else {
-            WorkerState::Completed
-        };
         let mut report = self.report.0.borrow_mut();
         if let Some(outcome) = finished.outcome {
             report.summary = Some(outcome);
@@ -228,7 +215,7 @@ impl WorkerRun {
         report.settled = true;
         drop(report);
         Some(WorkerCompletion {
-            state,
+            state: finished.state,
             failure: finished.failure,
             report: self.report.clone(),
             jsonl: finished.jsonl,

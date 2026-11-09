@@ -29,7 +29,9 @@ pub(super) fn header(
         .is_some_and(|completion| {
             matches!(
                 completion.state,
-                crate::worker::WorkerState::Incomplete | crate::worker::WorkerState::Rejected
+                crate::worker::WorkerState::Incomplete
+                    | crate::worker::WorkerState::Rejected
+                    | crate::worker::WorkerState::Panicked
             )
         });
     let (title, parts) = match batch.state() {
@@ -239,7 +241,7 @@ pub(super) const MISSING: &str = "No longer found";
 pub(super) const MISSING_DETAIL: &str = "This file was no longer there when the copies were made.";
 pub(super) const START_FAILED: &str = "Couldn’t copy";
 pub(super) const LAUNCH_FAILED: &str = "Couldn’t start processing. Try again.";
-pub(super) const WORKER_FAILED: &str =
+pub(super) const STOPPED_UNEXPECTEDLY: &str =
     "Processing stopped unexpectedly. Results shown may be incomplete. Save Report… for details.";
 pub(super) const STARTING: &str = "Starting…";
 pub(super) const CHECK_METADATA: &str = "Metadata from: read-only check\n";

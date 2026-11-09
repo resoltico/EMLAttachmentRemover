@@ -2,12 +2,13 @@
 
 ## [Unreleased]
 
+- A crash during processing is reported as such, rather than as a result-delivery failure.
 - The Mac app no longer contains the CLI; install the macOS CLI archive to use it from Terminal.
 - Run the desktop directly on core with typed results and cooperative stop. Keep report export as protocol-1 JSON; unwinding failures retain earlier results.
 - Move shared display and request admission into core; omit the repeated existing-copy count from re-run summaries.
 - Linux builds and CLI binaries require Ubuntu 26.04.
 - CLI human output is rewritten in plain language; JSON is unchanged. Update scripts that read human output to use protocol-1 JSON instead.
-- Saved folders use lossless native encoding; earlier string settings reset to defaults. CLI and GUI path labels distinguish invalid native units without changing protocol-1 JSON.
+- Saved folders use lossless GUI-owned native encoding; incompatible settings reset to defaults. CLI and GUI path labels distinguish invalid native units without changing protocol-1 JSON.
 - The desktop GUI builds on macOS only; Linux builds the CLI and runs headless GUI tests; Windows builds the CLI.
 - Use plain copy and cleanup explanations. Align CLI details under paths, omit failed destinations and redundant sizes, and share verdict-first summaries with the app.
 - Put detail actions beside the email name, cap the pane at 30%/200 px and align column headers with their text. Theme owns UI geometry.
@@ -16,15 +17,15 @@
 - Close Rust wording and Slint visual-token guard bypasses, and share the transparent colour token.
 - Check dirty and newly added source in the verification budget and shell lint; include verification scripts in harness size and fail on empty/missing inputs.
 - Share local/hosted lint commands, read tool pins from the invoking workspace and reuse trusted CI caches for release builds. Remove obsolete Windows sentinel artifacts.
-- Share receipt qualification across execution, outcome interpretation and report reading; reject inconsistent successful sync, cleanup and read-only plan claims.
-- Use core phase/removal vocabularies and capability decisions in adapters; reject known code/phase mismatches and incompatible native-worker paths. Valid protocol-1 JSON stays unchanged.
-- Keep Continue available after stopping before observations; count known launch failures without inventing a core outcome.
+- Share receipt qualification across execution and outcome interpretation; reject inconsistent successful sync, cleanup and read-only plan claims.
+- Use core phase/removal vocabularies and capability decisions in adapters; reject known code/phase mismatches. Valid protocol-1 JSON stays unchanged.
+- Keep Continue available after stopping before observations; show thread-start failures without inventing a core outcome.
 - Use core’s remaining-work aggregation for CLI and stopped app summaries, including work that never produced a preview row.
 - Keep incomplete selection checking separate from unreadable inputs; a blocked inventory no longer appears as zero emails.
 - Distinguish completed cleanup with a retained native error from unconfirmed cleanup, preserving failure status and receipt facts.
 - Show core publication, cleanup and inline-resource notices in app details; keep cleanup resource names and native causes in human diagnostics.
 - List attachment names and kinds in human CLI output. Use shared request errors, canonical diagnostic phases and known-result counts in the app.
-- Retain CLI refusal diagnostics in expandable app details; Continue describes verification of existing copies. Exact JSON report export is unchanged.
+- Continue describes verification of existing copies; exact JSON report export is unchanged.
 - Keep numeric native error causes in human CLI diagnostics; protocol-1 JSON stays unchanged.
 - Show readable fallbacks for whitespace-only attachment names, escape filename controls in the app, and avoid false zero-save or new-write claims when results need checking.
 - The CLI and app share outcome labels, explanations, attachment names, size formatting and settled headlines from core.
@@ -32,7 +33,7 @@
 - Replace desktop run history and its queue with one batch and one list; adding emails after completion starts a new batch immediately.
 - Preview files and folders automatically without writing. Remove Attachments saves copies and updates the same list; the CLI keeps --dry-run.
 - Show attachment names, before/after sizes and plain-language results, with one problems filter and a scrolling detail pane. Copy Details includes native paths and diagnostics.
-- Use Stop and Continue for interrupted batches. Force is limited to Quit Now after five seconds of Stop and Quit; exiting waits for the worker and report exports.
+- Use Stop and Continue for interrupted batches. Quit Now is offered after five seconds of Stop and Quit; exit still waits for active report exports.
 - Restore Finder Open With for emails and folders; Dock-icon drops use the same handler.
 - Keep batch reports in memory; Save Report exports exact settled bytes through the native save panel, preserving approved replacement and prior targets on failure.
 - Silently use defaults for unreadable or invalid desktop preferences and replace them on the next save; keep three recent destinations and the last report folder.

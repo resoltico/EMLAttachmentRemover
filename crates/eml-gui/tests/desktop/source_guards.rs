@@ -426,56 +426,6 @@ fn rust_sources(root: &Path) -> Vec<PathBuf> {
     }
     paths
 }
-#[derive(Default)]
-struct WireLookups(Vec<String>);
-impl<'ast> Visit<'ast> for WireLookups {
-    fn visit_expr_call(&mut self, call: &'ast syn::ExprCall) {
-        if let syn::Expr::Path(path) = call.func.as_ref()
-            && path
-                .path
-                .segments
-                .last()
-                .is_some_and(|s| s.ident == "from_wire_name")
-        {
-            self.0.push("from_wire_name".into());
-        }
-        syn::visit::visit_expr_call(self, call);
-    }
-    fn visit_item_mod(&mut self, item: &'ast syn::ItemMod) {
-        if !item.attrs.iter().any(|a| {
-            a.path().is_ident("cfg")
-                && a.parse_args::<syn::Path>()
-                    .is_ok_and(|p| p.is_ident("test"))
-        }) {
-            syn::visit::visit_item_mod(self, item);
-        }
-    }
-}
-#[test]
-fn w2_policy_uses_typed_errors() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    for entry in fs::read_dir(root.join("crates")).unwrap() {
-        let src = entry.unwrap().path().join("src");
-        if !src.is_dir() {
-            continue;
-        }
-        for path in rust_sources(&src) {
-            if ["request.rs", "records.rs", "observation.rs"]
-                .iter()
-                .any(|name| path.ends_with(Path::new("eml-protocol/src").join(name)))
-            {
-                continue;
-            }
-            let mut visitor = WireLookups::default();
-            visitor.visit_file(&syn::parse_file(&fs::read_to_string(&path).unwrap()).unwrap());
-            assert!(
-                visitor.0.is_empty(),
-                "Wire code lookup outside decoding: {}",
-                path.display()
-            );
-        }
-    }
-}
 #[test]
 fn w3_rows_do_not_decode_protocol_records() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -533,20 +483,43 @@ fn protocol_uses(tree: &syn::UseTree, prefix: &str, names: &mut Vec<String>) {
         syn::UseTree::Glob(_) => names.push(format!("{prefix}*")),
     }
 }
+#[derive(Default)]
+struct ProtocolImports(Vec<String>);
+impl<'ast> Visit<'ast> for ProtocolImports {
+    fn visit_item_extern_crate(&mut self, item: &'ast syn::ItemExternCrate) {
+        self.0.push(item.ident.to_string());
+    }
+    fn visit_item_use(&mut self, item: &'ast syn::ItemUse) {
+        protocol_uses(&item.tree, "", &mut self.0);
+    }
+    fn visit_path(&mut self, path: &'ast syn::Path) {
+        if path
+            .segments
+            .first()
+            .is_some_and(|p| p.ident == "eml_protocol")
+        {
+            self.0.push(
+                path.segments
+                    .iter()
+                    .take(2)
+                    .map(|p| p.ident.to_string())
+                    .collect::<Vec<_>>()
+                    .join("::"),
+            );
+        }
+        syn::visit::visit_path(self, path);
+    }
+}
 #[test]
 fn x4_gui_protocol_imports_are_only_report_output() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     for path in rust_sources(&root.join("src")) {
-        let file = syn::parse_file(&fs::read_to_string(&path).unwrap()).unwrap();
-        let mut names = Vec::new();
-        for item in file.items {
-            if let syn::Item::Use(item) = item {
-                protocol_uses(&item.tree, "", &mut names);
-            }
-        }
-        for name in names
+        let mut imports = ProtocolImports::default();
+        imports.visit_file(&syn::parse_file(&fs::read_to_string(&path).unwrap()).unwrap());
+        for name in imports
+            .0
             .iter()
-            .filter(|name| name.starts_with("eml_protocol::"))
+            .filter(|n| n.as_str() == "eml_protocol" || n.starts_with("eml_protocol::"))
         {
             assert!(
                 [
@@ -560,4 +533,13 @@ fn x4_gui_protocol_imports_are_only_report_output() {
             );
         }
     }
+}
+
+#[test]
+fn x4_qualified_report_constructor_is_an_allowed_item() {
+    let mut imports = ProtocolImports::default();
+    imports.visit_file(&syn::parse_quote! {
+        fn report() { let _ = eml_protocol::BoundedEventBuffer::new(1); }
+    });
+    assert_eq!(imports.0, ["eml_protocol::BoundedEventBuffer"]);
 }
