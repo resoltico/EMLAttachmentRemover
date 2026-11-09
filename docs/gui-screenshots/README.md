@@ -68,3 +68,9 @@ stale post-resize size were retained outside the repository; the gallery uses
 separate resize and capture calls. Only the OS title bar is cropped in the size
 gallery, and no application content is scaled or retouched. Original preferences,
 appearance, CLI and debug-app binaries were restored and hashes compared.
+
+The weekly-gates follow-up refreshes the toolkit views, six native size/theme
+views and the field filter/done/rerun views for the contextual “Not an email” /
+“Damaged email” and shorter mailbox labels. Done/rerun field views show the
+problems filter enabled. Other native field images retain their earlier scenario
+evidence. Preferences and appearance were restored exactly after recapture.

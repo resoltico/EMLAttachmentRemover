@@ -680,6 +680,13 @@ impl Outcome {
             Self::Failed(code) => failure(code).0,
         }
     }
+    /// Contextual failure label, preserving stronger independent outcome facts.
+    pub fn label_for(self, failure: Option<&crate::OperationFailure>) -> &'static str {
+        match (self, failure) {
+            (Self::Failed(code), Some(failure)) if code == failure.code() => failure.label(),
+            _ => self.label(),
+        }
+    }
     /// Count wording shared by summaries and the desktop header.
     pub fn count_label(self, n: usize) -> String {
         let phrase = match self {
@@ -737,11 +744,11 @@ fn failure(code: crate::ErrorCode) -> (&'static str, &'static str) {
     use crate::ErrorCode::*;
     match code {
         MailboxFile => (
-            "Several emails in one file",
+            "Several emails in a file",
             "This file holds several emails (a mailbox export). Export the emails one at a time, then add them.",
         ),
         Malformed => (
-            "Not a valid email",
+            "Damaged email",
             "This file isn't a valid email. It may be empty or not an email at all; if it came from your mail app, export it again.",
         ),
         NoBody => (

@@ -265,3 +265,10 @@ The action label shows core’s eligible email count even while filtering proble
 The filter’s filled/checked state and Showing problems text make its scope clear.
 Unreadable settings use defaults with a single note until the user chooses a
 folder or saves new preferences; this setting-specific note belongs to the GUI.
+
+A nested multipart's non-empty epilogue is omitted with its close-delimiter
+line break: RFC 2046's optional `CRLF epilogue` is one unit. The enclosing
+delimiter's own framing break terminates the retained close line. Transport
+padding stays exact. Empty nested epilogues retain both original framing breaks;
+root epilogues start after the close line's break. No line endings are normalized.
+The `after_message_end` byte count includes the entire omitted unit.

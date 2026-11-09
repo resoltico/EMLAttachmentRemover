@@ -722,7 +722,7 @@ fn u3_plain_outcomes_and_diagnostics_preserve_process_exit_contract() {
         (
             vec!["--dry-run", "--", "empty.eml", "garbage.eml", "notes.txt"],
             1,
-            vec!["Not a valid email"],
+            vec!["Not an email"],
         ),
         (vec!["--", "missing.eml"], 1, vec!["Can’t be read"]),
     ] {
@@ -873,7 +873,7 @@ fn v9_cli_item_layout() {
     );
     let text = String::from_utf8(output.stdout).unwrap();
     for line in text.lines() {
-        if line.starts_with("Not a valid email") || line.starts_with("No attachments") {
+        if line.starts_with("Not an email") || line.starts_with("No attachments") {
             assert!(
                 !line.contains("→") && !line.contains("0 attachments"),
                 "{line}"

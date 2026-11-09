@@ -109,9 +109,13 @@ pub(super) fn open_directory(
     let path = path::absolute(&path)?;
     let file = open(&path, FILE_READ_ATTRIBUTES, OPEN_EXISTING, follow)?;
     let attributes = basic(&file)?.FileAttributes;
-    if attributes & FILE_ATTRIBUTE_DIRECTORY == 0
-        || (!follow && attributes & FILE_ATTRIBUTE_REPARSE_POINT != 0)
-    {
+    if attributes & FILE_ATTRIBUTE_DIRECTORY == 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::NotADirectory,
+            "Object is not a directory",
+        ));
+    }
+    if !follow && attributes & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "Destination edge is not an ordinary directory",

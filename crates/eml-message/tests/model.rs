@@ -308,7 +308,7 @@ fn removal(node: &Rendered, reason: RemovalReason) -> Expected {
         stripped: BTreeSet::new(),
     }
 }
-fn expected(node: &Rendered) -> Result<Expected, Refusal> {
+fn expected(node: &Rendered, enclosed: bool) -> Result<Expected, Refusal> {
     if node.disposition.is_attachment() && !node.root {
         return Ok(removal(node, RemovalReason::Attachment));
     }
@@ -339,7 +339,7 @@ fn expected(node: &Rendered) -> Result<Expected, Refusal> {
             identity: true,
             child,
         } => {
-            let result = expected(child)?;
+            let result = expected(child, enclosed)?;
             removals = result.removals;
             stripped = result.stripped;
             if let Some(copy) = result.copy {
@@ -359,7 +359,7 @@ fn expected(node: &Rendered) -> Result<Expected, Refusal> {
                 let result = if selected.is_some_and(|selected| selected != index) {
                     removal(child, RemovalReason::RelatedResource)
                 } else {
-                    expected(child)?
+                    expected(child, true)?
                 };
                 removals.extend(result.removals);
                 stripped.extend(result.stripped);
@@ -372,12 +372,21 @@ fn expected(node: &Rendered) -> Result<Expected, Refusal> {
             }
             // Every generated multipart has an epilogue, so its copy always changes.
             let ending = suffix.len() - b"model epilogue".len();
-            body.extend(&suffix[..ending]);
+            let close_end = if enclosed {
+                suffix[..ending]
+                    .iter()
+                    .rposition(|b| !matches!(b, b'\r' | b'\n'))
+                    .unwrap()
+                    + 1
+            } else {
+                ending
+            };
+            body.extend(&suffix[..close_end]);
             removals.push(RemovedPart {
                 section: node.section.clone(),
                 content_type: "application/octet-stream".into(),
                 filename: None,
-                bytes: 14,
+                bytes: (suffix.len() - close_end) as u64,
                 reason: RemovalReason::AfterMessageEnd,
             });
             changed = true;
@@ -427,7 +436,7 @@ proptest! {
     #![proptest_config(model_config())]
     #[test] fn semantic_model_preserves_all_authorized_bytes(model in models()) {
         let rendered=render(&model,true,String::new(),None,false,&mut 0);
-        let oracle=expected(&rendered);let actual=prepare_message(&rendered.wire,&RunControl::default());
+        let oracle=expected(&rendered, false);let actual=prepare_message(&rendered.wire,&RunControl::default());
         match oracle {
             Err(kind)=>prop_assert!(matches!(actual,Err(PreparationError::Refused{kind:actual,..}) if actual==kind), "Expected the model refusal"),
             Ok(Expected{copy:None,..})=>prop_assert!(matches!(actual,Err(PreparationError::Refused{kind:Refusal::NoBody,..})), "Expected no supported body"),

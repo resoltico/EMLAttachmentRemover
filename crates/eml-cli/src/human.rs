@@ -207,7 +207,11 @@ fn write_item(writer: &mut impl Write, value: &eml_core::ItemEvent<'_>) -> io::R
     let facts = OutcomeFacts::from(&value.result);
     let data = value.result.metadata();
     let outcome = Outcome::from(&facts, data.map_or(0, |d| d.removed.len()));
-    write_label(writer, outcome, value.source.display)?;
+    let failure = match &value.result {
+        eml_core::ItemResult::Failed(f) => Some(f.error()),
+        _ => None,
+    };
+    write_label(writer, outcome.label_for(failure), value.source.display)?;
     if outcome.severity() != Severity::Failure
         && data.is_some_and(|d| !d.removed.is_empty())
         && let Some(path) = value.destination
@@ -486,15 +490,11 @@ mod tests {
     }
 }
 
-fn write_label(
-    writer: &mut impl Write,
-    outcome: Outcome,
-    source: &std::path::Path,
-) -> io::Result<()> {
+fn write_label(writer: &mut impl Write, label: &str, source: &std::path::Path) -> io::Result<()> {
     write!(
         writer,
         "{:<LABEL_WIDTH$} {}",
-        outcome.label(),
+        label,
         eml_core::display::DisplayPath::new(source)
     )
 }
