@@ -878,6 +878,19 @@ impl DestinationPlan<'_> {
         if control.is_stopped() {
             return Err(execution_interrupted());
         }
+        let expected_root = self.records[index]
+            .destination()
+            .expect("known destination")
+            .existing_prefix
+            .first()
+            .copied()
+            .ok_or_else(|| {
+                OperationFailure::new(
+                    ErrorCode::AddressUnverified,
+                    ErrorPhase::Address,
+                    "The save folder had no bound root when it was checked",
+                )
+            })?;
         let directory = match &self.sources.request.output {
             OutputLocation::BesideSource => source_parent(&self.sources, index, control)
                 .map_err(|error| error.during_execution(ErrorPhase::Existing))?,
@@ -889,12 +902,7 @@ impl DestinationPlan<'_> {
                 .destination_directory(root)
                 .map_err(destination_binding_failure)?,
         };
-        if directory.identity()
-            != self.records[index]
-                .destination()
-                .expect("known destination")
-                .existing_prefix[0]
-        {
+        if directory.identity() != expected_root {
             return Err(address_changed(
                 "Destination root differs from its planned binding",
             ));

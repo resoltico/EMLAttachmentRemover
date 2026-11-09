@@ -5,6 +5,8 @@ import { WidgetMetrics } from "widget-metrics.slint";
 import { Palette } from "std-widgets.slint";
 
 export global Theme {
+    out property <length> tooltip-max-width: 480px;
+    out property <length> footer-notice-height: self.line-height * 2 + self.space-2;
     out property <length> scroll-inset: WidgetMetrics.scroll-inset;
     out property <float> email-fraction: 0.32;
     out property <float> detail-fraction: 0.3;

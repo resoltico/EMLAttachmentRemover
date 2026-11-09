@@ -1048,7 +1048,23 @@ fn y6_damaged_mail_has_different_guidance_from_non_mail() {
     assert!(
         text.contains("This file isn't an email. It may be empty or a different kind of file.")
     );
+    let mut deep = Vec::new();
+    for n in 0..80 {
+        deep.extend(
+            format!("Content-Type: multipart/mixed; boundary=B{n}\r\n\r\n--B{n}\r\n").as_bytes(),
+        );
+    }
+    deep.extend(b"Content-Type: text/plain\r\n\r\nbody");
+    fs::write(root.path().join("deep.eml"), deep).unwrap();
+    let output = invoke(root.path(), &["--", "deep.eml"], None);
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(
+        text.contains("too deeply nested or has too many parts"),
+        "{text}"
+    );
+    assert!(!text.contains("256 MiB"), "{text}");
 }
+
 #[test]
 fn y7_request_document_names_the_reason_once() {
     let root = root();

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Keep checked emails when the save folder is unavailable, with plain recovery guidance and strict create admission. Show unreadable-settings fallback, a clear filter state and the action’s scope.
+
 - Refuse mailbox exports containing several emails; export messages one at a time. Single-message From envelopes remain supported.
 - Omit multipart epilogues and report their non-whitespace bytes. Preambles stay unchanged; older copies with epilogues now differ and are never overwritten.
 - Fix help placeholders and request-document error reasons. Core owns plain folder refusals, cause-specific guidance and failure counts in CLI and app summaries.

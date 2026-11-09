@@ -65,11 +65,19 @@ impl Row {
         self.status.severity().is_problem()
     }
     fn explanation(&self) -> String {
-        let mut lines = vec![self.status.explanation()];
+        let base = if self.status == RowStatus::Settled(self.item.outcome()) {
+            self.item.failure.as_ref().map_or_else(
+                || self.status.explanation().to_owned(),
+                eml_core::OperationFailure::explanation,
+            )
+        } else {
+            self.status.explanation().to_owned()
+        };
+        let mut lines = vec![base];
         // A waiting/missing/unconfirmed replacement must not reuse old outcome claims.
         if self.status == RowStatus::Settled(self.item.outcome()) {
             let meaning = eml_core::vocabulary::classify(&self.item.facts);
-            lines.extend(meaning.consequences.iter().map(|c| c.text()));
+            lines.extend(meaning.consequences.iter().map(|c| c.text().to_owned()));
         }
         lines.join("\n")
     }
@@ -159,31 +167,40 @@ impl Row {
     }
 }
 pub(super) fn rows(batch: &Batch) -> Vec<Row> {
-    let absent_create_status = batch.create.as_ref().map(|slot| {
-        if batch.state() == State::Removing {
-            return RowStatus::Waiting;
-        }
-        if batch.state() == State::Stopped {
-            return RowStatus::Settled(Outcome::NotProcessed);
-        }
-        if slot.launch_error {
-            return RowStatus::StartFailed;
-        }
-        let complete = slot
-            .completion
-            .as_ref()
-            .filter(|c| c.failure.is_none())
-            .map(|c| {
-                c.report
-                    .with_report(crate::worker::RunReport::results_cover_inventory)
-            })
-            .unwrap_or(false);
-        if complete {
-            RowStatus::Missing
-        } else {
-            RowStatus::Settled(Outcome::Unknown)
-        }
-    });
+    let absent_create_status = batch
+        .create
+        .as_ref()
+        .filter(|slot| {
+            !slot
+                .completion
+                .as_ref()
+                .is_some_and(|c| c.state == crate::worker::WorkerState::Rejected)
+        })
+        .map(|slot| {
+            if batch.state() == State::Removing {
+                return RowStatus::Waiting;
+            }
+            if batch.state() == State::Stopped {
+                return RowStatus::Settled(Outcome::NotProcessed);
+            }
+            if slot.launch_error {
+                return RowStatus::StartFailed;
+            }
+            let complete = slot
+                .completion
+                .as_ref()
+                .filter(|c| c.failure.is_none())
+                .map(|c| {
+                    c.report
+                        .with_report(crate::worker::RunReport::results_cover_inventory)
+                })
+                .unwrap_or(false);
+            if complete {
+                RowStatus::Missing
+            } else {
+                RowStatus::Settled(Outcome::Unknown)
+            }
+        });
     let mut rows = HashMap::new();
     for (kind, handle, previous) in [
         (
@@ -265,6 +282,27 @@ fn run_failure(batch: &Batch) -> Option<OperationFailure> {
             .cloned()
     })
 }
+pub(super) fn folder_unavailable(batch: &Batch) -> bool {
+    let slot = batch.create.as_ref().or(batch.check.as_ref());
+    slot.is_some_and(|slot| {
+        slot.completion
+            .as_ref()
+            .and_then(|c| c.failure.as_ref())
+            .is_some_and(eml_core::OperationFailure::is_save_folder_unavailable)
+            || slot.report.as_ref().is_some_and(|r| {
+                r.with_report(|report| report.start().is_some_and(|s| s.output_unavailable))
+            })
+    })
+}
+fn folder_notice(batch: &Batch) -> String {
+    if folder_unavailable(batch) {
+        batch.destination.as_ref().map_or_else(String::new, |p| {
+            eml_core::vocabulary::output_folder_unavailable(p)
+        })
+    } else {
+        String::new()
+    }
+}
 pub(super) fn banner(batch: &Batch) -> String {
     let Some(slot) = batch.create.as_ref().or(batch.check.as_ref()) else {
         return String::new();
@@ -279,19 +317,7 @@ pub(super) fn banner(batch: &Batch) -> String {
     {
         return words::STOPPED_UNEXPECTEDLY.into();
     }
-    run_failure(batch).map_or_else(String::new, |error| {
-        if slot
-            .completion
-            .as_ref()
-            .is_some_and(|c| c.state == crate::worker::WorkerState::Rejected)
-        {
-            error.detail().to_owned()
-        } else {
-            eml_core::vocabulary::RunFailure(error.code())
-                .explanation()
-                .to_owned()
-        }
-    })
+    run_failure(batch).map_or_else(String::new, |error| error.explanation())
 }
 impl crate::DesktopController {
     pub(super) fn refresh(&self) {
@@ -366,6 +392,7 @@ impl crate::DesktopController {
             &totals,
             inventory,
             stopped_totals.as_ref(),
+            run_failure(&r.batch).as_ref(),
             rows.iter()
                 .filter(|r| r.status == RowStatus::Missing)
                 .count(),
@@ -554,7 +581,37 @@ impl crate::DesktopController {
                 .filter(|(_, at)| now_ms().saturating_sub(*at) < 6000)
                 .map_or(String::new(), |(text, _)| text.clone())
                 .into(),
-            primary: wording::primary(state).into(),
+            primary: if state == State::Stopped {
+                wording::CONTINUE.into()
+            } else {
+                eml_core::vocabulary::remove_attachments_label(inventory.and_then(|(total, _)| {
+                    eml_core::vocabulary::create_scope(
+                        total as usize,
+                        rows.iter().map(|r| r.item.outcome()),
+                        run_failure(&r.batch).as_ref(),
+                    )
+                }))
+                .into()
+            },
+            footer_notice: {
+                let unavailable = folder_notice(&r.batch);
+                if !unavailable.is_empty() {
+                    unavailable
+                } else if r.preferences.unreadable() {
+                    wording::SETTINGS_UNREADABLE.into()
+                } else {
+                    String::new()
+                }
+            }
+            .into(),
+            destination_full: r
+                .batch
+                .destination
+                .as_ref()
+                .map_or_else(String::new, |p| {
+                    eml_core::display::DisplayPath::new(p).to_string()
+                })
+                .into(),
             footer: wording::footer(state).into(),
             destination: r
                 .batch

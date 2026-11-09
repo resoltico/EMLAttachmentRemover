@@ -906,7 +906,7 @@ fn w7_details_come_only_from_typed_whole_run_failure() {
     c.stage(vec![root.path().join("mail.eml")]).unwrap();
     pump(&c, || !c.is_busy());
     let text = c.window().get_view().diagnostics;
-    assert!(text.contains("Code: BIND_FAILED\nPhase: admission\nDetail: Cannot bind the existing output directory. (OS error 2)"),"{text}");
+    assert!(text.contains("Code: BIND_FAILED\nPhase: admission\nDetail: The save folder could not be opened. (OS error 2)"),"{text}");
 }
 
 #[test]
@@ -971,7 +971,7 @@ fn s6_s7_t8_filter_uses_core_outcomes_and_announces_count() {
     c.window().invoke_toggle_problems();
     assert_eq!(c.window().get_rows().row_count(), 2);
     assert!(c.window().get_view().summary.starts_with("Showing 2 of 36"));
-    label(&c.window(), "Show all");
+    label(&c.window(), "Showing problems");
     select_first(&c);
     c.window().invoke_toggle_problems();
     assert_eq!(c.window().get_rows().row_count(), 36);
@@ -1144,7 +1144,7 @@ fn t7_s17_failed_only_disables_button_shortcut_and_controller() {
     pump(&c, || !c.is_busy());
     assert!(!c.window().get_view().can_start);
     assert_eq!(
-        label(&c.window(), "Remove Attachments").accessible_enabled(),
+        label(&c.window(), "Remove Attachments (0)").accessible_enabled(),
         Some(false)
     );
     shortcut(&c.window(), slint::platform::Key::Return);
@@ -1824,4 +1824,122 @@ fn y4_unavailable_destination_keeps_checked_rows_and_disables_create() {
     c.start_selection();
     pump(&c, || !c.is_busy());
     assert!(root.path().join("mail.no-attachments.eml").exists());
+}
+
+#[test]
+fn y8_unreadable_settings_filter_and_action_scope_are_visible() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    fs::write(root.path().join("preferences.json"), b"{broken").unwrap();
+    write(root.path(), "one.eml", ATTACHMENT);
+    write(root.path(), "two.eml", ATTACHMENT);
+    write(root.path(), "bad.eml", b"");
+    let c = controller(root.path(), eml_core::run);
+    c.stage(vec![root.path().to_owned()]).unwrap();
+    pump(&c, || !c.is_busy());
+    assert_eq!(
+        c.window().get_view().footer_notice,
+        "Saved settings couldn't be read; using Next to originals."
+    );
+    assert_eq!(c.window().get_view().primary, "Remove Attachments (2)");
+    c.window().invoke_toggle_problems();
+    assert_eq!(
+        label(&c.window(), "Showing problems").accessible_checked(),
+        Some(true)
+    );
+    assert_eq!(c.window().get_rows().row_count(), 1);
+    assert_eq!(c.window().get_view().primary, "Remove Attachments (2)");
+    c.window().invoke_toggle_problems();
+    c.set_destination(None);
+    pump(&c, || !c.is_busy());
+    assert!(c.window().get_view().footer_notice.is_empty());
+}
+#[test]
+fn y4_create_rejection_preserves_folder_recovery_without_dropping_inputs() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let output = root.path().join("copies");
+    fs::create_dir(&output).unwrap();
+    let input = write(root.path(), "one.eml", ATTACHMENT);
+    let c = controller(root.path(), eml_core::run);
+    c.stage(vec![input]).unwrap();
+    pump(&c, || !c.is_busy());
+    c.set_destination(Some(output.clone()));
+    pump(&c, || !c.is_busy());
+    assert!(c.window().get_view().can_start);
+    fs::remove_dir(output).unwrap();
+    c.start_selection();
+    pump(&c, || !c.is_busy());
+    assert_eq!(c.window().get_rows().row_count(), 1);
+    assert_eq!(c.window().get_view().state, BatchState::Ready);
+    assert!(!c.window().get_view().can_start);
+    c.set_destination(None);
+    pump(&c, || !c.is_busy());
+    assert!(c.window().get_view().can_start);
+}
+
+#[test]
+fn y3_collection_refusals_use_core_verdict_and_guidance() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("mail");
+    fs::create_dir(&source).unwrap();
+    write(&source, "one.eml", ATTACHMENT);
+    let output = source.join("copies");
+    fs::create_dir(&output).unwrap();
+    let mut p = Preferences::load(root.path().join("preferences.json"));
+    p.set_destination(Some(output.clone())).unwrap();
+    let c = controller(root.path(), eml_core::run);
+    c.stage(vec![source.clone()]).unwrap();
+    pump(&c, || !c.is_busy());
+    assert_eq!(
+        c.window().get_view().banner,
+        format!(
+            "The save folder is inside a folder you added: {}. Choose a different save folder.",
+            output.display()
+        )
+    );
+    drop(c);
+    let root = tempfile::tempdir().unwrap();
+    for n in 0..4097 {
+        write(root.path(), &format!("{n}.eml"), PLAIN);
+    }
+    let c = controller(root.path(), eml_core::run);
+    c.stage(vec![root.path().to_owned()]).unwrap();
+    pump(&c, || !c.is_busy());
+    assert_eq!(
+        c.window().get_view().title,
+        "Too many emails (more than 4096)"
+    );
+    assert_eq!(
+        c.window().get_view().banner,
+        "Select at most 4096 emails at a time; split large folders."
+    );
+    assert!(!c.window().get_view().can_start);
+    assert!(!c.window().get_view().primary.contains("4096"));
+}
+#[test]
+fn y5_gui_saved_and_existing_failures_share_the_core_headline() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    for n in 0..17 {
+        write(root.path(), &format!("ok{n}.eml"), ATTACHMENT);
+    }
+    for n in 0..6 {
+        write(root.path(), &format!("bad{n}.eml"), b"");
+    }
+    let c = controller(root.path(), eml_core::run);
+    c.stage(vec![root.path().to_owned()]).unwrap();
+    pump(&c, || !c.is_busy());
+    assert!(c.window().get_view().summary.contains("6 can’t be copied"));
+    c.start_selection();
+    pump(&c, || !c.is_busy());
+    assert_eq!(c.window().get_view().title, "17 copies saved");
+    assert!(c.window().get_view().summary.contains("6 can’t be copied"));
+    c.stage(vec![root.path().to_owned()]).unwrap();
+    pump(&c, || !c.is_busy());
+    c.start_selection();
+    pump(&c, || !c.is_busy());
+    assert_eq!(c.window().get_view().title, "17 copies already exist");
+    assert_eq!(c.window().get_view().summary, "6 can’t be copied");
 }

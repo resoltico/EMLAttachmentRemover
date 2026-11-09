@@ -29,7 +29,7 @@ struct Settings {
     last_report_folder: Option<PathBuf>,
 }
 fn folder_valid(path: &Path) -> bool {
-    path.is_absolute() && eml_core::validate_native_path(path).is_ok()
+    eml_core::validate_save_folder_path(path).is_ok()
 }
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -91,15 +91,27 @@ fn deserialize_folder<'de, D: Deserializer<'de>>(
 pub struct Preferences {
     path: PathBuf,
     settings: Settings,
+    unreadable: bool,
 }
 impl Preferences {
     /// Load defaults when settings cannot be read or decoded, silently.
     pub fn load(path: PathBuf) -> Self {
-        let settings = fs::read(&path)
-            .ok()
-            .and_then(|bytes| serde_json::from_slice::<Settings>(&bytes).ok())
-            .unwrap_or_default();
-        Self { path, settings }
+        let (settings, unreadable) = match fs::read(&path) {
+            Ok(bytes) => match serde_json::from_slice::<Settings>(&bytes) {
+                Ok(settings) => (settings, false),
+                Err(_) => (Settings::default(), true),
+            },
+            Err(error) => (Settings::default(), error.kind() != io::ErrorKind::NotFound),
+        };
+        Self {
+            path,
+            settings,
+            unreadable,
+        }
+    }
+    /// Whether defaults replaced unreadable settings in this session.
+    pub fn unreadable(&self) -> bool {
+        self.unreadable
     }
     /// Platform configuration file; new installs start beside the originals.
     pub fn default_path() -> io::Result<PathBuf> {
@@ -115,12 +127,6 @@ impl Preferences {
     }
     /// Apply the destination in memory; save atomically.
     pub fn set_destination(&mut self, destination: Option<PathBuf>) -> io::Result<()> {
-        if destination.as_ref().is_some_and(|p| !p.is_absolute()) {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                crate::wording::ABSOLUTE_DESTINATION,
-            ));
-        }
         if destination.as_ref().is_some_and(|path| !folder_valid(path)) {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -135,6 +141,7 @@ impl Preferences {
             self.settings.recent_destinations.truncate(3);
         }
         self.settings.last_destination = destination;
+        self.unreadable = false;
         self.save()
     }
     /// Recent destination folders in most-recent-first order.
@@ -147,12 +154,6 @@ impl Preferences {
     }
     /// Remember a native report folder for the next save panel.
     pub fn set_report_folder(&mut self, folder: PathBuf) -> io::Result<()> {
-        if !folder.is_absolute() {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                crate::wording::ABSOLUTE_REPORT_FOLDER,
-            ));
-        }
         if !folder_valid(&folder) {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -160,6 +161,7 @@ impl Preferences {
             ));
         }
         self.settings.last_report_folder = Some(folder);
+        self.unreadable = false;
         self.save()
     }
     fn save(&self) -> io::Result<()> {

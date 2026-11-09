@@ -1272,9 +1272,16 @@ pub enum InterfaceIo {
     WorkingFolder,
     /// Save the desktop preferences file.
     SaveSettings,
+    /// Save an exact report file.
+    SaveReport,
+    /// Send a native open/reveal request.
+    OpenPath,
 }
 /// Render a native failure without localized Rust ErrorKind text.
 pub fn interface_io_error(operation: InterfaceIo, error: &std::io::Error) -> String {
+    if let Some(details) = crate::failure::report_cleanup_details(error) {
+        return details;
+    }
     let sentence = match operation {
         InterfaceIo::ReadRequest => {
             "The request document couldn't be read. Check its path and permissions."
@@ -1283,6 +1290,10 @@ pub fn interface_io_error(operation: InterfaceIo, error: &std::io::Error) -> Str
         InterfaceIo::WorkingFolder => {
             "The working folder isn't available. Choose an existing folder and try again."
         }
+        InterfaceIo::SaveReport => {
+            "The report couldn’t be saved. Check the save folder and try again."
+        }
+        InterfaceIo::OpenPath => "The open request couldn’t be sent. Try again.",
         InterfaceIo::SaveSettings => {
             "The app couldn't save its settings. Check the settings folder's permissions."
         }
@@ -1334,3 +1345,98 @@ fn safe_document_field(name: &str) -> String {
         String::new()
     }
 }
+
+/// Copy eligibility while a check is pending, using only already established facts.
+pub fn pending_copy_allowed(start: Option<&crate::RunStart>, explicit_output: bool) -> bool {
+    start.map_or(!explicit_output, |s| {
+        !s.output_unavailable
+            && !matches!(
+                s.run_error.as_ref().map(|e| e.code()),
+                Some(
+                    crate::ErrorCode::BindFailed
+                        | crate::ErrorCode::NoInputs
+                        | crate::ErrorCode::InputLimitExceeded
+                        | crate::ErrorCode::OutputOverlap
+                )
+            )
+    })
+}
+/// Emails a create can act on, excluding established failures without pretending to predict success.
+pub fn create_scope(
+    total: usize,
+    outcomes: impl IntoIterator<Item = Outcome>,
+    error: Option<&crate::OperationFailure>,
+) -> Option<usize> {
+    if error.is_some_and(|e| {
+        matches!(
+            e.code(),
+            crate::ErrorCode::BindFailed
+                | crate::ErrorCode::NoInputs
+                | crate::ErrorCode::InputLimitExceeded
+                | crate::ErrorCode::OutputOverlap
+        )
+    }) {
+        return None;
+    }
+    Some(
+        total.saturating_sub(
+            outcomes
+                .into_iter()
+                .filter(|o| matches!(o, Outcome::Failed(_)))
+                .count(),
+        ),
+    )
+}
+/// Capability action label shared with counts and eligibility meaning.
+pub fn remove_attachments_label(scope: Option<usize>) -> String {
+    scope.map_or_else(
+        || "Remove Attachments".into(),
+        |n| format!("Remove Attachments ({})", format_count(n)),
+    )
+}
+/// Active state of the problems filter.
+pub const SHOWING_PROBLEMS: &str = "Showing problems";
+/// Shared filtered-result context.
+pub fn showing_results(shown: usize, total: usize, parts: &str) -> String {
+    format!(
+        "Showing {} of {}{}{}",
+        format_count(shown),
+        format_count(total),
+        if parts.is_empty() { "" } else { " · " },
+        parts
+    )
+}
+
+/// Exact report writing ended by unwinding, with no invented native cause.
+pub const REPORT_WRITER_STOPPED: &str =
+    "The report writer stopped unexpectedly. The report may not have been saved.";
+/// Native advisory wording is owned here, separate from confirmation of viewer contents.
+pub fn open_feedback(text: &str, detail: &str) -> String {
+    if detail.is_empty() {
+        text.into()
+    } else {
+        format!("{text} {}", crate::display::DisplayText::new(detail))
+    }
+}
+/// Numeric native open status, not library-authored prose.
+pub fn open_status_message(code: Option<i32>) -> String {
+    code.map_or_else(
+        || "The system didn’t accept the open request.".into(),
+        |code| format!("The system didn’t accept the open request (exit {code})."),
+    )
+}
+
+/// Native open/reveal advisory.
+pub const OPEN_SENT: &str = "Open command sent.";
+/// Native open/reveal advisory.
+pub const OPEN_FAILED: &str = "The native open operation did not complete.";
+/// Native open/reveal advisory.
+pub const SHOW_EMAIL_FAILED: &str = "Couldn’t show the email. Check that it still exists.";
+/// Native open/reveal advisory.
+pub const SHOW_OUTPUT_FAILED: &str = "Couldn’t open the save folder.";
+/// Native open/reveal advisory.
+pub const SHOW_REPORT_FAILED: &str = "Couldn’t show the saved report.";
+/// Native open/reveal advisory.
+pub const WEBSITE_FAILED: &str = "Couldn’t open the project website.";
+/// Native open/reveal advisory.
+pub const LICENSES_FAILED: &str = "Couldn’t open bundled third-party notices.";

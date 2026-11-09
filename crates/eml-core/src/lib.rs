@@ -40,7 +40,7 @@ pub use destination::{
     DestinationRecord, plan_destinations,
 };
 #[cfg(any(unix, windows))]
-pub use failure::{NativeDiagnostic, OperationFailure};
+pub use failure::{NativeDiagnostic, OperationFailure, report_cleanup_failure};
 mod diagnostic;
 #[cfg(any(unix, windows))]
 mod selection;

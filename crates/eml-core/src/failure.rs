@@ -127,6 +127,10 @@ impl OperationFailure {
         self.context = FailureContext::WorkingFolder(path);
         self
     }
+    /// The save-folder admission fact, not an inference from a generic binding code.
+    pub fn is_save_folder_unavailable(&self) -> bool {
+        matches!(self.context, FailureContext::SaveFolder(_)) && self.code == ErrorCode::BindFailed
+    }
     /// A refusal verdict, rather than a misleading partial inventory count.
     pub fn refusal_headline(&self) -> Option<String> {
         (self.code == ErrorCode::InputLimitExceeded).then(|| {
@@ -222,6 +226,52 @@ impl std::error::Error for OperationFailure {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         self.cause.as_deref().map(|error| error as _)
     }
+}
+
+#[derive(Debug)]
+struct ReportCleanupFailure {
+    primary: io::Error,
+    path: PathBuf,
+    cleanup: io::Error,
+}
+impl std::fmt::Display for ReportCleanupFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} The private report staging file could not be removed: {}.",
+            crate::vocabulary::interface_io_error(
+                crate::vocabulary::InterfaceIo::SaveReport,
+                &self.primary
+            ),
+            crate::display::DisplayPath::new(&self.path)
+        )?;
+        if let Some(code) = self.cleanup.raw_os_error() {
+            write!(f, " [Cleanup: {}]", NativeDiagnostic::OsCode(code))?;
+        }
+        Ok(())
+    }
+}
+impl std::error::Error for ReportCleanupFailure {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.primary)
+    }
+}
+/// Preserve primary/cleanup native errors while core owns the diagnostic wording.
+pub fn report_cleanup_failure(primary: io::Error, path: PathBuf, cleanup: io::Error) -> io::Error {
+    io::Error::new(
+        primary.kind(),
+        ReportCleanupFailure {
+            primary,
+            path,
+            cleanup,
+        },
+    )
+}
+pub(super) fn report_cleanup_details(error: &io::Error) -> Option<String> {
+    error
+        .get_ref()?
+        .downcast_ref::<ReportCleanupFailure>()
+        .map(ToString::to_string)
 }
 
 #[cfg(test)]

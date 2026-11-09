@@ -63,10 +63,15 @@ pub(crate) fn reveal(path: &Path) -> Result<(), String> {
         .arg("-R")
         .arg(path)
         .status()
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| {
+            eml_core::vocabulary::interface_io_error(
+                eml_core::vocabulary::InterfaceIo::OpenPath,
+                &error,
+            )
+        })?;
     if status.success() {
         Ok(())
     } else {
-        Err(status.to_string())
+        Err(eml_core::vocabulary::open_status_message(status.code()))
     }
 }
