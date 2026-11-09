@@ -3025,3 +3025,108 @@ fn menu_action_can_query_a_rebuilt_menu_without_holding_the_old_cache_borrow() {
     label(&ui, "Close Window").invoke_accessible_default_action();
     assert_eq!(called.get(), 1);
 }
+
+#[test]
+fn v3_all_existing_headline() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let check = check_stream(root.path(), &["one.eml"]);
+    let create = stream(root.path(), &[("one.eml", "up-to-date")], false);
+    let c = controller(root.path(), dual(root.path(), &check, &create));
+    c.stage(vec![root.path().join("inputs")]).unwrap();
+    pump(&c, || !c.is_busy());
+    c.start_selection();
+    pump(&c, || !c.is_busy());
+    assert_eq!(c.window().get_view().title, "1 copy already exists");
+}
+
+#[test]
+fn v4_plain_shared_words() {
+    use eml_core::vocabulary::{Consequence::*, *};
+    let mut texts: Vec<_> = [
+        Published,
+        PublicationUnknown,
+        NoPublication,
+        ExistingUnqualified,
+        AddressUnqualified,
+        DurabilityUnqualified,
+        ResidualCleanup,
+        UnknownCleanup,
+        CleanupCompletedWithError,
+    ]
+    .into_iter()
+    .map(|c| c.text())
+    .collect();
+    texts.extend([
+        RELATED_RESOURCE_NOTICE,
+        EXISTING_RELATED_RESOURCE_NOTICE,
+        PREPARED_RELATED_RESOURCE_NOTICE,
+    ]);
+    texts.extend(
+        [
+            Outcome::Ready,
+            Outcome::NothingToRemove,
+            Outcome::CopySaved,
+            Outcome::CopiedAsIs,
+            Outcome::AlreadyExists,
+            Outcome::WillVerify,
+            Outcome::NeedsChecking,
+            Outcome::Unknown,
+            Outcome::NotProcessed,
+        ]
+        .into_iter()
+        .map(|o| o.explanation()),
+    );
+    texts.extend(
+        eml_core::ErrorCode::ALL
+            .iter()
+            .map(|c| Outcome::Failed(*c).explanation()),
+    );
+    for text in texts {
+        assert!(
+            !["publish", "qualif", "namespace", "owned", "prepared"]
+                .iter()
+                .any(|word| text.to_lowercase().contains(word)),
+            "{text}"
+        );
+    }
+}
+
+#[test]
+fn v5_detail_actions_share_title_line() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let c = done(
+        root.path(),
+        &["one.eml", "two.eml", "three.eml", "four.eml", "five.eml"],
+    );
+    let ui = c.window();
+    ui.window().set_size(slint::LogicalSize::new(1080., 700.));
+    ui.invoke_select_email(ui.get_rows().row_data(0).unwrap().key);
+    mock_elapsed_time(Duration::from_millis(1));
+    let name = label(&ui, "one.eml");
+    let action = label(&ui, "Show Original");
+    assert!(
+        (name.absolute_position().y - action.absolute_position().y).abs() <= 1.,
+        "title={:?}, action={:?}",
+        name.absolute_position(),
+        action.absolute_position()
+    );
+}
+
+#[test]
+fn v6_status_header_aligns_with_text() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let c = done(root.path(), &["one.eml"]);
+    let ui = c.window();
+    mock_elapsed_time(Duration::from_millis(1));
+    let header = label(&ui, "Status");
+    let cell = label(&ui, "Copy saved");
+    assert!(
+        (header.absolute_position().x - cell.absolute_position().x).abs() <= 1.,
+        "header={:?}, cell={:?}",
+        header.absolute_position(),
+        cell.absolute_position()
+    );
+}
