@@ -847,3 +847,31 @@ fn absolute_requests_emit_paths_compatible_with_native_worker_navigation() {
     }
     assert!(!root.path().join("one.no-attachments.eml").exists());
 }
+
+#[test]
+fn v9_cli_item_layout() {
+    let root = root();
+    fs::write(root.path().join("empty.eml"), b"").unwrap();
+    fs::write(
+        root.path().join("plain.eml"),
+        b"Content-Type: text/plain\r\n\r\nbody\r\n",
+    )
+    .unwrap();
+    let output = invoke(
+        root.path(),
+        &["--dry-run", "--", "empty.eml", "plain.eml"],
+        None,
+    );
+    let text = String::from_utf8(output.stdout).unwrap();
+    for line in text.lines() {
+        if line.starts_with("Not a valid email") || line.starts_with("No attachments") {
+            assert!(
+                !line.contains("→") && !line.contains("0 attachments"),
+                "{line}"
+            );
+        }
+        if line.starts_with(' ') {
+            assert!(line.starts_with(&" ".repeat(25)), "{line}");
+        }
+    }
+}
