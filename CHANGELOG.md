@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- The Mac app no longer contains the CLI; install the macOS CLI archive to use it from Terminal.
+- Run the desktop directly on core with typed results and cooperative stop. Keep report export as protocol-1 JSON; unwinding failures retain earlier results.
+- Move shared display and request admission into core; omit the repeated existing-copy count from re-run summaries.
 - Linux builds and CLI binaries require Ubuntu 26.04.
 - CLI human output is rewritten in plain language; JSON is unchanged. Update scripts that read human output to use protocol-1 JSON instead.
 - Saved folders use lossless native encoding; earlier string settings reset to defaults. CLI and GUI path labels distinguish invalid native units without changing protocol-1 JSON.

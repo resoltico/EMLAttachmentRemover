@@ -30,32 +30,6 @@ pub(crate) fn refresh_menu() {
     macos::refresh_menu();
 }
 
-/// Validate the platform's native launch layout before creating the UI.
-pub fn validate_launch(executable: &std::path::Path, cli: &std::path::Path) -> std::io::Result<()> {
-    #[cfg(target_os = "macos")]
-    {
-        let macos = executable.parent();
-        let contents = macos.and_then(std::path::Path::parent);
-        let bundle = contents.and_then(std::path::Path::parent);
-        if macos.and_then(std::path::Path::file_name) != Some(std::ffi::OsStr::new("MacOS"))
-            || contents.and_then(std::path::Path::file_name)
-                != Some(std::ffi::OsStr::new("Contents"))
-            || !bundle
-                .and_then(std::path::Path::extension)
-                .is_some_and(|ext| ext.as_encoded_bytes().eq_ignore_ascii_case(b"app"))
-            || !contents.is_some_and(|p| p.join("Info.plist").is_file())
-            || !cli.is_file()
-        {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                crate::wording::bundle_required(),
-            ));
-        }
-    }
-    let _ = (executable, cli);
-    Ok(())
-}
-
 /// Platform-appropriate output-folder action label, without native service policy.
 pub fn file_manager_label() -> &'static str {
     if cfg!(target_os = "macos") {

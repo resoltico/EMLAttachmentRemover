@@ -7,7 +7,7 @@ pub(crate) fn run(rust_only: bool) -> Result<()> {
     }
     let target = host()?;
     let exclusions = if cfg!(windows) {
-        &["--exclude", "eml-app", "--exclude", "eml-gui"][..]
+        &["--exclude", "eml-gui"][..]
     } else {
         &[]
     };

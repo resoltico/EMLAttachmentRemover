@@ -41,19 +41,11 @@ pub(crate) fn build(
     for target in &targets {
         validate_target(target)?;
         let mut command = Command::new("cargo");
-        command.args([
-            "build",
-            "--profile",
-            "dist",
-            "--locked",
-            "--target",
-            target,
-            "-p",
-            "emlattachmentremover",
-            "--bin",
-            "emlattachmentremover",
-        ]);
+        command.args(["build", "--profile", "dist", "--locked", "--target", target]);
         command.env("EML_SOURCE_REVISION", &revision);
+        if include_cli {
+            command.args(["-p", "emlattachmentremover", "--bin", CLI_NAME]);
+        }
         if app {
             command.args([
                 "-p",
@@ -75,11 +67,14 @@ pub(crate) fn build(
         ""
     };
     let executable = format!("{CLI_NAME}{extension}");
-    for name in if app {
-        vec![executable.as_str(), "emlattachmentremover-gui"]
-    } else {
-        vec![executable.as_str()]
-    } {
+    let mut products = Vec::new();
+    if include_cli {
+        products.push((executable.as_str(), CLI_NAME));
+    }
+    if app {
+        products.push(("emlattachmentremover-gui", "emlattachmentremover-gui"));
+    }
+    for &(name, _) in &products {
         let input = |target: &str| cargo_target.join(target).join("dist").join(name);
         if targets.len() == 2 {
             run(Command::new("lipo")
@@ -92,14 +87,7 @@ pub(crate) fn build(
         }
     }
     if targets.contains(&host) {
-        for (name, command_name) in if app {
-            vec![
-                (executable.as_str(), CLI_NAME),
-                ("emlattachmentremover-gui", "emlattachmentremover-gui"),
-            ]
-        } else {
-            vec![(executable.as_str(), CLI_NAME)]
-        } {
+        for &(name, command_name) in &products {
             let actual = crate::capture(Command::new(binaries.join(name)).arg("--version"))?;
             let expected = format!("{command_name} {VERSION} ({revision})");
             if actual != expected {
@@ -136,11 +124,9 @@ pub(crate) fn build(
         let stage = scratch.path().join("gui");
         let bundle = stage.join("EML Attachment Remover.app");
         let contents = bundle.join("Contents");
-        for directory in ["MacOS", "Helpers", "Resources"] {
+        for directory in ["MacOS", "Resources"] {
             fs::create_dir_all(contents.join(directory))?;
         }
-        let helper = contents.join("Helpers/emlattachmentremover");
-        fs::copy(binaries.join(&executable), &helper)?;
         fs::copy(
             binaries.join("emlattachmentremover-gui"),
             contents.join("MacOS/EMLAttachmentRemover"),
@@ -156,9 +142,6 @@ pub(crate) fn build(
             &contents.join("Resources/THIRD-PARTY-NOTICES.txt"),
         )?;
         fs::write(contents.join("Info.plist"), plist(bundle_version))?;
-        run(Command::new("codesign")
-            .args(["--force", "-s", "-"])
-            .arg(&helper))?;
         run(Command::new("codesign")
             .args(["--force", "-s", "-"])
             .arg(&bundle))?;

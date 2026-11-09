@@ -1,9 +1,9 @@
 # Protocol 1
 
-The public `emlattachmentremover` CLI and the desktop's bundled CLI use the same
-protocol. Invoke `--format json` for LF-delimited UTF-8 start/item/summary events.
-The GUI invokes its bundle-relative `Contents/Helpers/emlattachmentremover` with
-`--request - --format json`, writes one request, closes stdin, and reads the stream.
+The public `emlattachmentremover` CLI emits LF-delimited UTF-8 start/item/summary
+events with `--format json`. `--request` supplies the same public CLI contract.
+The desktop independently calls core in process; Save Report encodes those typed
+events with the same `JsonSink`, without invoking or parsing the CLI.
 
 ## Requests
 
@@ -87,11 +87,9 @@ OS calls may outlast cooperative stop, and signals can coalesce. Forced exit can
 leave a truncated stream and staging residue. Windows console close/logoff/shutdown
 can end the process under the OS deadline before graceful completion.
 
-The desktop sends SIGINT once for Stop, uses `Child::kill` for confirmed Force
-Stop, and reaps its owned child. Its bounded report reducer validates identity,
-record ordering, counts and receipts. It drains stderr with a 64 KiB retention cap.
-Technical export saves the exact received JSONL bytes, including an incomplete
-stream; it never substitutes a different app report schema.
+Desktop Stop uses the run's cooperative control directly. Its report export saves
+the exact bytes written by `JsonSink`, including an incomplete prefix after a
+failure. It does not substitute a GUI-owned report schema.
 
 ## Error vocabulary
 

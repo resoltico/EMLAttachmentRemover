@@ -1,16 +1,14 @@
 #!/usr/bin/env bash
 # Manual/floor probe of our native document adapter, outside the merge gate.
 # Requires macOS developer tools and Python 3. The exact archive is tested first
-# by smoke-macos-app.sh; this probe re-signs a copy with a recording helper that
-# forwards read-only requests to the real bundled CLI and refuses writes.
+# by smoke-macos-app.sh; this probe re-signs an isolated copy with a native
+# recording runner that calls real core in process and refuses writes.
 # It does not automate OS UI.
-# Usage: smoke-macos-document-event.sh APP_BUNDLE FIXTURE.eml [--omit-delivery]
+# Usage: smoke-macos-document-event.sh APP_BUNDLE FIXTURE.eml PROBE_BINARY [--omit-delivery]
 # --omit-delivery is a negative control: the probe must fail, not report success.
 set -euo pipefail
 python3 - "$@" <<'PY'
 import argparse
-import base64
-import json
 import os
 from pathlib import Path
 import plistlib
@@ -24,10 +22,14 @@ import uuid
 parser = argparse.ArgumentParser()
 parser.add_argument("app", type=Path)
 parser.add_argument("fixture", type=Path)
+parser.add_argument("probe", type=Path)
 parser.add_argument("--omit-delivery", action="store_true")
 args = parser.parse_args()
 if sys.platform != "darwin":
     parser.error("native document-event probe requires macOS")
+expected = subprocess.check_output([str(args.app.resolve() / "Contents/MacOS/EMLAttachmentRemover"), "--version"])
+actual = subprocess.check_output([str(args.probe.resolve()), "--version"])
+assert actual == expected, "Native probe and GUI source identities differ"
 original = args.fixture.read_bytes()
 with tempfile.TemporaryDirectory(prefix="eml-document-event-") as temporary:
     root = Path(temporary).resolve()
@@ -39,34 +41,15 @@ with tempfile.TemporaryDirectory(prefix="eml-document-event-") as temporary:
     info["CFBundleIdentifier"] += ".documentprobe." + uuid.uuid4().hex
     plist.write_bytes(plistlib.dumps(info))
     executable = app / "Contents/MacOS" / info["CFBundleExecutable"]
-    helper = app / "Contents/Helpers/emlattachmentremover"
-    actual = helper.with_name("emlattachmentremover-forwarded")
-    helper.rename(actual)
-    request_file = root / "request.json"
+    import shutil
+    shutil.copyfile(args.probe.resolve(), executable)
+    executable.chmod(0o755)
+    request_file = root / "request.paths"
     owner_file = root / "owner.pid"
     arrival = root / "arrival"
     os.mkfifo(arrival)
     # RDWR opens our notification pipe without a reader/writer-open race.
     descriptor = os.open(arrival, os.O_RDWR | os.O_NONBLOCK)
-    helper.write_text(f'''#!/usr/bin/env python3
-import json
-import os
-from pathlib import Path
-import subprocess
-import sys
-data = sys.stdin.buffer.read()
-Path({str(request_file)!r}).write_bytes(data)
-Path({str(owner_file)!r}).write_text(str(os.getppid()))
-try:
-    if json.loads(data)["dry_run"] is not True:
-        raise RuntimeError("The native probe refuses create requests")
-    status = subprocess.run([{str(actual)!r}, *sys.argv[1:]], input=data).returncode
-finally:
-    with open({str(arrival)!r}, "wb", buffering=0) as notification:
-        notification.write(b"1")
-sys.exit(status)
-''')
-    helper.chmod(0o755)
     subprocess.run(["codesign", "--force", "--deep", "-s", "-", str(app)], check=True)
     subprocess.run(["codesign", "--verify", "--deep", "--strict", str(app)], check=True)
     warmup, delivered = root / "Warmup.eml", root / "Delivered.eml"
@@ -77,18 +60,15 @@ sys.exit(status)
         # A finite deadline on one owned notification, not a delivery retry.
         readable, _, _ = select.select([descriptor], [], [], 15)
         if not readable:
-            raise AssertionError("No helper request followed the document operation")
+            raise AssertionError("No core request followed the document operation")
         assert os.read(descriptor, 1) == b"1"
-        request = json.loads(request_file.read_bytes())
-        assert request["dry_run"] is True, request
-        paths = request["paths"]
-        assert all(path["encoding"] == "unix-bytes" for path in paths), request
-        observed = [base64.b64decode(path["base64"], validate=True) for path in paths]
-        assert sorted(observed) == sorted(os.fsencode(path) for path in expected), request
+        assert (root / "mode").read_bytes() == b"dry-run"
+        observed = [path for path in request_file.read_bytes().split(b"\0") if path]
+        assert sorted(observed) == sorted(os.fsencode(path) for path in expected), observed
         return int(owner_file.read_text())
 
     with (root / "app.stdout").open("wb") as stdout, (root / "app.stderr").open("wb") as stderr:
-        # Launch through the same service as users. A helper request can precede
+        # Launch through the same service as users. A core request can precede
         # NSApplication's first event-loop turn; it does not prove registration
         # of a process started by directly executing the bundle's binary.
         process = subprocess.Popen([

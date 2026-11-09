@@ -1,8 +1,8 @@
 # Desktop captures
 
 Toolkit captures use the production controller, pinned Slint widgets and software
-testing renderer. Stub protocol fixtures provide deterministic progress and
-outcomes; they do not verify MIME classification or native operating-system UI.
+testing renderer. Real temporary MIME inputs drive core; an injected runner holds progress for
+deterministic captures. Native operating-system UI is checked separately.
 
 | State | Light | Dark |
 |---|---|---|
@@ -10,6 +10,7 @@ outcomes; they do not verify MIME classification or native operating-system UI.
 | Ready | [PNG](ready-light.png) | [PNG](ready-dark.png) |
 | Removing | [PNG](removing-light.png) | [PNG](removing-dark.png) |
 | Done | [PNG](done-light.png) | [PNG](done-dark.png) |
+| Processing details | [PNG](processing-details-light.png) | [PNG](processing-details-dark.png) |
 
 The main images are 1080×700. [Ready at 760×520](ready-light-narrow.png) shows the
 minimum layout with Size hidden. Geometry tests separately check three visible rows at minimum size,
@@ -28,7 +29,7 @@ The capture writes lossless PPMs. Convert each to PNG with, for example,
 ## Native app gallery
 
 These native captures show the macOS universal app built from the branch, with
-its production controller and bundled CLI. Images retain the complete client area
+its production controller and core facts. Images retain the complete client area
 at PR 75's sizes. OS title bars are excluded to omit the live-control sharing badge;
 application content is not retouched or scaled.
 
@@ -41,3 +42,8 @@ application content is not retouched or scaled.
 The selected inline-image detail includes the core warning about omitted related
 resources. Normal/minimum captures keep actions beside the email name above the scrolling
 details. Capture appearance and application preferences were restored afterward.
+
+The in-process follow-up adds native [light](manual/processing-details-light.png)
+and [dark](manual/processing-details-dark.png) Processing details captures at
+1080×700 client size. They show core’s Code, Phase and Detail fields. The existing
+full/normal/minimum gallery is retained because that layout did not change.

@@ -1,8 +1,8 @@
 # Third-party notices
 
 `cargo xtask notices --target <triple> --out <file>` generates CLI notices from
-cargo-about's locked normal/build graph. Add `--app` for the union of the CLI and
-software-rendered desktop graphs; repeat `--target` for universal binaries.
+cargo-about's locked normal/build graph. Add `--app` for the software-rendered
+desktop graph; repeat `--target` for universal binaries.
 The output includes the selected compiler's complete Rust standard-library
 copyright HTML from its sysroot. `legal/about.toml` selects accepted licenses;
 `deny.toml` checks workspace dependency policy, including development inputs.

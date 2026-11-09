@@ -298,14 +298,6 @@ pub(crate) const NSOBJECT_MISSING: &str = "NSObject is unavailable";
 #[cfg(all(feature = "native", target_os = "macos"))]
 pub(crate) const ABOUT_TARGET_FAILED: &str = "Cannot register the application About target";
 
-#[cfg(target_os = "macos")]
-pub(crate) fn bundle_required() -> String {
-    format!(
-        "Launch {}.app from the GUI archive, rather than the bare GUI executable. Its bundle metadata and Contents/Helpers CLI are required. To build it, run cargo xtask dist --app --out target/desktop.",
-        eml_core::product::DISPLAY_NAME
-    )
-}
-
 pub(crate) const SHOW_FINDER: &str = "Show in Finder";
 
 pub(crate) const SHOW_FILE_MANAGER: &str = "Show in File Manager";

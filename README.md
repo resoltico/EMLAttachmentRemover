@@ -69,6 +69,9 @@ and reported cleanup failures before retrying. Recognizable staging files use
 
 ## Desktop app
 
+The Mac app runs core in process and needs no CLI installation. The app no longer
+contains a CLI executable; install the separate macOS CLI archive for Terminal use.
+
 Add `.eml` files or folders with **Add Files…**, **Add Folder…**, a window drop,
 launch arguments, Finder **Open With**, or a drop on the Dock icon. Folder contents
 are discovered immediately by a read-only check. Nothing is written until
@@ -103,8 +106,9 @@ changes or the app exits; an outstanding save keeps its captured bytes until it
 settles. Save a report before starting another batch if you need it later.
 
 Quit while copying offers **Cancel** or **Stop and Quit**. After five seconds of
-waiting, **Quit Now** can force the worker; quitting still waits for child reaping
-and report exports. Read-only checks are cancelled automatically, without a dialog.
+waiting, **Quit Now** exits the app without waiting for the create thread;
+report exports already in progress still settle first. Read-only checks receive
+cooperative stop automatically, without a dialog.
 The app remembers three recent save folders, the last destination and the last
 report folder. Invalid or unreadable settings silently use defaults and are
 replaced on the next successful save. Folder settings now use native encoding;

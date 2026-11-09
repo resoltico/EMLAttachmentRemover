@@ -88,6 +88,22 @@ jobs:
           tool: cargo-about@${{ steps.tools.outputs.cargo_about }}
       - run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
       - run: cargo xtask dist --cli --app --universal --out "$RUNNER_TEMP/dist"
+      - name: Build the native core document probe separately from product archives
+        run: |
+          archive=("$RUNNER_TEMP"/dist/*-gui-*-macos-universal.zip)
+          unzip -p "${archive[0]}" "EML Attachment Remover.app/Contents/Info.plist" > "$RUNNER_TEMP/app-info.plist"
+          MACOSX_DEPLOYMENT_TARGET=$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$RUNNER_TEMP/app-info.plist")
+          export MACOSX_DEPLOYMENT_TARGET
+          for target in aarch64-apple-darwin x86_64-apple-darwin; do
+            cargo build --locked --profile dist --target "$target" -p eml-gui --bin eml-gui-document-probe --features desktop
+          done
+          cargo_artifacts=$(cargo metadata --locked --no-deps --format-version 1 | python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])')
+          lipo -create "$cargo_artifacts/aarch64-apple-darwin/dist/eml-gui-document-probe" "$cargo_artifacts/x86_64-apple-darwin/dist/eml-gui-document-probe" -output "$RUNNER_TEMP/eml-gui-document-probe"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: macos-document-probe
+          path: ${{ runner.temp }}/eml-gui-document-probe
+          if-no-files-found: error
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: macos-universal
@@ -109,14 +125,19 @@ jobs:
         with:
           name: macos-universal
           path: target/dist
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: macos-document-probe
+          path: ${{ runner.temp }}/document-probe
       - name: Smoke the exact CLI and app archives on the macOS 15 floor
         run: |
+          chmod +x "$RUNNER_TEMP/document-probe/eml-gui-document-probe"
           mkdir -p target/smoke
           tar -xzf target/dist/emlattachmentremover-*-macos-universal.tar.gz -C target/smoke
           ditto -x -k target/dist/emlattachmentremover-gui-*-macos-universal.zip target/smoke
           scripts/smoke-cli.sh target/smoke/emlattachmentremover tests/contract/mime
           scripts/smoke-macos-app.sh "target/smoke/EML Attachment Remover.app" \
-            tests/contract/mime/inputs/01-gmail-attachment.eml
+            tests/contract/mime/inputs/01-gmail-attachment.eml "$RUNNER_TEMP/document-probe/eml-gui-document-probe"
   checksums:
     needs: [cli, macos, floor-smoke]
     runs-on: ubuntu-26.04
@@ -124,8 +145,13 @@ jobs:
     steps:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
+          pattern: cli-*
           path: target/dist
           merge-multiple: true
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: macos-universal
+          path: target/dist
       - run: (cd target/dist && sha256sum -- *.tar.gz *.zip > SHA256SUMS)
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
@@ -175,8 +201,17 @@ jobs:
           ' > "$RUNNER_TEMP/release-notes.md"
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
+          pattern: cli-*
           path: target/dist
           merge-multiple: true
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: macos-universal
+          path: target/dist
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: checksums
+          path: target/dist
       - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
         with:
           subject-path: target/dist/*

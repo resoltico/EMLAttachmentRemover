@@ -6,10 +6,9 @@ and human outcome vocabulary. Frontends adapt inputs and render those facts.
 | Crate | Responsibility |
 |---|---|
 | `eml-message` | Pure byte-based MIME parsing, body classification, plans, independent retained-span authorization and verification |
-| `eml-core` | Native request admission, collection, destination preflight, filesystem execution, receipt qualification, diagnostics, product identity and vocabulary |
-| `eml-protocol` | Strict protocol-1 request decoding, native path encoding, typed JSONL events, core-fact adaptation and bounded checked output |
+| `eml-core` | Native request admission, collection, destination preflight, filesystem execution, receipt qualification, settled-item facts, human display, diagnostics, product identity and vocabulary |
+| `eml-protocol` | Wire-only protocol-1 request decoding, native path encoding, records, core-fact adaptation and bounded JSON output |
 | `emlattachmentremover` | Public CLI arguments, request transport, signals and human/JSON sinks |
-| `eml-app` | Immutable request snapshots, bounded report reducer and std child-process supervision |
 | `eml-gui` | Pure batch transitions, Slint views and GUI wording, exact report export, native ingress/preferences and macOS adapters |
 | `xtask` | Distribution archives, notices and the local merge gate |
 
@@ -28,9 +27,9 @@ constructors and actual native binding/readback checks remain separate safeguard
 The protocol crate converts owned records to core facts and uses core's phase and
 removal-reason types through local serde bridges; core has no JSON dependency.
 The GUI does not implement a second outcome converter or native-path decoder.
-Native-worker records require absolute, host-matching operational paths, while
-independent general reports can retain relative or foreign-host evidence without
-turning it into native navigation.
+Independent reports can retain relative or foreign-host evidence without
+turning it into native navigation. The GUI retains core’s native operational
+paths directly instead of reconstructing them from records.
 GUI details use current accepted observations, without reinterpreting a previous
 preview as a current create result. Human diagnostics keep canonical phases and
 separate cleanup resource/native causes; exact protocol-1 facts remain unchanged.
@@ -97,11 +96,12 @@ See the [threat model](threat-model.md) for the supported environment.
 
 ## Desktop boundary
 
-The desktop runs the public CLI from `Contents/Helpers`, never PATH. `RequestSnapshot`
-captures absolute native inputs, destination and mode without filesystem I/O. Adding
-inputs or changing destination schedules a `dry_run` automatically. Nothing is
-written until Remove Attachments. Create repeats discovery and preparation, so its
-observations supersede the preview rather than trusting stale source bytes.
+The CLI and the desktop are independent renderers of core. The desktop calls
+`eml_core::run` on a worker thread. `RunRequest::from_absolute` owns pure native
+request admission and a stable working base; the CLI retains its captured working
+directory. Adding inputs or changing destination schedules a read-only check.
+Nothing is written until Remove Attachments. Create repeats discovery and
+preparation instead of trusting preview bytes.
 
 `state.rs` owns one batch: inputs, destination, check/create slots, generation and revision,
 pending work, native-path selection and the problems-only filter. State is derived
@@ -129,20 +129,33 @@ renders workers started and settled inside the same native-document tick.
 Exported Slint `BatchState` and `Tone` enums carry state and row tone across the
 UI boundary; the Rust state mapping is exhaustive.
 
-`WorkerRun` owns the child and all three pipe threads. Stop sends SIGINT once.
-An obsolete read-only check is force-killed after two seconds. The controller waits
-for `poll()` to reap the child and join its readers/writer before starting pending
-work. Generation checks prevent discarded results from returning to the batch.
-Create can be force-killed only through Quit Now, offered five seconds after
-Stop and Quit; earlier Stop time does not shorten that interval. The app waits for
-child settlement and owned report exports before exiting. Checks can be killed
-and reaped without a Quit dialog. Pending decisions invalidate native-panel epochs
-and refuse drops; committed shutdown cannot admit more work.
+`worker.rs` owns one thread per run and the runner seam; production passes
+`eml_core::run`. A sink sends owned core `SettledItem`, start and summary values
+through a channel and writes protocol-1 with `JsonSink` into a buffer strictly
+below 256 MiB. The UI drains typed facts in its tick; it never decodes report bytes.
+`DisplayPath` and `DisplayText` belong to core. Earlier receipts, failures and
+native paths stay typed through rendering. A report-write failure cannot erase a
+typed publication observation already received.
 
-Accepted check and create reports remain in memory. Each exact stream is bounded
-below 256 MiB by protocol framing; parsed observations have independent resource
-bounds. The check and current create slots remain attached to the batch; Continue also
-retains the previous create report until settlement.
+Stop requests `RunControl` once. An obsolete check receives cooperative stop and
+is detached from the current batch; generation guards discard its results. Its
+physical check slot remains occupied until it settles, so pending checks coalesce
+without accumulating threads. A create may proceed beside that retiring read-only
+check. No UI call joins an unfinished thread, and no thread is force-killed.
+Stop and Quit waits for the create and report exports. Quit Now is offered five
+seconds after that decision and lets the event loop return without awaiting the
+create, ending its thread when main exits. Report exports already in progress
+still settle first. Read-only checks do not delay quit. Decisions invalidate
+native-panel epochs and refuse drops; committed shutdown admits no more work.
+
+The worker catches unwinding panics, retains earlier typed observations and report
+bytes, and settles a whole-run failure. Abort and out-of-memory end the app; this
+is accepted. As with a crash, Quit Now may leave a private staging file; abandoned
+stages are never swept. Final copies are complete or absent.
+
+Settled check and create facts and exact report bytes remain in memory. Core's
+collection/metadata limits bound retained observations; `MAX_RUN_BYTES` bounds
+report storage. Continue retains the previous create report until settlement.
 One outstanding export or native-save capture can retain a prior batch's stream
 in addition to those two streams. Starting another batch cannot invalidate an
 already captured save. Its panel retains the single save lifetime until submission
@@ -167,7 +180,8 @@ path. A current create item takes precedence; before it arrives, the previous
 create result or a known check failure remains visible. Otherwise the row waits.
 Interrupted work is Not processed. Completed missing sources are No longer found;
 worker or discovery failures do not establish that a source disappeared.
-Report lock contention preserves the previous projection instead of emptying it.
+Report facts are owned by the UI thread; workers send observations without
+sharing the rendering state.
 
 Rows follow the worker's item indices. Core discovery owns folder traversal order;
 the GUI does not apply a second name sort. Check, create and Continue retain the
@@ -189,7 +203,7 @@ off the UI thread, bounded to one per initiating window. Acceptance is advisory,
 not proof of viewer contents or current file identity. About and Licenses retain
 their focus/reset behavior. The native GUI uses Winit on macOS only, with builtin
 Cupertino widgets and native menus. Linux uses the testing backend for headless development; Windows supports core
-and the CLI only. Human path formatting is shared in `eml-protocol`, separate from
+and the CLI only. Human path formatting is shared in `eml-core`, separate from
 unchanged wire display strings. Preferences keep native paths in memory and use
 native encoding at the settings boundary, validated by core's path policy.
 Unreadable, invalid or old string settings give defaults silently and are replaced
@@ -203,14 +217,14 @@ The plist declares email messages and folders as Viewer/Alternate; Services are
 absent. Installation precedes the event loop. Launch-by-document, Dock, Finder,
 native panels and appearance are manual checks, outside the merge gate.
 
-Headless checks drive production views and CLI stubs through Slint's testing
-backend and virtual time. The software renderer is the default; Skia remains an
+Headless checks drive production views with real core fixtures through Slint's
+testing backend. Scripted runners hold typed event callbacks for lifecycle timing;
+rare receipt projections use typed core facts rather than wire replay. The software renderer is the default; Skia remains an
 explicit measurement feature. Builds pin upstream crates. The small
 [spin_on source patch](../crates/spin-on/README.md) uses standard Rust pinning and
 a no-op waker to remove archived `pin-utils`; the audit policy is unchanged.
 
-The desktop exposes bounded worker stderr in an expandable, read-only processing
-detail area. A typed pre-start request refusal is distinct from an interrupted or
-incomplete copy. This diagnostic text is not parsed into business decisions and
-does not change exact JSONL report export. Request representation/resource causes
-retain core's actionable wording rather than becoming a generic item-count error.
+Processing details shows the whole-run core diagnostic's Code, Phase and Detail,
+plus its native cause. Item-only failures stay in selected-item details; without a
+whole-run failure the expandable control is absent. Core owns request admission
+wording. There is no stderr capture or subprocess protocol reducer in the GUI.
