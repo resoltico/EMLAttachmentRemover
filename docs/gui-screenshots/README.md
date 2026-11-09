@@ -28,9 +28,9 @@ The capture writes lossless PPMs. Convert each to PNG with, for example,
 
 ## Native app gallery
 
-These native captures show the macOS universal app built from the branch, with
+These native captures show the ad hoc signed macOS debug app built from the branch, with
 its production controller and core facts. Images retain the complete client area
-at PR 75's sizes. OS title bars are excluded to omit the live-control sharing badge;
+at PR 75's sizes. OS title bars are excluded;
 application content is not retouched or scaled.
 
 | Window | Light | Dark |
@@ -45,5 +45,26 @@ details. Capture appearance and application preferences were restored afterward.
 
 The in-process follow-up adds native [light](manual/processing-details-light.png)
 and [dark](manual/processing-details-dark.png) Processing details captures at
-1080×700 client size. They show core’s Code, Phase and Detail fields. The existing
-full/normal/minimum gallery is retained because that layout did not change.
+1080×700 client size. They show core’s Code, Phase and Detail fields. The full/normal/minimum gallery and toolkit views were recaptured for the field fixes.
+
+## Native field replay
+
+These complete 1080×732 window captures use the fresh overflow-checked branch
+debug app and the field tester’s original gui_probe.
+
+| State | Capture |
+|---|---|
+| Checked problems filter and whole-batch scope | [PNG](manual/field-filter.png) |
+| Finished mixed batch with truthful failure count | [PNG](manual/field-done.png) |
+| Existing copies plus refusals | [PNG](manual/field-rerun.png) |
+| Full-disk cause and completed cleanup | [PNG](manual/disk-full.png) |
+| Unavailable folder retains checked emails | [PNG](manual/unavailable-folder.png) |
+| Unreadable settings note | [PNG](manual/settings-unreadable.png) |
+| Selection limit without a partial count | [PNG](manual/selection-limit.png) |
+
+The mixed field batch now has 16 eligible emails and seven refusals: the formerly
+accepted mailbox is correctly refused. Initial ScreenCaptureKit frames using a
+stale post-resize size were retained outside the repository; the gallery uses
+separate resize and capture calls. Only the OS title bar is cropped in the size
+gallery, and no application content is scaled or retouched. Original preferences,
+appearance, CLI and debug-app binaries were restored and hashes compared.

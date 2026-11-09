@@ -22,9 +22,10 @@ impl EventSink for Capture {
 #[test]
 fn y4_check_admits_unavailable_folder_but_create_stays_prestream() {
     let root = tempfile::tempdir().unwrap();
-    let input = root.path().join("mail.eml");
+    let folder = fs::canonicalize(root.path()).unwrap();
+    let input = folder.join("mail.eml");
     fs::write(&input, b"Subject: Mail\r\n\r\nBody\r\n").unwrap();
-    for target in [root.path().join("missing/copies"), root.path().join("file")] {
+    for target in [folder.join("missing/copies"), folder.join("file")] {
         if target.ends_with("file") {
             fs::write(&target, b"owned").unwrap();
         }
@@ -55,22 +56,23 @@ fn y4_check_admits_unavailable_folder_but_create_stays_prestream() {
             Err(InvalidRequest::OutputDirectory { .. })
         ));
         assert!(create.start.is_none() && create.items.is_empty());
-        assert!(!root.path().join("mail.no-attachments.eml").exists());
+        assert!(!folder.join("mail.no-attachments.eml").exists());
     }
 }
 #[test]
 fn y4_unavailable_predictions_still_enforce_the_report_path_budget() {
     let root = tempfile::tempdir().unwrap();
+    let folder = fs::canonicalize(root.path()).unwrap();
     for i in 0..300 {
         fs::write(
-            root.path().join(format!("{i}.eml")),
+            folder.join(format!("{i}.eml")),
             b"Subject: Mail\r\n\r\nBody",
         )
         .unwrap();
     }
     let request = RunRequest::from_absolute(
-        vec![root.path().to_owned()],
-        OutputLocation::Directory(root.path().join("x".repeat(30_000))),
+        vec![folder.clone()],
+        OutputLocation::Directory(folder.join(("x".repeat(200) + "/").repeat(150))),
         RunMode::DryRun,
     )
     .unwrap();
@@ -86,7 +88,8 @@ fn y4_unavailable_predictions_still_enforce_the_report_path_budget() {
 #[test]
 fn y2_whitespace_after_end_is_silent_without_claiming_byte_identical_copy() {
     let root = tempfile::tempdir().unwrap();
-    let input = root.path().join("mail.eml");
+    let folder = fs::canonicalize(root.path()).unwrap();
+    let input = folder.join("mail.eml");
     let original = b"Content-Type: multipart/mixed; boundary=B\r\n\r\npreamble\r\n--B\r\n\r\nbody\r\n--B--\r\n \t\r\n";
     fs::write(&input, original).unwrap();
     let request =
@@ -97,7 +100,7 @@ fn y2_whitespace_after_end_is_silent_without_claiming_byte_identical_copy() {
     assert!(sink.items[0].removed.is_empty());
     assert_eq!(sink.items[0].outcome(), Outcome::CopySaved);
     assert_eq!(
-        fs::read(root.path().join("mail.no-attachments.eml")).unwrap(),
+        fs::read(folder.join("mail.no-attachments.eml")).unwrap(),
         &original[..original.len() - 4]
     );
 }

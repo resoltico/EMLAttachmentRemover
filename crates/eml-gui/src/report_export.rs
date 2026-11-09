@@ -89,7 +89,10 @@ impl DesktopController {
             .spawn(move || export_report(&path, &source.jsonl))
         {
             Ok(task) => r.export = Some(ExportJob { path: target, task }),
-            Err(error) => self.message(&wording::report_failed(&error.to_string())),
+            Err(error) => self.message(&eml_core::vocabulary::interface_io_error(
+                eml_core::vocabulary::InterfaceIo::SaveReport,
+                &error,
+            )),
         }
         platform::set_busy(r.export.is_some() || r.active.is_some());
         drop(r);
@@ -107,8 +110,11 @@ impl DesktopController {
                 *self.saved_report.borrow_mut() = Some(job.path);
                 self.message(wording::REPORT_SAVED);
             }
-            Ok(Err(error)) => self.message(&wording::report_failed(&error.to_string())),
-            Err(_) => self.message(&wording::report_failed(wording::EXPORT_FAILED)),
+            Ok(Err(error)) => self.message(&eml_core::vocabulary::interface_io_error(
+                eml_core::vocabulary::InterfaceIo::SaveReport,
+                &error,
+            )),
+            Err(_) => self.message(eml_core::vocabulary::REPORT_WRITER_STOPPED),
         }
     }
     /// Native path of the most recent successful report save.
@@ -149,9 +155,6 @@ fn discard(stage: tempfile::NamedTempFile, error: io::Error) -> io::Error {
     let path = stage.path().to_path_buf();
     match stage.close() {
         Ok(()) => error,
-        Err(cleanup) => io::Error::new(
-            error.kind(),
-            crate::wording::report_cleanup_failed(&error, &path, &cleanup),
-        ),
+        Err(cleanup) => eml_core::report_cleanup_failure(error, path, cleanup),
     }
 }

@@ -13,6 +13,7 @@ pub(super) fn header(
     totals: &BatchTotals,
     inventory: Option<(u32, bool)>,
     stopped_totals: Option<&BatchTotals>,
+    failure: Option<&eml_core::OperationFailure>,
     missing: usize,
 ) -> Header {
     let total = inventory.map(|(total, _complete)| total);
@@ -46,18 +47,25 @@ pub(super) fn header(
             total
                 .map(|n| {
                     vec![
-                        format!("{} of {n} checked", totals.emails),
+                        format!(
+                            "{} of {} checked",
+                            eml_core::vocabulary::format_count(totals.emails),
+                            eml_core::vocabulary::format_count(n as usize)
+                        ),
                         "nothing is written yet".into(),
                     ]
                 })
                 .unwrap_or_default(),
         ),
         State::Ready => {
-            let h = totals.headline(HeadlineMode::Check {
-                total: inventory
-                    .filter(|(n, complete)| *complete || *n > 0)
-                    .map(|(n, _)| n as usize),
-            });
+            let h = totals.run_headline(
+                HeadlineMode::Check {
+                    total: inventory
+                        .filter(|(n, complete)| *complete || *n > 0)
+                        .map(|(n, _)| n as usize),
+                },
+                failure,
+            );
             (h.verdict, h.parts)
         }
         State::Removing => (
@@ -67,13 +75,16 @@ pub(super) fn header(
         State::Stopped => {
             let h = stopped_totals
                 .unwrap_or(totals)
-                .headline(HeadlineMode::Stopped);
+                .run_headline(HeadlineMode::Stopped, failure);
             (h.verdict, h.parts)
         }
         State::Done => {
-            let mut h = totals.headline(HeadlineMode::Done { incomplete_create });
+            let mut h = totals.run_headline(HeadlineMode::Done { incomplete_create }, failure);
             if missing > 0 {
-                h.parts.push(format!("{missing} no longer found"));
+                h.parts.push(format!(
+                    "{} no longer found",
+                    eml_core::vocabulary::format_count(missing)
+                ));
             }
             (h.verdict, h.parts)
         }
@@ -81,11 +92,7 @@ pub(super) fn header(
     Header {
         title,
         summary: if batch.problems_only {
-            format!(
-                "Showing {problems} of {} · {}",
-                totals.emails,
-                parts.join(" · ")
-            )
+            eml_core::vocabulary::showing_results(problems, totals.emails, &parts.join(" · "))
         } else {
             parts.join(" · ")
         },
@@ -111,7 +118,7 @@ pub(super) fn estimate(seconds: Option<u64>) -> String {
 
 pub(super) fn controls() -> crate::AppWords {
     crate::AppWords {
-        show_all: "Show all".into(),
+        showing_problems: eml_core::vocabulary::SHOWING_PROBLEMS.into(),
         about_prefix: ABOUT_PREFIX.into(),
         version_prefix: "Version ".into(),
         select_all: "Select All".into(),
@@ -174,21 +181,12 @@ pub(super) fn controls() -> crate::AppWords {
 }
 
 pub(super) const BUSY_ADDING: &str = "Wait for this batch to finish before adding more emails.";
-pub(super) const DESTINATION_UNAVAILABLE: &str = "Choose an existing folder to save copies.";
 pub(super) const NEXT_TO: &str = "Next to originals";
 pub(super) const ABSOLUTE_REPORT: &str = "Choose an absolute report path.";
 pub(super) const REPORT_SAVED: &str = "Report saved.";
-pub(super) const EXPORT_FAILED: &str = "The report writer did not complete.";
-pub(super) fn report_failed(reason: &str) -> String {
-    format!("Couldn’t save the report. {reason}")
-}
-pub(super) fn primary(state: State) -> &'static str {
-    if state == State::Stopped {
-        "Continue"
-    } else {
-        "Remove Attachments"
-    }
-}
+pub(super) const CONTINUE: &str = "Continue";
+pub(super) const SETTINGS_UNREADABLE: &str =
+    "Saved settings couldn't be read; using Next to originals.";
 pub(super) fn footer(state: State) -> String {
     match state {
         State::Stopped => "Continue checks existing copies and saves the remaining copies.".into(),
@@ -197,7 +195,12 @@ pub(super) fn footer(state: State) -> String {
     }
 }
 pub(super) fn progress(done: usize, total: u32, remaining: Option<u64>) -> String {
-    format!("{done} of {total} done · {}", estimate(remaining))
+    format!(
+        "{} of {} done · {}",
+        eml_core::vocabulary::format_count(done),
+        eml_core::vocabulary::format_count(total as usize),
+        estimate(remaining)
+    )
 }
 pub(super) fn attachment(part: &eml_core::RemovedPart) -> crate::AttachmentView {
     let kind = eml_core::vocabulary::part_kind(part.reason, &part.content_type);
@@ -224,8 +227,6 @@ pub(super) fn row_description(folder: &str, count: Option<usize>, size: &str) ->
 
 #[cfg(any(feature = "native", test))]
 pub(super) const OPENING: &str = "Opening…";
-pub(super) const OPEN_SENT: &str = "Open command sent.";
-pub(super) const OPEN_FAILED: &str = "The native open operation did not complete.";
 
 pub(super) fn attachment_name(part: &eml_core::RemovedPart) -> String {
     eml_core::display::DisplayText::new(eml_core::vocabulary::part_name(
@@ -250,10 +251,6 @@ pub(super) const CREATE_METADATA: &str = "Metadata from: attachment removal\n";
 pub(crate) const INVALID_SAVED_FOLDERS: &str = "Saved folders must use absolute, NUL-free native paths within the path limits; at most three recent destinations are supported.";
 
 pub(crate) const CONFIG_UNAVAILABLE: &str = "Cannot locate the configuration folder";
-
-pub(crate) const ABSOLUTE_DESTINATION: &str = "Choose an absolute destination folder";
-
-pub(crate) const ABSOLUTE_REPORT_FOLDER: &str = "Choose an absolute report folder";
 
 pub(crate) const SETTINGS_PARENT_MISSING: &str = "Settings file has no parent";
 
@@ -310,16 +307,6 @@ pub(crate) const ABOUT_PREFIX: &str = "About ";
 pub(super) const EML_FILTER: &str = "EML messages";
 #[cfg(feature = "native")]
 pub(super) const REPORT_FILTER: &str = "JSON Lines report";
-#[cfg(feature = "native")]
-pub(super) const SHOW_EMAIL_FAILED: &str = "Couldn’t show the email. Check that it still exists.";
-#[cfg(feature = "native")]
-pub(super) const SHOW_OUTPUT_FAILED: &str = "Couldn’t open the save folder.";
-#[cfg(feature = "native")]
-pub(super) const SHOW_REPORT_FAILED: &str = "Couldn’t show the saved report.";
-#[cfg(feature = "native")]
-pub(super) const WEBSITE_FAILED: &str = "Couldn’t open the project website.";
-#[cfg(feature = "native")]
-pub(super) const LICENSES_FAILED: &str = "Couldn’t open bundled third-party notices.";
 
 pub(super) fn failure_details(error: &eml_core::OperationFailure) -> String {
     use eml_core::vocabulary::fields;
@@ -335,16 +322,5 @@ pub(super) fn failure_details(error: &eml_core::OperationFailure) -> String {
         fields::PHASE,
         error.phase(),
         fields::DETAIL
-    )
-}
-
-pub(super) fn report_cleanup_failed(
-    error: &std::io::Error,
-    path: &std::path::Path,
-    cleanup: &std::io::Error,
-) -> String {
-    format!(
-        "{error}; could not remove private report staging file {}: {cleanup}",
-        eml_core::display::DisplayPath::new(path)
     )
 }

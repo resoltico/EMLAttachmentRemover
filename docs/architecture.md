@@ -256,3 +256,12 @@ causes and damaged-versus-headerless messages. Counts deliberately use no groupi
 Request-document diagnostics name short fields only; oversized or control-bearing
 field names are omitted, and JSON values are never included. This preserves the
 bounded diagnostic assurance while providing the requested schema-error reasons.
+
+The desktop renders unavailable-folder guidance beside Save copies and keeps the
+checked source rows. A lost folder during create admission returns to the editable
+batch without pretending that processing began. Both commands and buttons use
+the same core availability fact; changing the destination starts a fresh check.
+The action label shows core’s eligible email count even while filtering problems.
+The filter’s filled/checked state and Showing problems text make its scope clear.
+Unreadable settings use defaults with a single note until the user chooses a
+folder or saves new preferences; this setting-specific note belongs to the GUI.

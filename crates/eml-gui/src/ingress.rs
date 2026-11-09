@@ -173,7 +173,7 @@ pub fn install_native(
             } {
                 c.open_advisory(
                     crate::OpenTarget::Main,
-                    crate::wording::SHOW_EMAIL_FAILED,
+                    eml_core::vocabulary::SHOW_EMAIL_FAILED,
                     move || super::native_dialogs::reveal(&path),
                 );
             }
@@ -192,7 +192,7 @@ pub fn install_native(
         {
             c.open_advisory(
                 crate::OpenTarget::Main,
-                crate::wording::SHOW_OUTPUT_FAILED,
+                eml_core::vocabulary::SHOW_OUTPUT_FAILED,
                 move || opener::open(path).map_err(|e| e.to_string()),
             );
         }
@@ -205,7 +205,7 @@ pub fn install_native(
         {
             c.open_advisory(
                 crate::OpenTarget::Main,
-                crate::wording::SHOW_REPORT_FAILED,
+                eml_core::vocabulary::SHOW_REPORT_FAILED,
                 move || super::native_dialogs::reveal(&path),
             );
         }
@@ -215,7 +215,7 @@ pub fn install_native(
         if let Some(c) = weak.upgrade() {
             c.open_advisory(
                 crate::OpenTarget::Main,
-                crate::wording::WEBSITE_FAILED,
+                eml_core::vocabulary::WEBSITE_FAILED,
                 || opener::open(eml_core::product::WEBSITE).map_err(|e| e.to_string()),
             );
         }
@@ -225,7 +225,7 @@ pub fn install_native(
         if let Some(c) = weak.upgrade() {
             c.open_advisory(
                 crate::OpenTarget::About,
-                crate::wording::WEBSITE_FAILED,
+                eml_core::vocabulary::WEBSITE_FAILED,
                 || opener::open(eml_core::product::WEBSITE).map_err(|e| e.to_string()),
             );
         }
@@ -242,7 +242,7 @@ pub fn install_native(
             let path = notices.clone();
             c.open_advisory(
                 crate::OpenTarget::Licenses,
-                crate::wording::LICENSES_FAILED,
+                eml_core::vocabulary::LICENSES_FAILED,
                 move || opener::open(path).map_err(|e| e.to_string()),
             );
         }

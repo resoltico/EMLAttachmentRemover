@@ -1,0 +1,600 @@
+{
+  "base_revision": "83237f1ac3f14eb81405916ef350b221ed8a809e",
+  "replayed_code_revision": "91c92854b06faf692a68877f3deedd338f91337f",
+  "flags": "debug; -C overflow-checks=on; Slint1.18.1 published; ad hoc signing",
+  "novel_before": [
+    {
+      "id": "help-angle-brackets",
+      "result": "FAIL",
+      "note": "help/usage show doubled \"<\": <<DIR>, <<FILE|->, <<FORMAT>, <<FORMAT>'",
+      "seconds": 0.022
+    },
+    {
+      "id": "rerun-does-not-copy-copies",
+      "result": "PASS",
+      "note": "files ['one.eml', 'one.no-attachments.eml']; rerun exit 0/0",
+      "seconds": 0.06
+    },
+    {
+      "id": "output-dir-inside-selected-tree",
+      "result": "OBSERVE",
+      "note": "exit 1/1; tree ['out', 'sub', 'sub/x.eml']; stderr ''",
+      "seconds": 0.014
+    },
+    {
+      "id": "mbox-named-eml",
+      "result": "FAIL",
+      "note": "exit 0; subjects kept 3/3; attachment parts still in copy 2; human: 'emlattachmentremover 7.0.0 \u2014 1 email \u00b7 check only, nothing is written\\nCopy exists, will verify archive.eml \u2192 archive.no-attachments.eml \u00b7 1 attachment \u00b7 2.0 kB \u2192 1.8 kB\\n                         report.pdf \u00b7 159 B\\n1 email \u00b7 1 copy to verify. Exit 0\\n'",
+      "seconds": 0.018
+    },
+    {
+      "id": "epilogue-carries-attachment",
+      "result": "FAIL",
+      "note": "exit 0; hidden attachment in copy True; 'emlattachmentremover 7.0.0 \u2014 1 email\\nCopy saved               epi.eml \u2192 epi.no-attachments.eml \u00b7 1 attachment \u00b7 4.1 kB \u2192 3.9 kB\\n                         report.pdf \u00b7 159 B\\n1 copy saved \u00b7 199 B removed. Exit 0\\n'",
+      "seconds": 0.014
+    },
+    {
+      "id": "apple-mail-emlx-and-extension-case",
+      "result": "OBSERVE",
+      "note": "folder discovery found ['mail/UPPER.EML']; explicit .emlx exit 1: \"alid email        mail/1.emlx\\n                         This file isn't a valid email. It may be empty or not an email at all; if it came from your mail app, export it again.\\n                         [Code: MALFORMED \u00b7 Phase: prepare \u00b7 Detail: Message root has no valid header fields]\\n1 email. Exit 1\\n\"",
+      "seconds": 0.017
+    },
+    {
+      "id": "nested-forward-with-attachment",
+      "result": "OBSERVE",
+      "note": "exit 0; nested payload still in copy: False; removed [[{'section': '2', 'content_type': 'message/rfc822', 'filename': None, 'bytes': 2471, 'reason': 'attachment'}]]",
+      "seconds": 0.012
+    },
+    {
+      "id": "uuencoded-body-attachment",
+      "result": "OBSERVE",
+      "note": "exit 0; output: 'emlattachmentremover 7.0.0 \u2014 1 email\\nCopied as is             uu.eml \u00b7 344 B\\n1 copy saved \u00b7 1 copied as is. Exit 0\\n'; copy written True",
+      "seconds": 0.012
+    },
+    {
+      "id": "crlf-bom-body-preservation",
+      "result": "PASS",
+      "note": "BOM file exit 1; bare LF in copy 0",
+      "seconds": 0.018
+    },
+    {
+      "id": "huge-single-attachment-200mb",
+      "result": "PASS",
+      "note": "1.0s, ['           220790784  maximum resident set size'], src 212475212 B, copy 416 B; 'emover 7.0.0 \u2014 1 email\\nCopy saved               big.eml \u2192 big.no-attachments.eml \u00b7 1 attachment \u00b7 212.5 MB \u2192 416 B\\n                         disk.img \u00b7 212.5 MB\\n1 copy saved \u00b7 212.5 MB removed. Exit 0\\n'",
+      "seconds": 4.283
+    },
+    {
+      "id": "disk-full-output",
+      "result": "OBSERVE",
+      "note": "exit 1; files on volume ['0.no-attachments.eml', '1.no-attachments.eml', '2.no-attachments.eml', 'fseventsd-uuid']; tail 'n the save folder.\\n                         [Code: WRITE_FAILED \u00b7 Phase: write \u00b7 Detail: Candidate storage did not complete its required operation (OS error 28)]\\n                         [Cleanup: Complete]\\nCouldn\u2019t save copy       /Users/erst/Tools/eml-field-testing-2026-11-09/novel-2/disk-full-output/mail/7.eml \u00b7 3.2 MB\\n                         a.bin \u00b7 2.8 kB\\n                         The copy couldn\u2019t be written. Check free space and permissions in the save folder.\\n                         [Code: WRITE_FAILED \u00b7 Phase: write \u00b7 Detail: Candidate storage did not complete its required operation (OS error 28)]\\n                         [Cleanup: Complete]\\n3 copies saved \u00b7 8.7 kB removed. Exit 1\\n' err ''",
+      "seconds": 2.078
+    },
+    {
+      "id": "read-only-output-volume",
+      "result": "OBSERVE",
+      "note": "exit 1; 'emlattachmentremover 7.0.0 \u2014 1 email\\nCouldn\u2019t save copy       a.eml \u00b7 614 B\\n                         report.pdf \u00b7 159 B\\n                         The copy couldn\u2019t be written. Check free space and permissions in the save folder.\\n                         [Code: STAGE_FAILED \u00b7 Phase: stage \u00b7 Detail: Candidate storage did not complete its required operation (OS error 30)]\\nNo copies saved. Exit 1\\n' ''",
+      "seconds": 1.279
+    },
+    {
+      "id": "case-sensitive-source-to-insensitive-output",
+      "result": "PASS",
+      "note": "beside exit 0; mirrored exit 1 files ['Report.no-attachments.eml'] subjects ['upper']; human '/novel-2/case-sensitive-source-to-insensitive-output/cs-mnt/report.no-attachments.eml \u00b7 1 attachment \u00b7 617 B \u2192 418 B\\n                         report.pdf \u00b7 159 B\\n2 copies saved \u00b7 398 B removed. Exit 0\\n'",
+      "seconds": 1.492
+    },
+    {
+      "id": "two-processes-same-folder",
+      "result": "PASS",
+      "note": "exits [1, 1] counts [{'created': 271, 'up_to_date': 1, 'planned': 0, 'failed': 28, 'not_processed': 0}, {'created': 29, 'up_to_date': 251, 'planned': 0, 'failed': 20, 'not_processed': 0}] copies 300 residue []",
+      "seconds": 2.124
+    },
+    {
+      "id": "sigterm-during-create",
+      "result": "OBSERVE",
+      "note": "exit 130; residue []; partial []; tail '    /Users/erst/Tools/eml-field-testing-2026-11-09/novel-2/sigterm-during-create/mail/0044.eml \u2192 /Users/erst/Tools/eml-field-testing-2026-11-09/novel-2/sigterm-during-create/mail/0044.no-attachments.eml \u00b7 1 attachment \u00b7 616 B \u2192 417 B\\n                         report.pdf \u00b7 159 B\\n                         Not copied because the batch was stopped. Try again to finish it.\\n                         [Code: INTERRUPTED \u00b7 Phase: publish \u00b7 Detail: Started item interrupted before publication]\\n                         [Cleanup: Complete]\\nStopped \u00b7 44 copies saved \u00b7 1456 not processed. Exit 130; interrupted\\n'",
+      "seconds": 0.559
+    },
+    {
+      "id": "sigint-human-summary-wording",
+      "result": "OBSERVE",
+      "note": "exit 130; residue []; tail 't/Tools/eml-field-testing-2026-11-09/novel-2/sigint-human-summary-wording/mail/0030.eml \u2192 /Users/erst/Tools/eml-field-testing-2026-11-09/novel-2/sigint-human-summary-wording/mail/0030.no-attachments.eml \u00b7 1 attachment \u00b7 616 B \u2192 417 B\\n                         report.pdf \u00b7 159 B\\n                         Not copied because the batch was stopped. Try again to finish it.\\n                         [Code: INTERRUPTED \u00b7 Phase: publish \u00b7 Detail: Started item interrupted before publication]\\n                         [Cleanup: Complete]\\nStopped \u00b7 30 copies saved \u00b7 1470 not processed. Exit 130; interrupted\\n'",
+      "seconds": 0.559
+    },
+    {
+      "id": "closed-stdout-pipe",
+      "result": "OBSERVE",
+      "note": "copies written 1/200; 'emlattachmentremover 7.0.0 \u2014 200 emails\\npipestatus=1\\n' ''",
+      "seconds": 0.216
+    },
+    {
+      "id": "request-json-misuse",
+      "result": "FAIL",
+      "note": "duplicate-key: exit 2 'Invalid request document: Invalid request document at line 1, column 24'; unknown-field: exit 2 'Invalid request document: Invalid request document at line 1, column 33'; bom: exit 2 'Invalid request document: Invalid request document at line 1, column 1'; trailing-garbage: exit 2 'Invalid request document: Invalid request document at line 1, column 33'; empty: exit 2 'Invalid request document: Invalid request document at line 1, column 0'; not-json: exit 2 'Invalid request document: Invalid request document at line 1, column 1'",
+      "seconds": 0.051
+    },
+    {
+      "id": "nfc-nfd-twins",
+      "result": "OBSERVE",
+      "note": "two files possible True; exit 0; entries 2",
+      "seconds": 0.027
+    },
+    {
+      "id": "symlink-loop-and-special-entries",
+      "result": "OBSERVE",
+      "note": "exit 1; \"t all; if it came from your mail app, export it again.\\n                         [Code: MALFORMED \u00b7 Phase: prepare \u00b7 Detail: Message root has no valid header fields]\\nNot a valid email        /Users/erst/Tools/eml-field-testing-2026-11-09/novel-2/symlink-loop-and-special-entries/mail/junk.eml\\n                         This file isn't a valid email. It may be empty or not an email at all; if it came from your mail app, export it again.\\n                         [Code: MALFORMED \u00b7 Phase: prepare \u00b7 Detail: Message root has no valid header fields]\\nCopy saved               /Users/erst/Tools/eml-field-testing-2026-11-09/novel-2/symlink-loop-and-special-entries/mail/ok.eml \u2192 /Users/erst/Tools/eml-field-testing-2026-11-09/novel-2/symlink-loop-and-special-entries/mail/ok.no-attachments.eml \u00b7 1 attachment \u00b7 614 B \u2192 415 B\\n                         report.pdf \u00b7 159 B\\n1 copy saved \u00b7 199 B removed. Exit 1\\n\" ''",
+      "seconds": 0.024
+    },
+    {
+      "id": "dash-and-duplicate-operands",
+      "result": "OBSERVE",
+      "note": "\"-\" exit 1 ' and that you have permission to open it.\\n                         [Code: READ_FAILED \u00b7 Phase: admission \u00b7 Detail: Selected path could not be inspected or opened (OS error 2)]\\nNo copies saved. Exit 1\\n'; duplicates exit 0 'emlattachmentremover 7.0.0 \u2014 1 email \u00b7 check only, nothing is written\\nReady                    ./a.eml \u2192 ./a.no-attachments.eml \u00b7 1 attachment \u00b7 615 B \u2192 416 B\\n                         report.pdf \u00b7 159 B\\n1 email \u00b7 1 attachment \u00b7 199 B would be removed. Exit 0\\n'",
+      "seconds": 0.013
+    },
+    {
+      "id": "bad-output-dir-targets",
+      "result": "OBSERVE",
+      "note": "missing/dir: exit 2 'Cannot use the output folder: entity not found (OS error 2)\\nChoose an existing, writable folder for --output-dir; create it first if needed.'; file: exit 2 'Cannot use the output folder: not a directory\\nChoose an existing, writable folder for --output-dir; create it first if needed.'; ~/definitely-not-there-eml: exit 2 'Cannot use the output folder: entity not found (OS error 2)\\nChoose an existing, writable folder for --output-dir; create it first if needed.'",
+      "seconds": 0.022
+    },
+    {
+      "id": "malformed-mime-shapes",
+      "result": "OBSERVE",
+      "note": "exit 1; \"emlattachmentremover 7.0.0 \u2014 5 emails\\nToo large or complex     deep-nesting.eml\\n                         This email is larger or more complex than the supported limits (256 MiB maximum).\\n                         [Code: LIMIT_EXCEEDED \u00b7 Phase: prepare \u00b7 Detail: MIME tree or header admission limit exceeded]\\nCopied as is             header-only.eml \u00b7 22 B\\nNot a valid email        no-close-boundary.eml\\n                         This file isn't a valid email. It may be empty or not an email at all; if it came from your mail app, export it again.\\n                         [Code: MALFORMED \u00b7 Phase: prepare \u00b7 Detail: Multipart lacks children or closing delimiter]\\nCopy saved               traversal-name.eml \u2192 traversal-name.no-attachments.eml \u00b7 1 attachment \u00b7 622 B \u2192 417 B\\n                         ../../../../tmp/evil.sh \u00b7 165 B\\nNot a valid email        truncated-base64.eml\\n                         This file isn't a valid email. It may be empty or not an email at all; if it came from your mail app, export it again.\\n                         [Code: MALFORMED \u00b7 Phase: prepare \u00b7 Detail: Multipart lacks children or closing delimiter]\\n2 copies saved \u00b7 205 B removed \u00b7 1 copied as is. Exit 1\\n\"",
+      "seconds": 0.032
+    }
+  ],
+  "novel_after": [
+    {
+      "id": "help-angle-brackets",
+      "result": "PASS",
+      "note": "placeholders render once",
+      "seconds": 0.26
+    },
+    {
+      "id": "rerun-does-not-copy-copies",
+      "result": "PASS",
+      "note": "files ['one.eml', 'one.no-attachments.eml']; rerun exit 0/0",
+      "seconds": 0.042
+    },
+    {
+      "id": "output-dir-inside-selected-tree",
+      "result": "OBSERVE",
+      "note": "exit 1/1; tree ['out', 'sub', 'sub/x.eml']; stderr 'The save folder is inside a folder you added: /Users/erst/Tools/eml-field-testing-2026-11-09/field-fixes-novel-01/output-dir-inside-selected-tree/mail/out. Choose a different save folder.\\n'",
+      "seconds": 0.012
+    },
+    {
+      "id": "mbox-named-eml",
+      "result": "PASS",
+      "note": "exit 1; subjects kept None/3; attachment parts still in copy 0; human: 'ls in one file archive.eml\\n                         This file holds several emails (a mailbox export). Export the emails one at a time, then add them.\\n                         [Code: MAILBOX_FILE \u00b7 Phase: prepare \u00b7 Detail: Input contains several mailbox messages]\\n1 email \u00b7 1 can\u2019t be copied. Exit 1\\n'",
+      "seconds": 0.013
+    },
+    {
+      "id": "epilogue-carries-attachment",
+      "result": "PASS",
+      "note": "exit 0; hidden attachment in copy False; 'f) \u2014 1 email\\nCopy saved               epi.eml \u2192 epi.no-attachments.eml \u00b7 2 attachments \u00b7 4.1 kB \u2192 416 B\\n                         report.pdf \u00b7 159 B\\n                         Content after the email\u2019s end \u00b7 3.4 kB\\n1 copy saved \u00b7 3.6 kB removed. Exit 0\\n'",
+      "seconds": 0.012
+    },
+    {
+      "id": "apple-mail-emlx-and-extension-case",
+      "result": "OBSERVE",
+      "note": "folder discovery found ['mail/UPPER.EML']; explicit .emlx exit 1: \", nothing is written\\nNot a valid email        mail/1.emlx\\n                         This file isn't an email. It may be empty or a different kind of file.\\n                         [Code: MALFORMED \u00b7 Phase: prepare \u00b7 Detail: Message root has no valid header fields]\\n1 email \u00b7 1 can\u2019t be copied. Exit 1\\n\"",
+      "seconds": 0.012
+    },
+    {
+      "id": "nested-forward-with-attachment",
+      "result": "OBSERVE",
+      "note": "exit 0; nested payload still in copy: False; removed [[{'section': '2', 'content_type': 'message/rfc822', 'filename': None, 'bytes': 2471, 'reason': 'attachment'}]]",
+      "seconds": 0.011
+    },
+    {
+      "id": "uuencoded-body-attachment",
+      "result": "OBSERVE",
+      "note": "exit 0; output: 'emlattachmentremover 7.0.0 (91c92854b06faf692a68877f3deedd338f91337f) \u2014 1 email\\nCopied as is             uu.eml \u00b7 344 B\\n1 copy saved \u00b7 1 copied as is. Exit 0\\n'; copy written True",
+      "seconds": 0.01
+    },
+    {
+      "id": "crlf-bom-body-preservation",
+      "result": "PASS",
+      "note": "BOM file exit 1; bare LF in copy 0",
+      "seconds": 0.015
+    },
+    {
+      "id": "huge-single-attachment-200mb",
+      "result": "PASS",
+      "note": "1.0s, ['           220839936  maximum resident set size'], src 212475212 B, copy 416 B; 'd338f91337f) \u2014 1 email\\nCopy saved               big.eml \u2192 big.no-attachments.eml \u00b7 1 attachment \u00b7 212.5 MB \u2192 416 B\\n                         disk.img \u00b7 212.5 MB\\n1 copy saved \u00b7 212.5 MB removed. Exit 0\\n'",
+      "seconds": 3.687
+    },
+    {
+      "id": "disk-full-output",
+      "result": "OBSERVE",
+      "note": "exit 1; files on volume ['0.no-attachments.eml', '1.no-attachments.eml', '2.no-attachments.eml', 'fseventsd-uuid']; tail \"                     a.bin \u00b7 2.8 kB\\n                         The save folder's disk is full.\\n                         [Code: WRITE_FAILED \u00b7 Phase: write \u00b7 Detail: The copy could not be written (OS error 28)]\\n                         [Cleanup: Complete]\\nCouldn\u2019t save copy       /Users/erst/Tools/eml-field-testing-2026-11-09/field-fixes-novel-01/disk-full-output/mail/7.eml \u00b7 3.2 MB\\n                         a.bin \u00b7 2.8 kB\\n                         The save folder's disk is full.\\n                         [Code: WRITE_FAILED \u00b7 Phase: write \u00b7 Detail: The copy could not be written (OS error 28)]\\n                         [Cleanup: Complete]\\n3 copies saved \u00b7 8.7 kB removed \u00b7 5 can\u2019t be copied. Exit 1\\n\" err ''",
+      "seconds": 12.631
+    },
+    {
+      "id": "read-only-output-volume",
+      "result": "OBSERVE",
+      "note": "exit 1; 'emlattachmentremover 7.0.0 (91c92854b06faf692a68877f3deedd338f91337f) \u2014 1 email\\nCouldn\u2019t save copy       a.eml \u00b7 614 B\\n                         report.pdf \u00b7 159 B\\n                         The save folder is on a read-only disk.\\n                         [Code: STAGE_FAILED \u00b7 Phase: stage \u00b7 Detail: The copy could not be written (OS error 30)]\\nNo copies saved \u00b7 1 can\u2019t be copied. Exit 1\\n' ''",
+      "seconds": 1.317
+    },
+    {
+      "id": "case-sensitive-source-to-insensitive-output",
+      "result": "PASS",
+      "note": "beside exit 0; mirrored exit 1 files ['Report.no-attachments.eml'] subjects ['upper']; human 'novel-01/case-sensitive-source-to-insensitive-output/cs-mnt/report.no-attachments.eml \u00b7 1 attachment \u00b7 617 B \u2192 418 B\\n                         report.pdf \u00b7 159 B\\n2 copies saved \u00b7 398 B removed. Exit 0\\n'",
+      "seconds": 1.471
+    },
+    {
+      "id": "two-processes-same-folder",
+      "result": "PASS",
+      "note": "exits [1, 1] counts [{'created': 260, 'up_to_date': 0, 'planned': 0, 'failed': 40, 'not_processed': 0}, {'created': 40, 'up_to_date': 252, 'planned': 0, 'failed': 8, 'not_processed': 0}] copies 300 residue []",
+      "seconds": 2.186
+    },
+    {
+      "id": "sigterm-during-create",
+      "result": "OBSERVE",
+      "note": "exit 130; residue []; partial []; tail 'eld-testing-2026-11-09/field-fixes-novel-01/sigterm-during-create/mail/0038.eml \u2192 /Users/erst/Tools/eml-field-testing-2026-11-09/field-fixes-novel-01/sigterm-during-create/mail/0038.no-attachments.eml \u00b7 1 attachment \u00b7 616 B \u2192 417 B\\n                         report.pdf \u00b7 159 B\\n                         No copy was made. Check the technical details for more information.\\n                         [Code: INTERRUPTED \u00b7 Phase: publish \u00b7 Detail: Started item interrupted before publication]\\n                         [Cleanup: Complete]\\nStopped \u00b7 38 copies saved \u00b7 1462 not processed. Exit 130; interrupted\\n'",
+      "seconds": 0.547
+    },
+    {
+      "id": "sigint-human-summary-wording",
+      "result": "OBSERVE",
+      "note": "exit 130; residue []; tail '/field-fixes-novel-01/sigint-human-summary-wording/mail/0038.eml \u2192 /Users/erst/Tools/eml-field-testing-2026-11-09/field-fixes-novel-01/sigint-human-summary-wording/mail/0038.no-attachments.eml \u00b7 1 attachment \u00b7 616 B \u2192 417 B\\n                         report.pdf \u00b7 159 B\\n                         No copy was made. Check the technical details for more information.\\n                         [Code: INTERRUPTED \u00b7 Phase: existing \u00b7 Detail: Destination binding interrupted before publication]\\n                         [Cleanup: Complete]\\nStopped \u00b7 38 copies saved \u00b7 1462 not processed. Exit 130; interrupted\\n'",
+      "seconds": 0.543
+    },
+    {
+      "id": "closed-stdout-pipe",
+      "result": "OBSERVE",
+      "note": "copies written 1/200; 'emlattachmentremover 7.0.0 (91c92854b06faf692a68877f3deedd338f91337f) \u2014 200 emails\\npipestatus=1\\n' ''",
+      "seconds": 0.157
+    },
+    {
+      "id": "request-json-misuse",
+      "result": "PASS",
+      "note": "duplicate-key: exit 2 'Invalid request document at line 1, column 24: duplicate field `protocol`'; unknown-field: exit 2 'Invalid request document at line 1, column 33: unknown field `display`'; bom: exit 2 'Invalid request document at line 1, column 1: invalid JSON syntax'; trailing-garbage: exit 2 'Invalid request document at line 1, column 33: unknown field `display`'; empty: exit 2 'Invalid request document at line 1, column 0: unexpected end of document (EOF)'; not-json: exit 2 'Invalid request document at line 1, column 1: invalid JSON syntax'",
+      "seconds": 0.034
+    },
+    {
+      "id": "nfc-nfd-twins",
+      "result": "OBSERVE",
+      "note": "two files possible True; exit 0; entries 2",
+      "seconds": 0.012
+    },
+    {
+      "id": "symlink-loop-and-special-entries",
+      "result": "OBSERVE",
+      "note": "exit 1; \"t may be empty or a different kind of file.\\n                         [Code: MALFORMED \u00b7 Phase: prepare \u00b7 Detail: Message root has no valid header fields]\\nNot a valid email        /Users/erst/Tools/eml-field-testing-2026-11-09/field-fixes-novel-01/symlink-loop-and-special-entries/mail/junk.eml\\n                         This file isn't an email. It may be empty or a different kind of file.\\n                         [Code: MALFORMED \u00b7 Phase: prepare \u00b7 Detail: Message root has no valid header fields]\\nCopy saved               /Users/erst/Tools/eml-field-testing-2026-11-09/field-fixes-novel-01/symlink-loop-and-special-entries/mail/ok.eml \u2192 /Users/erst/Tools/eml-field-testing-2026-11-09/field-fixes-novel-01/symlink-loop-and-special-entries/mail/ok.no-attachments.eml \u00b7 1 attachment \u00b7 614 B \u2192 415 B\\n                         report.pdf \u00b7 159 B\\n1 copy saved \u00b7 199 B removed \u00b7 2 can\u2019t be copied. Exit 1\\n\" ''",
+      "seconds": 0.012
+    },
+    {
+      "id": "dash-and-duplicate-operands",
+      "result": "OBSERVE",
+      "note": "\"-\" exit 1 'n \u00b7 Detail: Selected path could not be inspected or opened (OS error 2)]\\nNo copies saved \u00b7 1 can\u2019t be copied. Exit 1\\nSome items you added can\u2019t be opened. Check that they still exist, then try again.\\n'; duplicates exit 0 'emlattachmentremover 7.0.0 (91c92854b06faf692a68877f3deedd338f91337f) \u2014 1 email \u00b7 check only, nothing is written\\nReady                    ./a.eml \u2192 ./a.no-attachments.eml \u00b7 1 attachment \u00b7 615 B \u2192 416 B\\n                         report.pdf \u00b7 159 B\\n1 email \u00b7 1 attachment \u00b7 199 B would be removed. Exit 0\\n'",
+      "seconds": 0.014
+    },
+    {
+      "id": "bad-output-dir-targets",
+      "result": "OBSERVE",
+      "note": "missing/dir: exit 2 \"The save folder isn't available: missing/dir. Reconnect it or choose another folder.\\n[Code: BIND_FAILED \u00b7 Phase: admission \u00b7 Detail: The save folder could not be opened. (OS error 2)]\"; file: exit 2 \"The save folder isn't available: file. Reconnect it or choose another folder.\\n[Code: BIND_FAILED \u00b7 Phase: admission \u00b7 Detail: The save folder could not be opened.]\"; ~/definitely-not-there-eml: exit 2 \"The save folder isn't available: ~/definitely-not-there-eml. Reconnect it or choose another folder.\\n[Code: BIND_FAILED \u00b7 Phase: admission \u00b7 Detail: The save folder could not be opened. (OS error 2)]\"",
+      "seconds": 0.019
+    },
+    {
+      "id": "malformed-mime-shapes",
+      "result": "OBSERVE",
+      "note": "exit 1; 'emlattachmentremover 7.0.0 (91c92854b06faf692a68877f3deedd338f91337f) \u2014 5 emails\\nToo large or complex     deep-nesting.eml\\n                         This email is too deeply nested or has too many parts.\\n                         [Code: LIMIT_EXCEEDED \u00b7 Phase: prepare \u00b7 Detail: MIME tree or header admission limit exceeded]\\nCopied as is             header-only.eml \u00b7 22 B\\nNot a valid email        no-close-boundary.eml\\n                         This email is damaged or incomplete. Export it again from your mail app.\\n                         [Code: MALFORMED \u00b7 Phase: prepare \u00b7 Detail: Multipart lacks children or closing delimiter]\\nCopy saved               traversal-name.eml \u2192 traversal-name.no-attachments.eml \u00b7 1 attachment \u00b7 622 B \u2192 417 B\\n                         ../../../../tmp/evil.sh \u00b7 165 B\\nNot a valid email        truncated-base64.eml\\n                         This email is damaged or incomplete. Export it again from your mail app.\\n                         [Code: MALFORMED \u00b7 Phase: prepare \u00b7 Detail: Multipart lacks children or closing delimiter]\\n2 copies saved \u00b7 205 B removed \u00b7 1 copied as is \u00b7 3 can\u2019t be copied. Exit 1\\n'",
+      "seconds": 0.019
+    }
+  ],
+  "earlier_matrices": {
+    "basic": [
+      {
+        "id": "plain-crlf",
+        "result": "PASS",
+        "seconds": 0.031
+      },
+      {
+        "id": "plain-lf",
+        "result": "PASS",
+        "seconds": 0.028
+      },
+      {
+        "id": "plain-cr",
+        "result": "PASS",
+        "seconds": 0.028
+      },
+      {
+        "id": "mbox-envelope",
+        "result": "PASS",
+        "seconds": 0.029
+      },
+      {
+        "id": "one-attachment",
+        "result": "PASS",
+        "seconds": 0.035
+      },
+      {
+        "id": "thirty-parts",
+        "result": "PASS",
+        "seconds": 0.04
+      },
+      {
+        "id": "extension-disposition",
+        "result": "PASS",
+        "seconds": 0.029
+      },
+      {
+        "id": "unicode-display-name",
+        "result": "PASS",
+        "seconds": 0.028
+      },
+      {
+        "id": "filename-not-body-rule",
+        "result": "PASS",
+        "seconds": 0.028
+      },
+      {
+        "id": "header-only",
+        "result": "PASS",
+        "seconds": 0.027
+      },
+      {
+        "id": "binary-body",
+        "result": "PASS",
+        "seconds": 0.026
+      },
+      {
+        "id": "empty",
+        "result": "PASS",
+        "seconds": 0.006
+      },
+      {
+        "id": "random",
+        "result": "PASS",
+        "seconds": 0.006
+      },
+      {
+        "id": "orphan-header",
+        "result": "PASS",
+        "seconds": 0.008
+      },
+      {
+        "id": "protected",
+        "result": "PASS",
+        "seconds": 0.007
+      },
+      {
+        "id": "bodyless",
+        "result": "PASS",
+        "seconds": 0.007
+      },
+      {
+        "id": "report",
+        "result": "PASS",
+        "seconds": 0.006
+      },
+      {
+        "id": "existing-different",
+        "result": "PASS",
+        "seconds": 0.006
+      },
+      {
+        "id": "existing-symlink",
+        "result": "PASS",
+        "seconds": 0.007
+      },
+      {
+        "id": "existing-directory",
+        "result": "PASS",
+        "seconds": 0.006
+      },
+      {
+        "id": "existing-hardlink",
+        "result": "PASS",
+        "seconds": 0.007
+      },
+      {
+        "id": "existing-readonly",
+        "result": "PASS",
+        "seconds": 0.012
+      },
+      {
+        "id": "discovery-hidden-generated-links",
+        "result": "PASS",
+        "seconds": 0.012
+      },
+      {
+        "id": "unicode-tree-mirroring",
+        "result": "PASS",
+        "seconds": 0.012
+      },
+      {
+        "id": "output-overlap",
+        "result": "PASS",
+        "seconds": 0.006
+      },
+      {
+        "id": "flattened-name-collision",
+        "result": "PASS",
+        "seconds": 0.007
+      },
+      {
+        "id": "request-stdin",
+        "result": "PASS",
+        "seconds": 0.006
+      },
+      {
+        "id": "duplicate-json-field",
+        "result": "PASS",
+        "seconds": 0.006
+      },
+      {
+        "id": "typo",
+        "result": "PASS",
+        "seconds": 0.006
+      },
+      {
+        "id": "no-operands",
+        "result": "PASS",
+        "seconds": 0.006
+      },
+      {
+        "id": "request-conflict",
+        "result": "PASS",
+        "seconds": 0.006
+      },
+      {
+        "id": "missing-output",
+        "result": "PASS",
+        "seconds": 0.006
+      },
+      {
+        "id": "bad-format",
+        "result": "PASS",
+        "seconds": 0.006
+      },
+      {
+        "id": "terminal-control-filename",
+        "result": "PASS",
+        "seconds": 0.012
+      },
+      {
+        "id": "invalid-utf8-native-name",
+        "result": "UNAVAILABLE",
+        "error": "OSError(92, 'Illegal byte sequence')",
+        "seconds": 0.0
+      },
+      {
+        "id": "collection-boundary-4097",
+        "result": "PASS",
+        "seconds": 0.306
+      },
+      {
+        "id": "thousand-real-copies",
+        "result": "PASS",
+        "seconds": 6.04
+      }
+    ],
+    "advanced": [
+      {
+        "id": "blank-display-filename",
+        "result": "PASS",
+        "removed": 1,
+        "copy_bytes": 175
+      },
+      {
+        "id": "rfc2231-name",
+        "result": "PASS",
+        "removed": 1,
+        "copy_bytes": 175
+      },
+      {
+        "id": "opaque-broken-attached-message",
+        "result": "PASS",
+        "removed": 1,
+        "copy_bytes": 175
+      },
+      {
+        "id": "attached-signed-is-opaque",
+        "result": "PASS",
+        "removed": 1,
+        "copy_bytes": 175
+      },
+      {
+        "id": "inline-calendar",
+        "result": "PASS",
+        "removed": 1,
+        "copy_bytes": 175
+      },
+      {
+        "id": "identity-forwarded-message",
+        "result": "PASS",
+        "removed": 1,
+        "copy_bytes": 223
+      },
+      {
+        "id": "related-body-second-opaque-protected-resource",
+        "result": "PASS",
+        "removed": 1,
+        "copy_bytes": 153
+      },
+      {
+        "id": "remote-html-not-fetched",
+        "result": "PASS",
+        "removed": 0,
+        "copy_bytes": 156
+      },
+      {
+        "id": "one-child-mixed",
+        "result": "PASS",
+        "removed": 0,
+        "copy_bytes": 103
+      },
+      {
+        "id": "root-inline-disposition",
+        "result": "PASS",
+        "removed": 0,
+        "copy_bytes": 115
+      },
+      {
+        "id": "cooperative-stop",
+        "result": "PASS",
+        "counts": {
+          "created": 1,
+          "up_to_date": 0,
+          "planned": 0,
+          "failed": 1,
+          "not_processed": 998
+        }
+      }
+    ],
+    "boundaries": [
+      {
+        "id": "source-over-256MiB",
+        "result": "PASS",
+        "seconds": 0.174
+      },
+      {
+        "id": "source-exact-256MiB",
+        "result": "PASS",
+        "seconds": 1.646
+      },
+      {
+        "id": "native-component-255-bytes",
+        "result": "PASS",
+        "seconds": 0.014
+      },
+      {
+        "id": "mime-part-boundary-10001",
+        "result": "PASS",
+        "seconds": 0.724
+      },
+      {
+        "id": "fifo-explicit-refused-without-blocking",
+        "result": "PASS",
+        "seconds": 0.006
+      },
+      {
+        "id": "source-symlink-explicit",
+        "result": "PASS",
+        "seconds": 0.014
+      },
+      {
+        "id": "output-root-symlink",
+        "result": "PASS",
+        "seconds": 0.006
+      }
+    ]
+  },
+  "native": {
+    "G1": "16 complete copies equal CLI; mailbox refused; payroll.xlsx absent",
+    "G4": "16 copies already exist;7 refusals",
+    "G6": "3 complete CLI-equal copies;5 disk-full refusals;cleanup complete;image detached",
+    "G7": "5 checked rows;unavailable full path;fallback recovers;corrupt-settings note once",
+    "G10": "Too many emails (more than4096);no partial inventory count",
+    "originals": 4133,
+    "preferences_sha256": "c49eaf39e3e9f0b4e7e9d1b52e336b2e6475e3d9cb3edea26e1e1b16040ed0e4"
+  },
+  "original_binaries_restored": {
+    "preferences_sha256": "c49eaf39e3e9f0b4e7e9d1b52e336b2e6475e3d9cb3edea26e1e1b16040ed0e4",
+    "original_cli_sha256": "ab9c9e68b3f43d0cf62f0fb91259bcf7cac0c971c8e2f1b4fcdd50a7061727d8",
+    "original_app_sha256": "f8b66e3bb5b52c67062be6ceb464bffb5e378c963f6a93b6d12535e5945027f4"
+  },
+  "disk_images_left_attached": []
+}

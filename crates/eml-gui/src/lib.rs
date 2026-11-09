@@ -261,22 +261,9 @@ impl DesktopController {
             return;
         }
         if let Some(path) = &destination
-            && let Err(violation) = eml_core::validate_native_path(path)
+            && let Err(error) = eml_core::validate_save_folder_path(path)
         {
-            self.message(
-                &eml_core::RequestPathError::InvalidPath {
-                    path: eml_core::RequestPath::OutputDirectory,
-                    violation,
-                }
-                .to_string(),
-            );
-            return;
-        }
-        if destination
-            .as_ref()
-            .is_some_and(|path| !path.is_absolute() || !path.is_dir())
-        {
-            self.message(wording::DESTINATION_UNAVAILABLE);
+            self.message(&error.to_string());
             return;
         }
         let mut runtime = self.runtime.borrow_mut();
@@ -287,7 +274,10 @@ impl DesktopController {
         self.changed();
         self.effect(effect);
         if let Err(e) = result {
-            self.message(&e.to_string());
+            self.message(&eml_core::vocabulary::interface_io_error(
+                eml_core::vocabulary::InterfaceIo::SaveSettings,
+                &e,
+            ));
         }
         self.start_pending();
         self.refresh();
@@ -656,11 +646,7 @@ impl DesktopController {
     fn set_open_feedback(&self, target: OpenTarget, text: &str, detail: &str) {
         let detail = eml_core::display::DisplayText::new(detail).to_string();
         match target {
-            OpenTarget::Main => self.message(&if detail.is_empty() {
-                text.to_owned()
-            } else {
-                format!("{text} {detail}")
-            }),
+            OpenTarget::Main => self.message(&eml_core::vocabulary::open_feedback(text, &detail)),
             #[cfg(any(feature = "native", test))]
             OpenTarget::About => {
                 self.about.set_notice(text.into());
@@ -718,9 +704,15 @@ impl DesktopController {
                 continue;
             }
             match job.task.join() {
-                Ok(Ok(())) => self.set_open_feedback(job.target, wording::OPEN_SENT, ""),
+                Ok(Ok(())) => {
+                    self.set_open_feedback(job.target, eml_core::vocabulary::OPEN_SENT, "")
+                }
                 Ok(Err(error)) => self.set_open_feedback(job.target, job.failure, &error),
-                Err(_) => self.set_open_feedback(job.target, job.failure, wording::OPEN_FAILED),
+                Err(_) => self.set_open_feedback(
+                    job.target,
+                    job.failure,
+                    eml_core::vocabulary::OPEN_FAILED,
+                ),
             }
         }
     }

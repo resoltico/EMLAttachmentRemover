@@ -85,6 +85,14 @@ impl Batch {
             State::Empty
         } else if matches!(self.active, Some((Kind::Create, _))) {
             State::Removing
+        } else if self
+            .create
+            .as_ref()
+            .and_then(|s| s.completion.as_ref())
+            .and_then(|c| c.failure.as_ref())
+            .is_some_and(eml_core::OperationFailure::is_save_folder_unavailable)
+        {
+            State::Ready
         } else if self.create.as_ref().is_some_and(Slot::settled) {
             if self.create.as_ref().is_some_and(|slot| slot.stopped) {
                 State::Stopped

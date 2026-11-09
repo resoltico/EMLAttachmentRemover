@@ -31,9 +31,25 @@ impl DesktopController {
         if r.batch.inputs.is_empty() {
             return false;
         }
+        if crate::present::folder_unavailable(&r.batch) {
+            return false;
+        }
         match r.batch.state() {
             // A stopped request is repeatable even before any preview/item exists.
-            State::Checking | State::Stopped => true,
+            State::Checking => r
+                .batch
+                .check
+                .as_ref()
+                .and_then(|s| s.report.as_ref())
+                .map_or(r.batch.destination.is_none(), |r| {
+                    r.with_report(|report| {
+                        eml_core::vocabulary::pending_copy_allowed(
+                            report.start(),
+                            self.runtime.borrow().batch.destination.is_some(),
+                        )
+                    })
+                }),
+            State::Stopped => true,
             State::Ready => r
                 .batch
                 .check
