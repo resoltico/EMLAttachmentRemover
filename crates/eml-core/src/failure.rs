@@ -68,6 +68,16 @@ impl OperationFailure {
                 "The save folder is inside a folder you added: {}. Choose a different save folder.",
                 crate::display::DisplayPath::new(path)
             ),
+            FailureContext::SaveFolder(path)
+                if self
+                    .native_error()
+                    .is_some_and(|e| e.kind() == io::ErrorKind::NotADirectory) =>
+            {
+                format!(
+                    "The save folder is a file, not a folder: {}. Choose a folder.",
+                    crate::display::DisplayPath::new(path)
+                )
+            }
             FailureContext::SaveFolder(path) => output_folder_unavailable(path),
             FailureContext::WorkingFolder(path) => format!(
                 "The working folder isn't available: {}. Choose an existing folder and try again.",
@@ -106,6 +116,14 @@ impl OperationFailure {
                 }
                 RunFailure(self.code).explanation().into()
             }
+        }
+    }
+    /// Short human label selected from the same typed context as the explanation.
+    pub fn label(&self) -> &'static str {
+        match self.context {
+            FailureContext::Message(Refusal::NotEmail) => "Not an email",
+            FailureContext::Message(Refusal::Malformed) => "Damaged email",
+            _ => crate::vocabulary::Outcome::Failed(self.code).label(),
         }
     }
     /// Whether an explicit work-item count (rather than a path/depth bound) was exceeded.

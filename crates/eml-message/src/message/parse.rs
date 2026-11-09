@@ -15,6 +15,7 @@ struct Multipart {
     first: Option<usize>,
     close: usize,
     closing_end: usize,
+    closing_content_end: usize,
     children: Vec<Child>,
     pending: Option<(usize, Span)>,
     related: Option<Related>,
@@ -286,6 +287,7 @@ impl Parser<'_, '_> {
                 first: None,
                 close: 0,
                 closing_end: 0,
+                closing_content_end: 0,
                 children: Vec::new(),
                 pending: None,
                 related,
@@ -298,7 +300,7 @@ impl Parser<'_, '_> {
             Ok(Body::Leaf)
         }
     }
-    fn finish(&mut self, end: usize) -> Result<(), PreparationError> {
+    fn finish(&mut self, end: usize, enclosed: bool) -> Result<(), PreparationError> {
         let frame = self
             .frames
             .pop()
@@ -323,11 +325,18 @@ impl Parser<'_, '_> {
             if let Some(registration) = multi.registration.take() {
                 self.active.unregister(registration);
             }
+            // Remove optional CRLF + epilogue as one unit only when content
+            // exists before enclosing framing. Empty epilogues keep exact bytes.
+            let epilogue_start = if enclosed && multi.closing_end < end {
+                multi.closing_content_end
+            } else {
+                multi.closing_end.min(end)
+            };
             node.kind = Kind::Multipart {
                 prefix: node.body.start..multi.first.expect("closed multipart has an opening"),
                 children: multi.children,
-                suffix: multi.close..multi.closing_end.min(end),
-                epilogue: multi.closing_end.min(end)..end,
+                suffix: multi.close..epilogue_start,
+                epilogue: epilogue_start..end,
             };
         }
         node.span.end = end;
@@ -351,11 +360,10 @@ impl Parser<'_, '_> {
             let start = self.message.nodes[self.frames.last().expect("frame").id]
                 .span
                 .start;
-            self.finish(previous_terminator(
-                self.message.input,
-                line.content.start,
-                start,
-            ))?;
+            self.finish(
+                previous_terminator(self.message.input, line.content.start, start),
+                true,
+            )?;
         }
         let frame = self
             .frames
@@ -386,6 +394,7 @@ impl Parser<'_, '_> {
             multi.closed = true;
             multi.close = line.content.start;
             multi.closing_end = line.end;
+            multi.closing_content_end = line.content.end;
             self.active
                 .unregister(multi.registration.take().expect("registered multipart"));
             return Ok(());
@@ -487,7 +496,7 @@ pub(crate) fn parse<'a>(
         }
     }
     while !parser.frames.is_empty() {
-        parser.finish(input.len())?;
+        parser.finish(input.len(), false)?;
     }
     Ok(parser.message)
 }

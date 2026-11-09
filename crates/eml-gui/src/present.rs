@@ -59,7 +59,10 @@ pub(super) struct Row {
 }
 impl Row {
     pub(super) fn label(&self) -> &'static str {
-        self.status.label()
+        match self.status {
+            RowStatus::Settled(outcome) => outcome.label_for(self.item.failure.as_ref()),
+            _ => self.status.label(),
+        }
     }
     pub(super) fn problem(&self) -> bool {
         self.status.severity().is_problem()

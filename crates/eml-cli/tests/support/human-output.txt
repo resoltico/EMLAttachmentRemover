@@ -18,13 +18,13 @@ Copy already exists      plain.eml · 24 B
 2 copies already exist. Exit 0
 $ --dry-run -- empty.eml garbage.eml notes.txt
 emlattachmentremover @VERSION@ — 3 emails · check only, nothing is written
-Not a valid email        empty.eml
+Not an email             empty.eml
                          This file isn't an email. It may be empty or a different kind of file.
                          [Code: MALFORMED · Phase: prepare · Detail: Message root has no valid header fields]
-Not a valid email        garbage.eml
+Not an email             garbage.eml
                          This file isn't an email. It may be empty or a different kind of file.
                          [Code: MALFORMED · Phase: prepare · Detail: Message root has no valid header fields]
-Not a valid email        notes.txt
+Not an email             notes.txt
                          This file isn't an email. It may be empty or a different kind of file.
                          [Code: MALFORMED · Phase: prepare · Detail: Message root has no valid header fields]
 3 emails · 3 can’t be copied. Exit 1

@@ -3,7 +3,7 @@ use eml_message::{RemovalReason, RunControl, prepare_message};
 #[test]
 fn y2_root_and_nested_epilogues_leave_only_message_parts() {
     let source = b"Content-Type: multipart/mixed; boundary=O\r\n\r\npreamble\r\n--O\r\nContent-Type: multipart/mixed; boundary=I\r\n\r\n--I\r\n\r\nbody\r\n--I--\r\nhidden-inner\r\n--O--\r\nhidden-outer";
-    let expected = b"Content-Type: multipart/mixed; boundary=O\r\n\r\npreamble\r\n--O\r\nContent-Type: multipart/mixed; boundary=I\r\n\r\n--I\r\n\r\nbody\r\n--I--\r\n\r\n--O--\r\n";
+    let expected = b"Content-Type: multipart/mixed; boundary=O\r\n\r\npreamble\r\n--O\r\nContent-Type: multipart/mixed; boundary=I\r\n\r\n--I\r\n\r\nbody\r\n--I--\r\n--O--\r\n";
     let message = prepare_message(source, &RunControl::default()).unwrap();
     assert_eq!(message.as_bytes(), expected);
     assert_eq!(
@@ -13,7 +13,7 @@ fn y2_root_and_nested_epilogues_leave_only_message_parts() {
             .map(|r| (r.section.as_str(), r.bytes, r.reason))
             .collect::<Vec<_>>(),
         [
-            ("1", 12, RemovalReason::AfterMessageEnd),
+            ("1", 14, RemovalReason::AfterMessageEnd),
             ("", 12, RemovalReason::AfterMessageEnd)
         ]
     );

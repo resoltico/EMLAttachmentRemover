@@ -577,7 +577,7 @@ fn w3_real_core_rows_and_headlines_for_check_done_and_rerun() {
                     .iter()
                     .find(|r| r.name == name)
                     .unwrap();
-                assert_eq!(row.status, item.outcome().label());
+                assert_eq!(row.status, item.outcome().label_for(item.failure.as_ref()));
             }
         }
     }
@@ -1555,7 +1555,7 @@ fn u10_check_failures_persist_while_create_is_held() {
         .iter()
         .find(|r| r.name == "three.eml")
         .unwrap();
-    assert_eq!(bad.status, "Not a valid email");
+    assert_eq!(bad.status, "Not an email");
     assert_eq!(c.window().get_view().problems, "1 can’t be copied");
     let good = c
         .window()
@@ -1573,7 +1573,7 @@ fn u10_check_failures_persist_while_create_is_held() {
             .find(|r| r.name == "three.eml")
             .unwrap()
             .status,
-        "Not a valid email"
+        "Not an email"
     );
 }
 #[test]
@@ -1728,14 +1728,7 @@ fn u6_t8_headers_and_first_row_stay_fixed_across_run_and_filter_states() {
     let row_y = label(&ui, "one.eml, Waiting").absolute_position().y;
     ui.invoke_toggle_problems();
     assert!((label(&ui, "Email").absolute_position().y - y).abs() <= 1.);
-    assert!(
-        (label(&ui, "three.eml, Not a valid email")
-            .absolute_position()
-            .y
-            - row_y)
-            .abs()
-            <= 1.
-    );
+    assert!((label(&ui, "three.eml, Not an email").absolute_position().y - row_y).abs() <= 1.);
     ui.invoke_toggle_problems();
     release.release();
     pump(&c, || !c.is_busy());

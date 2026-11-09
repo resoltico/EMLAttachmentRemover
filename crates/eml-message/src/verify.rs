@@ -325,7 +325,7 @@ impl Iterator for RetainedSpans<'_, '_> {
         }
     }
 }
-/// Actual authorization guard, targeted by the bounded mutation selection.
+/// Independently authorize the exact source-bound deletion claim sequence.
 pub(crate) fn authorize_deletions(
     message: &Message<'_>,
     claims: &[Claim],

@@ -26,7 +26,12 @@ fn u1_cli_renders_every_core_outcome_label() {
             outcome.label()
         );
         let mut line = Vec::new();
-        write_label(&mut line, outcome, std::path::Path::new("message.eml")).unwrap();
+        write_label(
+            &mut line,
+            outcome.label(),
+            std::path::Path::new("message.eml"),
+        )
+        .unwrap();
         assert!(
             String::from_utf8(line)
                 .unwrap()
