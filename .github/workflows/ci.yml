@@ -38,7 +38,7 @@ jobs:
         id: tools
         shell: bash
         run: cargo xtask tool-versions >> "$GITHUB_OUTPUT"
-      - uses: taiki-e/install-action@b80e2bb2635f28eb98b9fce1e2f0887e1535c6b2
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39
         with:
           tool: cargo-deny@${{ steps.tools.outputs.cargo_deny }},shellcheck@${{ steps.tools.outputs.shellcheck }}
       - name: Install pinned actionlint from its upstream release
@@ -54,6 +54,9 @@ jobs:
           grep "  $archive$" checksums.txt | sha256sum -c -
           tar -xzf "$archive" actionlint
           echo "$RUNNER_TEMP/actionlint" >> "$GITHUB_PATH"
+      - name: Install pinned PowerShell analyzer
+        shell: pwsh
+        run: Install-Module PSScriptAnalyzer -RequiredVersion '${{ steps.tools.outputs.psscriptanalyzer }}' -Scope CurrentUser -Force
       - run: cargo xtask lint
       - if: github.ref == 'refs/heads/main' && steps.cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
@@ -150,7 +153,7 @@ jobs:
         id: tools
         shell: bash
         run: cargo xtask tool-versions >> "$GITHUB_OUTPUT"
-      - uses: taiki-e/install-action@b80e2bb2635f28eb98b9fce1e2f0887e1535c6b2
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39
         with:
           tool: cargo-about@${{ steps.tools.outputs.cargo_about }}
       - run: rustup target add ${{ matrix.target }}
@@ -168,9 +171,74 @@ jobs:
             ~/.cargo/git
             target
           key: ${{ steps.cache.outputs.cache-primary-key }}
+  install:
+    name: CLI install (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: macos-15, target: aarch64-apple-darwin }
+          - { runner: macos-15-intel, target: x86_64-apple-darwin }
+          - { runner: ubuntu-26.04, target: x86_64-unknown-linux-gnu }
+          - { runner: ubuntu-26.04-arm, target: aarch64-unknown-linux-gnu }
+          - { runner: windows-2022, target: x86_64-pc-windows-msvc }
+          - { runner: windows-11-arm, target: aarch64-pc-windows-msvc }
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    env:
+      TARGET_TRIPLE: ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        id: cache
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-install-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', 'xtask/tools.toml') }}
+          restore-keys: cargo-install-${{ runner.os }}-${{ runner.arch }}-
+      - name: Read tool versions
+        id: tools
+        run: cargo run --locked -p xtask --target "$TARGET_TRIPLE" -- tool-versions >> "$GITHUB_OUTPUT"
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39
+        if: matrix.target != 'x86_64-apple-darwin'
+        with:
+          tool: cargo-about@${{ steps.tools.outputs.cargo_about }}
+      - name: Install pinned notices generator with its CLI feature on Intel Mac
+        if: matrix.target == 'x86_64-apple-darwin'
+        run: cargo install --locked --version '${{ steps.tools.outputs.cargo_about }}' --features cli cargo-about
+      - name: Shells for startup-file checks
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y zsh fish
+      - name: Build the native CLI release archive
+        run: cargo run --locked -p xtask --target "$TARGET_TRIPLE" -- dist --cli --target "$TARGET_TRIPLE" --out "$RUNNER_TEMP/dist"
+      - name: Prepare and test the Unix installation
+        if: runner.os != 'Windows'
+        run: |
+          python3 install/prepare-test-release.py "$RUNNER_TEMP/dist"
+          bash install/install_test.sh "$RUNNER_TEMP/dist"
+      - name: Prepare and test the Windows installation
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          python install/prepare-test-release.py "$env:RUNNER_TEMP/dist"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./install/install_test.ps1 -Dist "$env:RUNNER_TEMP/dist"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - if: github.ref == 'refs/heads/main' && steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ steps.cache.outputs.cache-primary-key }}
   ci-ok:
     if: always()
-    needs: [lint, test, app]
+    needs: [lint, test, app, install]
     runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:

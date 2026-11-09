@@ -2,6 +2,7 @@
 mod archive;
 mod ci;
 mod dist;
+mod installers;
 mod lint;
 mod notices;
 mod source;

@@ -10,6 +10,32 @@ documentation at the matching release tag.
 
 ## Install
 
+### CLI installer
+
+User-local installers support all six CLI platform and CPU targets. They select
+the native executable and keep installation separate from the Mac desktop app.
+
+On macOS or Linux:
+
+```sh
+curl -fsSL https://github.com/resoltico/EMLAttachmentRemover/releases/latest/download/install.sh | sh
+```
+
+On Windows in PowerShell:
+
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://github.com/resoltico/EMLAttachmentRemover/releases/latest/download/install.ps1 | iex"
+```
+
+The installers verify the selected release, test the binary and record ownership
+before updating or removing it. They retain the CLI's license material in a
+private directory beside the executable, and edit only their own PATH entries.
+An existing unowned or changed target is refused; remove it yourself or choose a
+fresh directory. Read [install, update and uninstall](docs/INSTALL.md) for paths,
+options, mirrors, trust and recovery. They do not install the Mac desktop app.
+
+### Manual downloads
+
 Download from [Releases](https://github.com/resoltico/EMLAttachmentRemover/releases).
 Choose the archive matching your platform and CPU:
 
@@ -47,7 +73,7 @@ emlattachmentremover --output-dir copies -- mail-folder
 emlattachmentremover --format json -- message.eml
 ```
 
-Human output uses the app’s core outcome labels and batch headline (JSON is unchanged):
+Human output uses core’s outcome labels and batch headline:
 
 ```text
 Ready                    message.eml → message.no-attachments.eml · 1 attachment · 392 B → 183 B
@@ -75,8 +101,8 @@ and reported cleanup failures before retrying. Recognizable staging files use
 
 ## Desktop app
 
-The Mac app runs core in process and needs no CLI installation. The app no longer
-contains a CLI executable; install the separate macOS CLI archive for Terminal use.
+The Mac app runs core in process and needs no CLI installation. Install the
+separate macOS CLI for Terminal use.
 
 Add `.eml` files or folders with **Add Files…**, **Add Folder…**, a window drop,
 launch arguments, Finder **Open With**, or a drop on the Dock icon. Folder contents
@@ -116,9 +142,9 @@ waiting, **Quit Now** exits the app without waiting for the create thread;
 report exports already in progress still settle first. Read-only checks receive
 cooperative stop automatically, without a dialog.
 The app remembers three recent save folders, the last destination and the last
-report folder. Invalid or unreadable settings silently use defaults and are
-replaced on the next successful save. Folder settings now use native encoding;
-earlier string settings reset to defaults. About and Licenses are in the menus.
+report folder. Invalid or unreadable settings use defaults with a note beside
+the destination; a successful save replaces them. Folder settings preserve native
+path encoding. About and Licenses are in the menus.
 Finder Services remain unsupported. Open With uses rank Alternate, keeping the
 existing default mail application.
 

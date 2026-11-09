@@ -19,9 +19,20 @@ require Ubuntu 26.04 or newer. Headless GUI development needs `pkg-config`,
 Windows CLI development uses Visual Studio C++ Build Tools with the native x64
 or ARM64 MSVC tools. CI builds a static CRT.
 
+On macOS and Linux:
+
 ```sh
 cargo build --locked -p emlattachmentremover
 cargo test --locked --workspace
+```
+
+On Windows, select your native MSVC target explicitly and exclude the unsupported
+GUI package from workspace commands:
+
+```powershell
+$target = 'x86_64-pc-windows-msvc' # use aarch64-pc-windows-msvc on ARM64
+cargo build --locked -p emlattachmentremover --target $target
+cargo test --locked --workspace --exclude eml-gui --target $target
 ```
 
 Install the tools listed under Checks first. For a native GUI on macOS, build
@@ -57,14 +68,36 @@ from the repository on Unix:
 ```sh
 cargo install --locked cargo-deny --version "$(awk -F '"' '/^cargo_deny = / {print $2}' xtask/tools.toml)"
 cargo install --locked cargo-about --features cli --version "$(awk -F '"' '/^cargo_about = / {print $2}' xtask/tools.toml)"
-rustup target add aarch64-apple-darwin x86_64-apple-darwin # macOS distribution
-cargo xtask ci
+```
+
+Installer source checks also need Python 3 (standard library only) and PowerShell 7
+(`pwsh`) on PATH. Install PSScriptAnalyzer at the version declared in tools.toml;
+from PowerShell in the repository:
+
+```powershell
+$toolLines = cargo xtask tool-versions
+if ($LASTEXITCODE -ne 0) { throw 'Could not read the declared tool versions.' }
+$toolPins = ($toolLines -join "`n") | ConvertFrom-StringData
+Install-Module PSScriptAnalyzer -RequiredVersion $toolPins.psscriptanalyzer -Scope CurrentUser -Force
 ```
 
 Obtain actionlint and shellcheck from their upstream releases or a package manager,
-using the versions in tools.toml. `cargo xtask ci` checks tool versions, formatting,
+using the versions in tools.toml. On macOS the full gate builds both app targets,
+so install both Rust targets:
+
+```sh
+rustup target add aarch64-apple-darwin x86_64-apple-darwin
+```
+
+On macOS and Linux, once the prerequisites are installed, run:
+
+```sh
+cargo xtask ci
+```
+
+`cargo xtask ci` checks tool versions, formatting,
 dependency policy for the headless graph, macOS native renderers alone/together, the separate fuzz lockfile, workflows, shell scripts and the
-working-tree verification budget;
+working-tree verification budget, installer body parity and installer source regressions;
 then runs Clippy and tests. On macOS it also builds separate signed Apple Silicon
 and Intel apps in a fresh temporary directory. Structural complexity thresholds
 warn; other Clippy findings fail. Inline exceptions use `#[expect(..., reason = "...")]`.
@@ -146,6 +179,46 @@ Add `--app` for the GUI graph and select the same target as the app archive.
 It requires cargo-about, the selected Rust sysroot's copyright file and the retained upstream
 legal texts. See [legal materials](legal/README.md).
 
+## CLI installer verification
+
+The user contract is [install, update and uninstall](docs/INSTALL.md). The installers
+manage user-local CLI files and their own PATH entries, not the desktop app or
+email data. Keep the Unix installer POSIX `sh` and the Windows installer compatible
+with Windows PowerShell 5.1 and PowerShell 7. The PowerShell script stays ASCII.
+
+The common engine bodies are owned by PDFConcat. Only literal product settings
+may differ inside `BEGIN PRODUCT SETTINGS` / `END PRODUCT SETTINGS`. Changes to
+behavior must be synchronized in both repositories, with EML's reviewed upstream
+pin updated. The published scripts are self-contained; neither installer fetches
+code or configuration from the other repository at runtime. `install/engine-source.txt`
+contains the full reviewed PDF commit. Check body parity locally against that Git
+object, or fetch its files over HTTPS for development/CI:
+
+```sh
+python3 install/check-sync.py /absolute/path/to/PDFConcat
+python3 install/check-sync.py
+```
+
+Preserve EML's literal product block, copy both canonical engine bodies and update
+the pin together. Commit the PDF engine first; a dirty working tree is not what
+the offline check reads.
+
+Use only isolated HOME/config/install paths for tests. Native Windows registry
+PATH tests run only in CI and restore the original raw value, kind and existence.
+The real archive checks must cover each of the six shipped CLI targets on its
+native host, including PowerShell 5.1 and 7 when both exist. They exercise install,
+update, uninstall, ownership refusal, changed data, lock refusal, PATH handling,
+checksum/version rejection and regular-file extraction. Preserve original files
+and arbitrary pre-existing directory contents. No test may adopt or remove an
+unowned program just because it prints the expected name/version.
+
+A local EML mirror contains versioned archives, so supply a stable version along
+with `EMLATTACHMENTREMOVER_DOWNLOAD_BASE`. Use fresh output directories and the
+actual generated `SHA256SUMS`. See [release checks](docs/release.md) for archive
+production and native verification. During development, select the version in
+the actual locally built archives. Installer testing does not publish releases
+or modify published assets.
+
 ## Focused investigation
 
 Pure MIME code lives in `eml-message`. Its independent model and retained-span
@@ -187,13 +260,8 @@ cargo mutants --in-diff /absolute/path/product.diff
 ```
 
 Weekly mutation uses 16 round-robin shards, each with runner CPUs minus one workers
-(at least one). At introduction, 2,848 mutants divide into 178 per shard. The four
-bounded samples took at most 43.9 seconds per mutant including build and tests:
-178 × 43.9 / 3,600 = 2.18 hours even with one worker, plus baseline/setup; three
-workers predict about 0.73 hours. This is a sizing estimate, not a Linux campaign
-measurement; the first scheduled run will establish actual costs.
-A baseline failure, missed mutant or timeout fails the shard; unviable mutants do
-not. Every shard uploads `mutants.out`. The first scheduled run is the survivor
-baseline survey, not PR verification; triaging pre-existing survivors is follow-up.
+(at least one). A baseline failure, missed mutant or timeout fails the shard;
+unviable mutants do not. Every shard uploads `mutants.out` for review. Campaign
+cost and surviving mutants must be assessed from the actual scheduled results.
 Keep oracles independent and add tests for concrete behavior rather than campaign
 or evidence frameworks.

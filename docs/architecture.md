@@ -33,7 +33,7 @@ turning it into native navigation. The GUI retains core’s native operational
 paths directly instead of reconstructing them from records.
 GUI details use current accepted observations, without reinterpreting a previous
 preview as a current create result. Human diagnostics keep canonical phases and
-separate cleanup resource/native causes; exact protocol-1 facts remain unchanged.
+separate cleanup resource/native causes from protocol-1 serialization.
 `eml_core::product` owns the command/display names, purpose and source-identity formatting;
 the workspace manifest owns the release version. `EML_SOURCE_REVISION` optionally
 embeds a full commit ID for both frontends; About displays its first 12 characters.
@@ -208,11 +208,10 @@ not proof of viewer contents or current file identity. About and Licenses retain
 their focus/reset behavior. The native GUI uses Winit on macOS only, with builtin
 Cupertino widgets and native menus. Linux uses the testing backend for headless development; Windows supports core
 and the CLI only. Human path formatting is shared in `eml-core`, separate from
-unchanged wire display strings. Preferences keep native paths in memory and use
+wire display strings. Preferences keep native paths in memory and use
 their own Unix-byte/base64 encoding at the settings boundary, validated by
-core's path policy.
-Unreadable, invalid or old string settings give defaults silently and are replaced
-on the next save, without migration.
+core's path policy. Invalid or unreadable settings use defaults, expose a
+destination note and are replaced on the next successful save.
 
 On macOS, the verified Winit application-delegate class receives About/Quit routing
 and an `application:openURLs:` adapter. Only absent selectors with matching ABI
@@ -227,21 +226,15 @@ testing backend. Scripted runners hold typed event callbacks for lifecycle timin
 rare receipt projections use typed core facts rather than wire replay. The software renderer is the default; Skia remains an
 explicit measurement feature. Builds pin upstream crates. The small
 [spin_on source patch](../crates/spin-on/README.md) uses standard Rust pinning and
-a no-op waker to remove archived `pin-utils`; the audit policy is unchanged.
+a no-op waker without depending on archived `pin-utils`.
 
 Processing details shows the whole-run core diagnostic's Code, Phase and Detail,
 plus its native cause. Item-only failures stay in selected-item details; without a
 whole-run core failure, including a panic, the expandable control is absent. Core owns request admission
 wording. There is no stderr capture or subprocess protocol reducer in the GUI.
 
-Mailbox envelopes containing a second blank-line-delimited From separator and
-header field are refused before any copy is written. A single From envelope is
-retained. Every retained multipart closing delimiter ends its content: root and
-nested epilogues are omitted, with non-whitespace bytes independently authorized
-and reported as `after_message_end`. Preambles remain exact, including any hidden
-data there; this is an intentional limitation. Text bodies, including uuencoded
-text, are also retained as body text. Older copies that retained epilogue bytes
-will differ from the new candidate and are refused as existing conflicts.
+Mailbox admission and multipart preamble/epilogue framing belong to
+[the MIME policy](mime.md#mailbox-and-multipart-framing).
 
 Read-only runs may collect and prepare sources while the save folder is
 unavailable. Core reports that fact before item observations and on settlement.
@@ -265,10 +258,3 @@ The action label shows core’s eligible email count even while filtering proble
 The filter’s filled/checked state and Showing problems text make its scope clear.
 Unreadable settings use defaults with a single note until the user chooses a
 folder or saves new preferences; this setting-specific note belongs to the GUI.
-
-A nested multipart's non-empty epilogue is omitted with its close-delimiter
-line break: RFC 2046's optional `CRLF epilogue` is one unit. The enclosing
-delimiter's own framing break terminates the retained close line. Transport
-padding stays exact. Empty nested epilogues retain both original framing breaks;
-root epilogues start after the close line's break. No line endings are normalized.
-The `after_message_end` byte count includes the entire omitted unit.

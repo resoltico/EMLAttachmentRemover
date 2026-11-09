@@ -10,3 +10,4 @@ Thumbs.db
 target/
 /fuzz/corpus/
 /fuzz/artifacts/
+__pycache__/

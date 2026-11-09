@@ -40,6 +40,9 @@ pub(crate) fn run(rust_only: bool) -> Result<()> {
             .args(["--target", &target])
             .args(exclusions),
     )?;
+    if !rust_only && cfg!(unix) {
+        crate::installers::check()?;
+    }
     if !rust_only && cfg!(target_os = "macos") {
         let out = tempfile::tempdir()?;
         for target in ["aarch64-apple-darwin", "x86_64-apple-darwin"] {

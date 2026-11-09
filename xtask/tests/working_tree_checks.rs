@@ -64,6 +64,17 @@ fn budget_uses_dirty_untracked_and_deleted_inputs_but_can_measure_a_revision() {
     fs::remove_file(root.join("tests/untracked check.rs")).unwrap();
     put(root, "scripts/check.sh", &"shell\n".repeat(20));
     assert!(!budget(root, None).status.success());
+    fs::remove_file(root.join("scripts/check.sh")).unwrap();
+    for path in [
+        "install/install.sh",
+        "install/install.ps1",
+        "install/check.py",
+        "install/analyzer.psd1",
+    ] {
+        put(root, path, &"installer\n".repeat(20));
+        assert!(!budget(root, None).status.success(), "{path}");
+        fs::remove_file(root.join(path)).unwrap();
+    }
     assert!(!budget(root, Some("missing-ref")).status.success());
 }
 #[test]
