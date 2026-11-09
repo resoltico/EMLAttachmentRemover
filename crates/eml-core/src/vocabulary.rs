@@ -991,7 +991,12 @@ impl BatchTotals {
                 }
                 for outcome in [Outcome::CopiedAsIs, Outcome::AlreadyExists] {
                     let n = self.count(outcome);
-                    if n > 0 {
+                    let counted_in_verdict = outcome == Outcome::AlreadyExists
+                        && self.saved() == 0
+                        && self.problems == 0
+                        && !self.has_attention()
+                        && !incomplete_create;
+                    if n > 0 && !counted_in_verdict {
                         parts.push(outcome.count_label(n));
                     }
                 }
@@ -1086,19 +1091,18 @@ pub fn attachment_count(n: usize) -> String {
 
 /// Whether settled preview observations offer a fresh copy attempt. This never
 /// authorizes execution: current inputs and destinations must always be readmitted.
-/// Error names are open vocabulary; an unknown code is not a known global blocker.
-pub fn can_offer_copy(outcomes: impl IntoIterator<Item = Outcome>, error: Option<&str>) -> bool {
-    if error
-        .and_then(crate::ErrorCode::from_wire_name)
-        .is_some_and(|code| {
-            matches!(
-                code,
-                crate::ErrorCode::NoInputs
-                    | crate::ErrorCode::InputLimitExceeded
-                    | crate::ErrorCode::OutputOverlap
-            )
-        })
-    {
+pub fn can_offer_copy(
+    outcomes: impl IntoIterator<Item = Outcome>,
+    error: Option<crate::ErrorCode>,
+) -> bool {
+    if error.is_some_and(|code| {
+        matches!(
+            code,
+            crate::ErrorCode::NoInputs
+                | crate::ErrorCode::InputLimitExceeded
+                | crate::ErrorCode::OutputOverlap
+        )
+    }) {
         return false;
     }
     outcomes.into_iter().any(|outcome| match outcome {
@@ -1115,17 +1119,15 @@ pub fn can_offer_copy(outcomes: impl IntoIterator<Item = Outcome>, error: Option
     })
 }
 /// Whether settled results cover the discovered inventory. This does not prove
-/// current filesystem absence. Unknown errors must retain reporting uncertainty.
+/// current filesystem absence. Delivery failures remain a separate boundary fact.
 pub fn results_cover_inventory(
     complete: bool,
     interrupted: bool,
     unprocessed: usize,
-    error: Option<&str>,
+    error: Option<crate::ErrorCode>,
 ) -> bool {
     complete
         && !interrupted
         && unprocessed == 0
-        && error.is_none_or(|name| {
-            crate::ErrorCode::from_wire_name(name) == Some(crate::ErrorCode::NoInputs)
-        })
+        && error.is_none_or(|code| code == crate::ErrorCode::NoInputs)
 }

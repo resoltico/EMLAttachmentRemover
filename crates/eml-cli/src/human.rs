@@ -116,7 +116,7 @@ fn write_cleanup(writer: &mut impl Write, cleanup: &eml_core::CleanupReceipt) ->
             writer,
             " · {}: {}",
             fields::RESIDUAL_RESOURCE,
-            eml_protocol::DisplayPath::new(std::path::Path::new(name))
+            eml_core::display::DisplayPath::new(std::path::Path::new(name))
         )?;
     }
     writeln!(writer, "]")
@@ -214,7 +214,7 @@ fn write_item(writer: &mut impl Write, value: &eml_core::ItemEvent<'_>) -> io::R
         write!(
             writer,
             " → {}",
-            eml_protocol::DisplayPath::new(path.display)
+            eml_core::display::DisplayPath::new(path.display)
         )?;
     }
     if let Some(data) = data {
@@ -243,7 +243,7 @@ fn write_item(writer: &mut impl Write, value: &eml_core::ItemEvent<'_>) -> io::R
                 writer,
                 "{:PATH_COLUMN$}{}",
                 "",
-                eml_protocol::DisplayText::new(name)
+                eml_core::display::DisplayText::new(name)
             )?;
             if !kind.is_empty() && kind != name {
                 write!(writer, " ({kind})")?;
@@ -485,7 +485,7 @@ fn write_label(
         writer,
         "{:<LABEL_WIDTH$} {}",
         outcome.label(),
-        eml_protocol::DisplayPath::new(source)
+        eml_core::display::DisplayPath::new(source)
     )
 }
 #[cfg(test)]

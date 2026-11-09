@@ -1,7 +1,7 @@
 //! Typed workflow observations. Native success is never inferred from a path.
 use crate::fs::{CleanupReceipt, Identity, SyncReceipt};
 use crate::{OperationFailure, RemovedPart};
-use std::{io, path::Path};
+use std::{io, path::Path, sync::Arc};
 
 /// Requested-address observation, independent of object identity or publication.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -403,10 +403,10 @@ pub enum DeliveryPhase {
     Summary,
 }
 /// Exact sink error retained without serializing unrestricted native error text.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct DeliveryFailure {
     pub(super) phase: DeliveryPhase,
-    pub(super) error: io::Error,
+    pub(super) error: Arc<io::Error>,
 }
 impl DeliveryFailure {
     /// Failed event kind.
@@ -439,7 +439,7 @@ impl ExitClass {
     }
 }
 /// Final counts and actual outcome; no message bytes or per-item list is retained.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct RunOutcome {
     pub(super) total: usize,
     pub(super) counts: Counts,

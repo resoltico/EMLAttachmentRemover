@@ -78,6 +78,10 @@ pub enum PathViolation {
 /// Pure request-path representation/resource failure, without filesystem I/O.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RequestPathError {
+    /// Absolute callers must supply at least one absolute input.
+    AbsoluteSelectionRequired,
+    /// Absolute callers must supply an absolute explicit destination.
+    AbsoluteDestinationRequired,
     /// Argument count exceeds the request bound, even when arguments repeat.
     TooManyInputs,
     /// Combined native input bytes exceed the request bound.
@@ -95,6 +99,12 @@ pub enum RequestPathError {
 impl std::fmt::Display for RequestPathError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::AbsoluteSelectionRequired => {
+                f.write_str("Select at least one absolute file or folder path.")
+            }
+            Self::AbsoluteDestinationRequired => {
+                f.write_str("Choose an absolute save folder path.")
+            }
             Self::TooManyInputs => write!(
                 f,
                 "Too many input paths. Add at most {MAX_INPUT_PATHS} files or folders at once."
@@ -128,6 +138,34 @@ impl std::fmt::Display for RequestPathError {
 impl std::error::Error for RequestPathError {}
 
 impl RunRequest {
+    /// Capture all-absolute native operands without resolving or opening them.
+    /// The first operand's root supplies a stable base; no process working
+    /// directory is read or changed. Core still readmits filesystem state on run.
+    pub fn from_absolute(
+        paths: Vec<PathBuf>,
+        output: OutputLocation,
+        mode: RunMode,
+    ) -> Result<Self, RequestPathError> {
+        if paths.is_empty() || paths.iter().any(|p| !p.is_absolute()) {
+            return Err(RequestPathError::AbsoluteSelectionRequired);
+        }
+        if matches!(&output, OutputLocation::Directory(p) if !p.is_absolute()) {
+            return Err(RequestPathError::AbsoluteDestinationRequired);
+        }
+        let request = Self {
+            working_directory: paths[0]
+                .ancestors()
+                .last()
+                .expect("absolute path has a root")
+                .to_path_buf(),
+            paths,
+            output,
+            mode,
+        };
+        request.validate_path_limits()?;
+        Ok(request)
+    }
+
     /// Check native representation and request resource limits without I/O.
     ///
     /// Equality at each bound is allowed. Empty selections and empty input

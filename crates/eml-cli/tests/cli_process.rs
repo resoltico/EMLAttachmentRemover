@@ -344,8 +344,14 @@ fn closed_stdout_before_request_eof_stops_before_business_work() {
     // delivery failure without racing the helper's first event write.
     drop(child.0.stdout.take());
     drop(written_input(&mut child.0, &document(false)));
-    assert_eq!(wait(&mut child.0).code(), Some(1));
-    assert!(stderr.join().unwrap().is_empty());
+    let status = wait(&mut child.0).code();
+    let diagnostics = stderr.join().unwrap();
+    assert_eq!(status, Some(1), "{}", String::from_utf8_lossy(&diagnostics));
+    assert!(
+        diagnostics.is_empty(),
+        "{}",
+        String::from_utf8_lossy(&diagnostics)
+    );
     assert_eq!(fs::read(root.path().join("a.eml")).unwrap(), INPUT);
     assert_eq!(fs::read_dir(root.path()).unwrap().count(), 1);
     root.close().unwrap();

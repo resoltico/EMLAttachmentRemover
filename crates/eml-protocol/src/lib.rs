@@ -17,5 +17,5 @@ pub mod records;
 mod request;
 pub use output::{JsonSink, MAX_LINE_BYTES, MAX_RUN_BYTES};
 pub use output_buffer::BoundedEventBuffer;
-pub use path::{DisplayPath, DisplayText, NativePathValue, PathValue};
+pub use path::{NativePathValue, PathValue};
 pub use request::{MAX_REQUEST_BYTES, RequestDecodeError, decode_request};

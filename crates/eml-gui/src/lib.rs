@@ -500,8 +500,10 @@ impl DesktopController {
     pub fn message(&self, text: &str) {
         self.invalidate_open_feedback();
         self.presentation_dirty.set(true);
-        *self.notice.borrow_mut() =
-            Some((eml_protocol::DisplayText::new(text).to_string(), now_ms()));
+        *self.notice.borrow_mut() = Some((
+            eml_core::display::DisplayText::new(text).to_string(),
+            now_ms(),
+        ));
     }
     /// Informational feedback from native adapters.
     pub fn success(&self, text: &str) {
@@ -630,7 +632,7 @@ impl DesktopController {
             .set(self.open_feedback_generation.get().wrapping_add(1));
     }
     fn set_open_feedback(&self, target: OpenTarget, text: &str, detail: &str) {
-        let detail = eml_protocol::DisplayText::new(detail).to_string();
+        let detail = eml_core::display::DisplayText::new(detail).to_string();
         match target {
             OpenTarget::Main => self.message(&if detail.is_empty() {
                 text.to_owned()

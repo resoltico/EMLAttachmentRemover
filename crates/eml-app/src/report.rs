@@ -159,7 +159,7 @@ impl RunReport {
             self.items.iter().map(ItemRecord::outcome),
             self.summary()
                 .and_then(|s| s.run_error.value())
-                .map(|e| e.code.as_str()),
+                .and_then(|e| eml_core::ErrorCode::from_wire_name(&e.code)),
         )
     }
     /// All discovery results are accounted for only after framing and exit settlement.
@@ -167,11 +167,18 @@ impl RunReport {
         self.finished
             && self.failure.is_none()
             && self.summary().is_some_and(|s| {
+                let error = s
+                    .run_error
+                    .value()
+                    .map(|e| eml_core::ErrorCode::from_wire_name(&e.code));
+                if error.is_some_and(|e| e.is_none()) {
+                    return false;
+                }
                 eml_core::vocabulary::results_cover_inventory(
                     s.collection_complete,
                     s.interrupted,
                     s.counts.not_processed as usize,
-                    s.run_error.value().map(|e| e.code.as_str()),
+                    error.flatten(),
                 )
             })
     }

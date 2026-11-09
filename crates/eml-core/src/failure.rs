@@ -38,6 +38,17 @@ pub struct OperationFailure {
     cause: Option<Arc<io::Error>>,
 }
 impl OperationFailure {
+    /// A frontend event/report adapter failed. This grants no publication facts
+    /// and cannot erase receipts already observed before delivery ended.
+    pub fn delivery(error: io::Error) -> Self {
+        Self::io(
+            ErrorCode::OutputFailed,
+            ErrorPhase::Delivery,
+            "Result delivery did not complete.",
+            error,
+        )
+    }
+
     /// Exact numeric cause without unbounded/localized io::Error text or payload.
     pub fn native_diagnostic(&self) -> Option<NativeDiagnostic> {
         let error = self.native_error()?;

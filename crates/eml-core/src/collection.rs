@@ -36,6 +36,36 @@ pub enum InvalidRequest {
     /// The existing output directory could not bind as an ordinary directory.
     OutputDirectory(io::Error),
 }
+impl InvalidRequest {
+    /// Interpret failed run admission with the core's diagnostic vocabulary.
+    pub fn into_failure(self) -> OperationFailure {
+        match self {
+            Self::WorkingDirectory(e) => OperationFailure::io(
+                ErrorCode::BindFailed,
+                ErrorPhase::Admission,
+                "Cannot bind the supplied working directory.",
+                e,
+            ),
+            Self::OutputDirectory(e) => OperationFailure::io(
+                ErrorCode::BindFailed,
+                ErrorPhase::Admission,
+                "Cannot bind the existing output directory.",
+                e,
+            ),
+            Self::Paths(e) => OperationFailure::io(
+                ErrorCode::InputAdmissionFailed,
+                ErrorPhase::Admission,
+                "Run request failed path admission.",
+                io::Error::new(io::ErrorKind::InvalidInput, e),
+            ),
+            Self::DryRunModeRequired => OperationFailure::new(
+                ErrorCode::InputAdmissionFailed,
+                ErrorPhase::Admission,
+                "The read-only operation requires a read-only request.",
+            ),
+        }
+    }
+}
 impl std::fmt::Display for InvalidRequest {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
