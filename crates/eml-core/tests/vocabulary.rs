@@ -459,3 +459,13 @@ fn v4_plain_failure_has_no_redundant_no_publication() {
             .contains(&Consequence::NoPublication)
     );
 }
+
+#[test]
+fn w6_existing_headline_does_not_repeat_its_count() {
+    let totals = BatchTotals::from([(Some(Outcome::AlreadyExists), 0, None); 2], 0);
+    let h = totals.headline(HeadlineMode::Done {
+        incomplete_create: false,
+    });
+    assert_eq!(h.verdict, "2 copies already exist");
+    assert!(h.parts.is_empty(), "Repeated existing count: {:?}", h.parts);
+}
