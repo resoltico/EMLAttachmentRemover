@@ -14,7 +14,7 @@ struct Capture {
 impl EventSink for Capture {
     fn emit(&mut self, event: Event<'_>) -> io::Result<()> {
         match event {
-            Event::Start(s) => self.start = Some(*s),
+            Event::Start(s) => self.start = Some(s.clone()),
             Event::Item(i) => self.items.push(i.into()),
             Event::Summary(s) => self.summary = Some(s.clone()),
         }
@@ -99,6 +99,8 @@ fn threaded_core_retains_native_facts_and_independent_receipt_navigation() {
 #[test]
 fn incomplete_counts_and_invalid_admission_keep_typed_causes() {
     let start = RunStart {
+        run_error: None,
+        output_unavailable: false,
         total: 3,
         dry_run: false,
         collection_complete: true,
@@ -106,8 +108,11 @@ fn incomplete_counts_and_invalid_admission_keep_typed_causes() {
     assert_eq!(start.unreported_item_count(1, None, false), None);
     assert_eq!(start.unreported_item_count(1, None, true), Some(2));
     assert_eq!(start.unreported_item_count(4, None, true), None);
-    let e =
-        eml_core::InvalidRequest::OutputDirectory(io::Error::from_raw_os_error(13)).into_failure();
+    let e = eml_core::InvalidRequest::OutputDirectory {
+        path: std::path::PathBuf::from("/save"),
+        error: io::Error::from_raw_os_error(13),
+    }
+    .into_failure();
     assert_eq!(e.code(), eml_core::ErrorCode::BindFailed);
     assert_eq!(
         e.native_diagnostic(),

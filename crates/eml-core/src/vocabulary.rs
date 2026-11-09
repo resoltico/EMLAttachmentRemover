@@ -76,6 +76,8 @@ pub struct OutcomeFacts {
     pub error: Option<crate::ErrorCode>,
     /// Whether the accepted metadata selected related resources.
     pub related_resources: bool,
+    /// The candidate omits bytes even when no removal entry is reported.
+    pub content_changed: bool,
 }
 /// A deliberate per-item stop, independent of run-wide interruption and side effects.
 pub fn explicitly_interrupted(facts: &OutcomeFacts) -> bool {
@@ -354,6 +356,7 @@ impl From<&crate::ItemResult<'_>> for OutcomeFacts {
             existing: None,
             error: None,
             related_resources: false,
+            content_changed: false,
         };
         match result {
             ItemResult::Created(copy, _) => {
@@ -401,6 +404,9 @@ impl From<&crate::ItemResult<'_>> for OutcomeFacts {
                 }
             }
         };
+        facts.content_changed = result
+            .metadata()
+            .is_some_and(|m| m.source_bytes != m.copy_bytes);
         facts.related_resources = result.metadata().is_some_and(|data| {
             data.removed
                 .iter()
@@ -455,6 +461,7 @@ mod tests {
             existing: None,
             error: None,
             related_resources: true,
+            content_changed: false,
         }
     }
     #[test]
@@ -647,10 +654,10 @@ impl Outcome {
             return Self::NotProcessed;
         }
         match classify(facts).kind {
-            MeaningKind::Prepared if removed > 0 => Self::Ready,
+            MeaningKind::Prepared if removed > 0 || facts.content_changed => Self::Ready,
             MeaningKind::Prepared => Self::NothingToRemove,
             MeaningKind::Comparison => Self::WillVerify,
-            MeaningKind::Created if removed > 0 => Self::CopySaved,
+            MeaningKind::Created if removed > 0 || facts.content_changed => Self::CopySaved,
             MeaningKind::Created => Self::CopiedAsIs,
             MeaningKind::ExistingVerified => Self::AlreadyExists,
             MeaningKind::PublishedIncomplete | MeaningKind::ExistingMatched => Self::NeedsChecking,
@@ -689,7 +696,7 @@ impl Outcome {
             Self::NotProcessed => "not processed",
             Self::Failed(_) => "can’t be copied",
         };
-        format!("{n} {phrase}")
+        format!("{} {phrase}", format_count(n))
     }
     /// Domain prominence; frontends choose its appearance.
     pub fn severity(self) -> Severity {
@@ -729,6 +736,10 @@ impl Outcome {
 fn failure(code: crate::ErrorCode) -> (&'static str, &'static str) {
     use crate::ErrorCode::*;
     match code {
+        MailboxFile => (
+            "Several emails in one file",
+            "This file holds several emails (a mailbox export). Export the emails one at a time, then add them.",
+        ),
         Malformed => (
             "Not a valid email",
             "This file isn't a valid email. It may be empty or not an email at all; if it came from your mail app, export it again.",
@@ -747,7 +758,7 @@ fn failure(code: crate::ErrorCode) -> (&'static str, &'static str) {
         ),
         LimitExceeded => (
             "Too large or complex",
-            "This email is larger or more complex than the supported limits (256 MiB maximum).",
+            "This email is too deeply nested or has too many parts.",
         ),
         ReadFailed | BindFailed => (
             "Can’t be read",
@@ -818,7 +829,7 @@ impl RunFailure {
         match self.0 {
             NoInputs => "No .eml files were found in what you added. Add other files or folders.",
             InputLimitExceeded => {
-                "Too many files. Up to 4,096 emails can be processed at once. Add fewer folders."
+                "The selection exceeds the supported limits. Add fewer files or split large folders."
             }
             OutputOverlap => {
                 "The save folder is inside a folder you added. Choose a different save folder."
@@ -848,6 +859,7 @@ pub fn part_kind(reason: crate::RemovalReason, content_type: &str) -> &'static s
             "Calendar invite"
         }
         crate::RemovalReason::NonBodyPart => "Other content",
+        crate::RemovalReason::AfterMessageEnd => "Content after the email’s end",
         crate::RemovalReason::Attachment => "",
     }
 }
@@ -952,6 +964,20 @@ impl BatchTotals {
             }
         )
     }
+    /// Include whole-run collection/admission facts without presenting a partial count.
+    pub fn run_headline(
+        &self,
+        mode: HeadlineMode,
+        error: Option<&crate::OperationFailure>,
+    ) -> Headline {
+        if let Some(verdict) = error.and_then(crate::OperationFailure::refusal_headline) {
+            return Headline {
+                verdict,
+                parts: Vec::new(),
+            };
+        }
+        self.headline(mode)
+    }
     /// Shared verdict and nonzero supporting facts for a settled batch.
     pub fn headline(&self, mode: HeadlineMode) -> Headline {
         let mut parts = Vec::new();
@@ -993,7 +1019,6 @@ impl BatchTotals {
                     let n = self.count(outcome);
                     let counted_in_verdict = outcome == Outcome::AlreadyExists
                         && self.saved() == 0
-                        && self.problems == 0
                         && !self.has_attention()
                         && !incomplete_create;
                     if n > 0 && !counted_in_verdict {
@@ -1003,20 +1028,26 @@ impl BatchTotals {
                 let saved = self.saved();
                 if saved == 0 && (self.has_attention() || incomplete_create) {
                     "Results need attention".into()
-                } else if saved == 0 && self.problems > 0 {
-                    "No copies saved".into()
                 } else if saved == 0 && self.count(Outcome::AlreadyExists) > 0 {
                     let n = self.count(Outcome::AlreadyExists);
                     format!(
-                        "{n} {} already {}",
+                        "{} {} already {}",
+                        format_count(n),
                         if n == 1 { "copy" } else { "copies" },
                         if n == 1 { "exists" } else { "exist" }
                     )
                 } else {
-                    Outcome::CopySaved.count_label(saved)
+                    if saved == 0 {
+                        "No copies saved".into()
+                    } else {
+                        Outcome::CopySaved.count_label(saved)
+                    }
                 }
             }
         };
+        if self.problems > 0 {
+            parts.push(self.problem_label());
+        }
         Headline { verdict, parts }
     }
 }
@@ -1082,11 +1113,19 @@ pub fn cleanup_label(state: crate::CleanupState) -> &'static str {
 
 /// Shared email-count noun.
 pub fn email_count(n: usize) -> String {
-    format!("{n} {}", if n == 1 { "email" } else { "emails" })
+    format!(
+        "{} {}",
+        format_count(n),
+        if n == 1 { "email" } else { "emails" }
+    )
 }
 /// Shared attachment-count noun.
 pub fn attachment_count(n: usize) -> String {
-    format!("{n} {}", if n == 1 { "attachment" } else { "attachments" })
+    format!(
+        "{} {}",
+        format_count(n),
+        if n == 1 { "attachment" } else { "attachments" }
+    )
 }
 
 /// Whether settled preview observations offer a fresh copy attempt. This never
@@ -1099,6 +1138,7 @@ pub fn can_offer_copy(
         matches!(
             code,
             crate::ErrorCode::NoInputs
+                | crate::ErrorCode::BindFailed
                 | crate::ErrorCode::InputLimitExceeded
                 | crate::ErrorCode::OutputOverlap
         )
@@ -1130,4 +1170,167 @@ pub fn results_cover_inventory(
         && !interrupted
         && unprocessed == 0
         && error.is_none_or(|code| code == crate::ErrorCode::NoInputs)
+}
+
+/// Canonical save-folder recovery wording for both front ends.
+pub fn output_folder_unavailable(path: &std::path::Path) -> String {
+    format!(
+        "The save folder isn't available: {}. Reconnect it or choose another folder.",
+        crate::display::DisplayPath::new(path)
+    )
+}
+/// Known native write causes; unknown causes retain generic core guidance.
+pub fn write_cause(error: &std::io::Error) -> Option<&'static str> {
+    let code = error.raw_os_error()?;
+    #[cfg(unix)]
+    {
+        use rustix::io::Errno;
+        if [Errno::NOSPC.raw_os_error(), Errno::DQUOT.raw_os_error()].contains(&code) {
+            return Some("The save folder's disk is full.");
+        }
+        if code == Errno::ROFS.raw_os_error() {
+            return Some("The save folder is on a read-only disk.");
+        }
+        if [Errno::ACCESS.raw_os_error(), Errno::PERM.raw_os_error()].contains(&code) {
+            return Some("You don't have permission to save in this folder.");
+        }
+    }
+    #[cfg(windows)]
+    {
+        if [39, 112, 1295].contains(&code) {
+            return Some("The save folder's disk is full.");
+        }
+        if code == 19 {
+            return Some("The save folder is on a read-only disk.");
+        }
+        if code == 5 {
+            return Some("You don't have permission to save in this folder.");
+        }
+    }
+    None
+}
+/// Single human count formatter; UI and CLI counts deliberately use no grouping.
+pub fn format_count(value: usize) -> String {
+    value.to_string()
+}
+
+/// Structured JSON-request reason; the protocol adapter supplies facts, not prose.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RequestDocumentReason {
+    /// An unsupported key was named.
+    UnknownField(String),
+    /// A key appeared more than once.
+    DuplicateField(String),
+    /// Bytes followed the complete document.
+    TrailingCharacters,
+    /// The document ended before completion.
+    EndOfDocument,
+    /// Invalid JSON syntax or UTF-8.
+    Syntax,
+    /// The JSON value has an incompatible type/shape.
+    Type,
+}
+/// One safe authored request-document diagnostic, with no raw JSON values.
+pub fn request_document_error(
+    line: usize,
+    column: usize,
+    reason: &RequestDocumentReason,
+) -> String {
+    use crate::display::DisplayText;
+    let reason = match reason {
+        RequestDocumentReason::UnknownField(name) if name.is_empty() => {
+            "unknown field (name omitted)".into()
+        }
+        RequestDocumentReason::UnknownField(name) => {
+            format!("unknown field `{}`", DisplayText::new(name))
+        }
+        RequestDocumentReason::DuplicateField(name) if name.is_empty() => {
+            "duplicate field (name omitted)".into()
+        }
+        RequestDocumentReason::DuplicateField(name) => {
+            format!("duplicate field `{}`", DisplayText::new(name))
+        }
+        RequestDocumentReason::TrailingCharacters => "trailing characters".into(),
+        RequestDocumentReason::EndOfDocument => "unexpected end of document (EOF)".into(),
+        RequestDocumentReason::Syntax => "invalid JSON syntax".into(),
+        RequestDocumentReason::Type => "invalid document type".into(),
+    };
+    format!(
+        "Invalid request document at line {}, column {}: {reason}",
+        format_count(line),
+        format_count(column)
+    )
+}
+/// Interface I/O context whose human wording is shared and owned here.
+#[derive(Clone, Copy)]
+pub enum InterfaceIo {
+    /// Read the CLI request document.
+    ReadRequest,
+    /// Start the CLI request reader.
+    StartRequest,
+    /// Capture the caller's working folder.
+    WorkingFolder,
+    /// Save the desktop preferences file.
+    SaveSettings,
+}
+/// Render a native failure without localized Rust ErrorKind text.
+pub fn interface_io_error(operation: InterfaceIo, error: &std::io::Error) -> String {
+    let sentence = match operation {
+        InterfaceIo::ReadRequest => {
+            "The request document couldn't be read. Check its path and permissions."
+        }
+        InterfaceIo::StartRequest => "The request reader couldn't be started. Try again.",
+        InterfaceIo::WorkingFolder => {
+            "The working folder isn't available. Choose an existing folder and try again."
+        }
+        InterfaceIo::SaveSettings => {
+            "The app couldn't save its settings. Check the settings folder's permissions."
+        }
+    };
+    error.raw_os_error().map_or_else(
+        || sentence.into(),
+        |code| {
+            format!(
+                "{sentence}\n[Native cause: {}]",
+                crate::NativeDiagnostic::OsCode(code)
+            )
+        },
+    )
+}
+/// Request-reader capacity failure.
+pub const REQUEST_DOCUMENT_TOO_LARGE: &str = "Request document exceeds 8 MiB";
+/// Stop handling could not be established.
+pub const STOP_HANDLER_UNAVAILABLE: &str = "Stop requests couldn't be enabled. Try again.";
+/// The request reader disappeared without a complete document.
+pub const REQUEST_READER_ENDED: &str =
+    "The request reader stopped before the document was complete.";
+
+/// Selection-limit refusal, without presenting the retained prefix as the selection.
+pub fn too_many_emails() -> String {
+    format!(
+        "Too many emails (more than {})",
+        format_count(crate::MAX_COLLECTED_ITEMS)
+    )
+}
+
+impl RequestDocumentReason {
+    /// Keep short field names useful without echoing large/control-bearing request data.
+    pub fn unknown_field(name: &str) -> Self {
+        Self::UnknownField(safe_document_field(name))
+    }
+    /// Duplicate fields follow the same bounded diagnostic rule.
+    pub fn duplicate_field(name: &str) -> Self {
+        Self::DuplicateField(safe_document_field(name))
+    }
+}
+fn safe_document_field(name: &str) -> String {
+    if name.len() > 48 {
+        return String::new();
+    }
+    let text = crate::display::DisplayText::new(name).to_string();
+    if text == name && text.len() <= 48 {
+        text
+    } else {
+        String::new()
+    }
 }

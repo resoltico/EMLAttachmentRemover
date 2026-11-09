@@ -21,7 +21,7 @@ fn non_messages_cannot_acquire_an_implicit_plain_text_root() {
             matches!(
                 prepare_message(wire, &RunControl::default()),
                 Err(PreparationError::Refused {
-                    kind: Refusal::Malformed,
+                    kind: Refusal::NotEmail,
                     section: None,
                     ..
                 })
@@ -59,7 +59,7 @@ fn embedded_roots_require_fields_but_removable_messages_stay_opaque() {
     let retained = format!("{prefix}\r\nnot an email\r\n--B--\r\n");
     assert!(
         matches!(prepare_message(retained.as_bytes(), &RunControl::default()),
-        Err(PreparationError::Refused { kind: Refusal::Malformed, section: Some(section), .. }) if section == "2")
+        Err(PreparationError::Refused { kind: Refusal::NotEmail, section: Some(section), .. }) if section == "2")
     );
     let attached =
         format!("{prefix}Content-Disposition: attachment\r\n\r\nnot an email\r\n--B--\r\n");

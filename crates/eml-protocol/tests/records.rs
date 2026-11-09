@@ -64,7 +64,7 @@ fn every_known_field_is_required_across_all_scenarios_including_present_nullable
         }
     }
     assert_eq!(
-        scenarios, 22,
+        scenarios, 24,
         "Every shared hand-authored scenario must be discovered"
     );
 }

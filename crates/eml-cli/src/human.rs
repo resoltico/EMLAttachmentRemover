@@ -2,8 +2,7 @@
 use eml_core::{
     Event, EventSink,
     vocabulary::{
-        BatchTotals, HeadlineMode, Outcome, OutcomeFacts, RunFailure, Severity, fields,
-        format_bytes,
+        BatchTotals, HeadlineMode, Outcome, OutcomeFacts, Severity, fields, format_bytes,
     },
 };
 use eml_protocol::{BoundedEventBuffer, MAX_LINE_BYTES};
@@ -134,7 +133,7 @@ fn write_human(
             "{} {} — {}{}{}",
             env!("CARGO_PKG_NAME"),
             eml_core::product::VERSION_WITH_REVISION.as_str(),
-            eml_core::vocabulary::email_count(value.total),
+            value.inventory_label(),
             if value.dry_run {
                 " · check only, nothing is written"
             } else {
@@ -165,17 +164,20 @@ fn write_human(
                     .map(|&(outcome, parts, bytes)| (Some(outcome), parts, bytes)),
                 counts.not_processed(),
             );
-            let headline = totals.headline(if value.interrupted() {
-                HeadlineMode::Stopped
-            } else if checking {
-                HeadlineMode::Check {
-                    total: Some(totals.emails),
-                }
-            } else {
-                HeadlineMode::Done {
-                    incomplete_create: false,
-                }
-            });
+            let headline = totals.run_headline(
+                if value.interrupted() {
+                    HeadlineMode::Stopped
+                } else if checking {
+                    HeadlineMode::Check {
+                        total: Some(totals.emails),
+                    }
+                } else {
+                    HeadlineMode::Done {
+                        incomplete_create: false,
+                    }
+                },
+                value.run_error(),
+            );
             let mut summary = headline.verdict;
             if !headline.parts.is_empty() {
                 summary += " · ";
@@ -195,7 +197,6 @@ fn write_human(
             if let Some(error) = value.run_error().filter(|e| {
                 e.code() != eml_core::ErrorCode::InputAdmissionFailed || items.is_empty()
             }) {
-                writeln!(writer, "{}", RunFailure(error.code()).explanation())?;
                 write_error(writer, error)?;
             }
             Ok(())
@@ -252,7 +253,12 @@ fn write_item(writer: &mut impl Write, value: &eml_core::ItemEvent<'_>) -> io::R
         }
     }
     if let eml_core::ItemResult::Failed(failure) = &value.result {
-        writeln!(writer, "{:PATH_COLUMN$}{}", "", outcome.explanation())?;
+        writeln!(
+            writer,
+            "{:PATH_COLUMN$}{}",
+            "",
+            failure.error().explanation()
+        )?;
         write_error(writer, failure.error())?;
         for consequence in eml_core::vocabulary::classify(&facts).consequences {
             writeln!(writer, "{:PATH_COLUMN$}{}", "", consequence.text())?;
@@ -342,6 +348,7 @@ mod tests {
             },
             existing: None,
             related_resources: false,
+            content_changed: false,
         };
         for (remaining, fail_flush) in [(Some(3), false), (None, true), (None, false)] {
             let mut sink = HumanSink::new(Writer {
@@ -382,7 +389,7 @@ mod tests {
         assert!(
             String::from_utf8(human.into_inner())
                 .unwrap()
-                .contains("1 email. Exit 1")
+                .contains("1 email · 1 can’t be copied. Exit 1")
         );
         let mut json = eml_protocol::JsonSink::new(Vec::new());
         run(&req, &RunControl::default(), &mut json).unwrap();
@@ -467,7 +474,10 @@ mod tests {
         assert!(!text.contains('\u{1b}'));
         assert!(!text.contains('\u{2028}'));
         assert!(!text.contains("No new copy was"));
-        assert!(text.contains("No copies saved. Exit 1"), "{text}");
+        assert!(
+            text.contains("No copies saved · 1 can’t be copied. Exit 1"),
+            "{text}"
+        );
         assert_eq!(
             fs::read(root.path().join("a.no-attachments.eml")).unwrap(),
             b"different"

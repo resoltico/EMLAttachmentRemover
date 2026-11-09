@@ -264,3 +264,17 @@ pub fn validate_native_path(path: &Path) -> Result<usize, PathViolation> {
     // The unit limit above makes this multiplication bounded on every host.
     Ok(length * bytes_per_unit)
 }
+
+/// Admit a saved folder's native spelling without requiring it to be available.
+/// Availability and create authority are established only by the run's current binding.
+pub fn validate_save_folder_path(path: &Path) -> Result<(), RequestPathError> {
+    if !path.is_absolute() {
+        return Err(RequestPathError::AbsoluteDestinationRequired);
+    }
+    validate_native_path(path)
+        .map(|_| ())
+        .map_err(|violation| RequestPathError::InvalidPath {
+            path: RequestPath::OutputDirectory,
+            violation,
+        })
+}

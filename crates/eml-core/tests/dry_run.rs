@@ -50,7 +50,7 @@ impl EventSink for Sink {
     fn emit(&mut self, event: Event<'_>) -> io::Result<()> {
         let phase = match event {
             Event::Start(start) => {
-                assert!(self.start.replace(*start).is_none());
+                assert!(self.start.replace(start.clone()).is_none());
                 assert!(start.dry_run);
                 if let Some(action) = self.after_start.take() {
                     action();
@@ -350,15 +350,19 @@ fn mode_and_output_admission_errors_precede_events_and_processing() {
         dry_run(&req, &RunControl::default(), &mut sink),
         Err(InvalidRequest::DryRunModeRequired)
     ));
+    fs::write(root.path().join("a.eml"), b"Subject: Mail\r\n\r\nBody\r\n").unwrap();
     req = request(root.path(), &["a.eml"], Some("nonexistent"));
+    let result = dry_run(&req, &RunControl::default(), &mut sink).unwrap();
+    assert_eq!(result.run_error().unwrap().code(), ErrorCode::BindFailed);
+    assert_eq!(sink.items.len(), 1);
+    assert!(sink.summary.is_some());
+    assert!(!root.path().join("nonexistent").exists());
+    req.mode = RunMode::Create;
     assert!(matches!(
-        dry_run(&req, &RunControl::default(), &mut sink),
-        Err(InvalidRequest::OutputDirectory(_))
+        eml_core::run(&req, &RunControl::default(), &mut Sink::default()),
+        Err(InvalidRequest::OutputDirectory { .. })
     ));
-    assert!(sink.start.is_none());
-    assert!(sink.items.is_empty());
-    assert!(sink.summary.is_none());
-    assert_eq!(fs::read_dir(root.path()).unwrap().count(), 0);
+    assert_eq!(fs::read_dir(root.path()).unwrap().count(), 1);
     root.close().unwrap();
 }
 #[test]

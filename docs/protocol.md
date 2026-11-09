@@ -102,6 +102,7 @@ allowed values; individual records carry the observed result and phase.
 | READ_FAILED | admission/collection/read |
 | SOURCE_NOT_REGULAR | admission/collection/read |
 | SOURCE_CHANGED | admission/collection/read/publish |
+| MAILBOX_FILE | prepare |
 | MALFORMED | prepare |
 | LIMIT_EXCEEDED | prepare |
 | PROTECTED | prepare |
@@ -128,3 +129,10 @@ allowed values; individual records carry the observed result and phase.
 | INTERRUPTED | read/prepare/existing/stage/write/sync/address/publish |
 | OUTPUT_FAILED | delivery |
 <!-- error-vocabulary:end -->
+
+`MAILBOX_FILE` refuses an mbox envelope containing several messages before writing.
+A single message with a From envelope remains supported. Removal reason
+`after_message_end` reports non-whitespace multipart epilogue bytes, with their
+actual byte count and section (empty for the outer root). These bytes have no
+MIME part type; their report type is `application/octet-stream`. Whitespace-only
+epilogues are omitted without a removal entry. Preambles are preserved.

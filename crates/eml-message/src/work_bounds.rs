@@ -169,3 +169,21 @@ fn preadmission_classification_and_envelope_lookahead_are_checkpointed() {
     }
     reset(None);
 }
+
+#[test]
+fn epilogue_classification_keeps_bounded_cancellation_in_both_proofs() {
+    let mut wire =
+        b"Content-Type: multipart/mixed; boundary=B\r\n\r\n--B\r\n\r\nbody\r\n--B--\r\n".to_vec();
+    wire.extend(vec![b' '; 128 * 1024]);
+    wire.push(b'X');
+    for stage in [Stage::Planning, Stage::Authorization] {
+        reset(Some((stage, Work::Classification, 1)));
+        let control = RunControl::default();
+        assert!(matches!(
+            crate::prepare_message(&wire, &control),
+            Err(PreparationError::Interrupted)
+        ));
+        assert!(measured().max_unit <= crate::PREPARATION_CHUNK_BYTES);
+    }
+    reset(None);
+}

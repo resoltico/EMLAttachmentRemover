@@ -35,7 +35,7 @@ fn output_preflight_is_read_only_and_does_not_authorize_later_collection() {
     req.output = OutputLocation::Directory(output.clone());
     assert!(matches!(
         eml_core::check_output_location(&req),
-        Err(InvalidRequest::OutputDirectory(_))
+        Err(InvalidRequest::OutputDirectory { .. })
     ));
     assert!(
         !output.exists(),
@@ -44,7 +44,7 @@ fn output_preflight_is_read_only_and_does_not_authorize_later_collection() {
     fs::write(&output, b"ordinary file is not a directory").unwrap();
     assert!(matches!(
         eml_core::check_output_location(&req),
-        Err(InvalidRequest::OutputDirectory(_))
+        Err(InvalidRequest::OutputDirectory { .. })
     ));
     assert_eq!(
         fs::read(&output).unwrap(),
@@ -57,7 +57,7 @@ fn output_preflight_is_read_only_and_does_not_authorize_later_collection() {
     fs::remove_dir(&output).unwrap();
     assert!(matches!(
         collect_sources(&req, &RunControl::default()),
-        Err(InvalidRequest::OutputDirectory(_))
+        Err(InvalidRequest::OutputDirectory { .. })
     ));
     root.close().unwrap();
 }
@@ -180,18 +180,18 @@ fn genuine_prerequisite_errors_are_prestream_and_keep_their_causes() {
     req.output = OutputLocation::Directory(PathBuf::from("file"));
     let error = collect_sources(&req, &RunControl::default()).err().unwrap();
     assert!(
-        matches!(&error, InvalidRequest::OutputDirectory(cause) if cause.kind() == std::io::ErrorKind::NotADirectory)
+        matches!(&error, InvalidRequest::OutputDirectory { error: cause, .. } if cause.kind() == std::io::ErrorKind::NotADirectory)
     );
     assert!(error.source().is_some());
     req.output = OutputLocation::Directory(PathBuf::from("missing-output"));
     let error = collect_sources(&req, &RunControl::default()).err().unwrap();
     assert!(
-        matches!(&error, InvalidRequest::OutputDirectory(cause) if cause.raw_os_error() == Some(2))
+        matches!(&error, InvalidRequest::OutputDirectory { error: cause, .. } if cause.raw_os_error() == Some(2))
     );
     req.working_directory = root.path().join("file");
     assert!(matches!(
         collect_sources(&req, &RunControl::default()),
-        Err(InvalidRequest::WorkingDirectory(_))
+        Err(InvalidRequest::WorkingDirectory { .. })
     ));
     req.paths = vec![PathBuf::from("file"); 4097];
     assert!(matches!(

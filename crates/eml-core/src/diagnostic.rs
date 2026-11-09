@@ -101,6 +101,7 @@ error_codes! {
     ReadFailed => "READ_FAILED", [Admission, Collection, Read], "A required file could not be read.";
     SourceNotRegular => "SOURCE_NOT_REGULAR", [Admission, Collection, Read], "The selected object is not a regular disk file.";
     SourceChanged => "SOURCE_CHANGED", [Admission, Collection, Read, Publish], "An observable source identity, binding or signature changed.";
+    MailboxFile => "MAILBOX_FILE", [Prepare], "The input contains several mailbox messages.";
     Malformed => "MALFORMED", [Prepare], "MIME syntax or structure is ambiguous or damaged.";
     LimitExceeded => "LIMIT_EXCEEDED", [Prepare], "Message or retained metadata exceeds a preparation bound.";
     Protected => "PROTECTED", [Prepare], "Protected content occurred in a retained body context.";
@@ -140,7 +141,9 @@ impl ErrorCode {
         match error {
             PreparationError::Interrupted => Self::Interrupted,
             PreparationError::Refused { kind, .. } => match kind {
-                Refusal::Malformed => Self::Malformed,
+                Refusal::Malformed | Refusal::NotEmail => Self::Malformed,
+                Refusal::MailboxFile => Self::MailboxFile,
+                Refusal::MessageTooLarge => Self::LimitExceeded,
                 Refusal::LimitExceeded => Self::LimitExceeded,
                 Refusal::Protected => Self::Protected,
                 Refusal::UnsupportedMime => Self::UnsupportedMime,

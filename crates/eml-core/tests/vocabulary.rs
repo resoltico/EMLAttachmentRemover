@@ -31,6 +31,7 @@ fn facts() -> OutcomeFacts {
         existing: None,
         error: None,
         related_resources: true,
+        content_changed: false,
     }
 }
 #[test]
@@ -377,7 +378,7 @@ fn headline_done_counts_copied_as_is_in_verdict() {
             incomplete_create: false,
         },
         "2 copies saved",
-        &["100 B removed", "1 copied as is"],
+        &["100 B removed", "1 copied as is", "1 can’t be copied"],
     );
 }
 #[test]
@@ -388,7 +389,7 @@ fn headline_done_attention() {
             incomplete_create: false,
         },
         "Results need attention",
-        &[],
+        &["1 needs attention"],
     );
 }
 #[test]
@@ -410,7 +411,7 @@ fn headline_done_failure() {
             incomplete_create: false,
         },
         "No copies saved",
-        &[],
+        &["1 can’t be copied"],
     );
 }
 #[test]

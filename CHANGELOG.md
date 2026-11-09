@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Refuse mailbox exports containing several emails; export messages one at a time. Single-message From envelopes remain supported.
+- Omit multipart epilogues and report their non-whitespace bytes. Preambles stay unchanged; older copies with epilogues now differ and are never overwritten.
+- Fix help placeholders and request-document error reasons. Core owns plain folder refusals, cause-specific guidance and failure counts in CLI and app summaries.
+
 - A crash during processing is reported as such, rather than as a result-delivery failure.
 - The Mac app no longer contains the CLI; install the macOS CLI archive to use it from Terminal.
 - Run the desktop directly on core with typed results and cooperative stop. Keep report export as protocol-1 JSON; unwinding failures retain earlier results.

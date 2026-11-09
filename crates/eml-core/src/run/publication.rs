@@ -97,12 +97,7 @@ pub(super) fn stage_failure(
         }
     };
     (
-        OperationFailure::io(
-            code,
-            phase,
-            "Candidate storage did not complete its required operation",
-            error.error,
-        ),
+        OperationFailure::io(code, phase, "The copy could not be written", error.error),
         error.file_sync,
         error.cleanup,
     )

@@ -33,6 +33,7 @@ pub(crate) enum Kind {
         prefix: Span,
         children: Vec<Child>,
         suffix: Span,
+        epilogue: Span,
     },
     Message(usize),
 }

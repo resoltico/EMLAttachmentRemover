@@ -97,7 +97,9 @@ fn visit(
         return Ok((true, false));
     }
     let (keep, changed) = match &node.kind {
-        Kind::Multipart { children, .. } if node.media.starts_with("multipart/") => {
+        Kind::Multipart {
+            children, epilogue, ..
+        } if node.media.starts_with("multipart/") => {
             let selected = if node.media == "multipart/related" {
                 Some(related_root(message, id, children)?)
             } else {
@@ -123,6 +125,16 @@ fn visit(
                 }
                 keep |= child_keep;
                 changed |= child_changed;
+            }
+            if !epilogue.is_empty() {
+                plan.edits.push(epilogue.clone());
+                changed = true;
+                if has_epilogue_content(&message.input[epilogue.clone()], control)? {
+                    plan.claims.push(Claim {
+                        id,
+                        reason: RemovalReason::AfterMessageEnd,
+                    });
+                }
             }
             (keep, changed)
         }
@@ -206,6 +218,22 @@ pub(crate) fn apply(
     }
     Ok(output)
 }
+fn has_epilogue_content(bytes: &[u8], control: &RunControl) -> Result<bool, PreparationError> {
+    for chunk in bytes.chunks(crate::PREPARATION_CHUNK_BYTES) {
+        control.checkpoint()?;
+        #[cfg(test)]
+        crate::work_bounds::record(
+            crate::work_bounds::Work::Classification,
+            chunk.len(),
+            control,
+        )?;
+        if chunk.iter().any(|b| !b.is_ascii_whitespace()) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -19,18 +19,18 @@ Copy already exists      plain.eml · 24 B
 $ --dry-run -- empty.eml garbage.eml notes.txt
 emlattachmentremover @VERSION@ — 3 emails · check only, nothing is written
 Not a valid email        empty.eml
-                         This file isn't a valid email. It may be empty or not an email at all; if it came from your mail app, export it again.
+                         This file isn't an email. It may be empty or a different kind of file.
                          [Code: MALFORMED · Phase: prepare · Detail: Message root has no valid header fields]
 Not a valid email        garbage.eml
-                         This file isn't a valid email. It may be empty or not an email at all; if it came from your mail app, export it again.
+                         This file isn't an email. It may be empty or a different kind of file.
                          [Code: MALFORMED · Phase: prepare · Detail: Message root has no valid header fields]
 Not a valid email        notes.txt
-                         This file isn't a valid email. It may be empty or not an email at all; if it came from your mail app, export it again.
+                         This file isn't an email. It may be empty or a different kind of file.
                          [Code: MALFORMED · Phase: prepare · Detail: Message root has no valid header fields]
-3 emails. Exit 1
+3 emails · 3 can’t be copied. Exit 1
 $ -- missing.eml
 emlattachmentremover @VERSION@ — 1 email · Selection checking did not complete
 Can’t be read            missing.eml
                          The file couldn’t be read. Check that it still exists and that you have permission to open it.
                          [Code: READ_FAILED · Phase: admission · Detail: Selected path could not be inspected or opened (OS error 2)]
-No copies saved. Exit 1
+No copies saved · 1 can’t be copied. Exit 1

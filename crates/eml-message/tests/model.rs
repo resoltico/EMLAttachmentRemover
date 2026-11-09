@@ -364,16 +364,23 @@ fn expected(node: &Rendered) -> Result<Expected, Refusal> {
                 removals.extend(result.removals);
                 stripped.extend(result.stripped);
                 if let Some(copy) = result.copy {
-                    changed |= copy != child.wire;
                     body.extend(opening);
                     body.extend(copy);
                     body.extend(framing);
                     body_count += 1;
-                } else {
-                    changed = true;
                 }
             }
-            body.extend(suffix);
+            // Every generated multipart has an epilogue, so its copy always changes.
+            let ending = suffix.len() - b"model epilogue".len();
+            body.extend(&suffix[..ending]);
+            removals.push(RemovedPart {
+                section: node.section.clone(),
+                content_type: "application/octet-stream".into(),
+                filename: None,
+                bytes: 14,
+                reason: RemovalReason::AfterMessageEnd,
+            });
+            changed = true;
         }
     }
     if body_count == 0 {

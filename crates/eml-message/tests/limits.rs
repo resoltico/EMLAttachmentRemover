@@ -31,7 +31,13 @@ fn raw_message_at_and_above_limit() {
     wire.resize(MAX_MESSAGE_BYTES, b'x');
     accepted(&wire);
     wire.push(b'x');
-    limited(&wire);
+    assert!(matches!(
+        prepare_message(&wire, &RunControl::default()),
+        Err(PreparationError::Refused {
+            kind: Refusal::MessageTooLarge,
+            ..
+        })
+    ));
 }
 #[test]
 fn entity_depth_at_and_above_limit() {

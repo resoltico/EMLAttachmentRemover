@@ -285,9 +285,9 @@ fn all_protected_types_refuse_and_attachment_opacity_wins() {
 }
 #[test]
 fn malformed_control_headers_refuse_without_headerless_fallback() {
+    refusal(b" orphan", Refusal::NotEmail);
     for input in [
-        b" orphan".as_slice(),
-        b"Subject: starts\r\nnot a field\r\n\r\nbody",
+        b"Subject: starts\r\nnot a field\r\n\r\nbody".as_slice(),
         b"Subject: starts\r\nContent-Type : text/plain\r\n\r\nbody",
         b"Content-Type: text/plain\r\nContent-Type: text/plain\r\n\r\nbody",
         b"Content-Disposition: attachment (unterminated\r\n\r\nbody",
@@ -316,7 +316,7 @@ fn related_nonfirst_root_and_irrelevant_ids() {
 #[test]
 fn changed_root_and_container_stale_fields_are_complete_deletions() {
     let input=b"From owner\r\nSubject: test\r\nContent-Type: multipart/mixed; boundary=B\r\nContent-Length: 999\r\n continuation\r\nLines: 50\r\nContent-MD5: stale\r\nDKIM-Signature: stale\r\nDomainKey-Signature: stale\r\nARC-Seal: stale\r\nARC-Message-Signature: stale\r\nARC-Authentication-Results: stale\r\nX-MS-Has-Attach: yes\r\n\r\npreamble\r\n--B\r\nContent-Length: keep unchanged leaf\r\n\r\nbody\r\n--B\r\nContent-Type: image/png\r\n\r\nimage\r\n--B--\r\nepilogue";
-    let expected=b"From owner\r\nSubject: test\r\nContent-Type: multipart/mixed; boundary=B\r\n\r\npreamble\r\n--B\r\nContent-Length: keep unchanged leaf\r\n\r\nbody\r\n--B--\r\nepilogue";
+    let expected=b"From owner\r\nSubject: test\r\nContent-Type: multipart/mixed; boundary=B\r\n\r\npreamble\r\n--B\r\nContent-Length: keep unchanged leaf\r\n\r\nbody\r\n--B--\r\n";
     let result = prepare_message(input, &RunControl::default()).unwrap();
     assert_eq!(result.as_bytes(), expected);
     assert_eq!(

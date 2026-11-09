@@ -30,7 +30,7 @@ enum Observation {
 impl EventSink for RunSink {
     fn emit(&mut self, event: Event<'_>) -> io::Result<()> {
         let observation = match &event {
-            Event::Start(s) => Observation::Start(**s),
+            Event::Start(s) => Observation::Start((**s).clone()),
             Event::Item(i) => Observation::Item(Box::new(SettledItem::from(*i))),
             Event::Summary(s) => Observation::Summary((**s).clone()),
         };
