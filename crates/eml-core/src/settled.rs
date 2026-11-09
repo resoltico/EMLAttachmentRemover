@@ -82,6 +82,14 @@ impl SettledItem {
     }
 }
 impl RunStart {
+    /// Human inventory or refusal label, without claiming a partial prefix is complete.
+    pub fn inventory_label(&self) -> String {
+        self.run_error
+            .as_ref()
+            .and_then(OperationFailure::refusal_headline)
+            .unwrap_or_else(|| vocabulary::email_count(self.total))
+    }
+
     /// Unreported discovered positions after an incomplete settled run.
     /// A summary owns remaining-work counts whenever one exists.
     pub fn unreported_item_count(

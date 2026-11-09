@@ -233,3 +233,26 @@ Processing details shows the whole-run core diagnostic's Code, Phase and Detail,
 plus its native cause. Item-only failures stay in selected-item details; without a
 whole-run core failure, including a panic, the expandable control is absent. Core owns request admission
 wording. There is no stderr capture or subprocess protocol reducer in the GUI.
+
+Mailbox envelopes containing a second blank-line-delimited From separator and
+header field are refused before any copy is written. A single From envelope is
+retained. Every retained multipart closing delimiter ends its content: root and
+nested epilogues are omitted, with non-whitespace bytes independently authorized
+and reported as `after_message_end`. Preambles remain exact, including any hidden
+data there; this is an intentional limitation. Text bodies, including uuencoded
+text, are also retained as body text. Older copies that retained epilogue bytes
+will differ from the new candidate and are refused as existing conflicts.
+
+Read-only runs may collect and prepare sources while the save folder is
+unavailable. Core reports that fact before item observations and on settlement.
+Destination paths are spelling-only predictions with an assumed 255-unit name
+limit, no root witness and no write capability. They still pass the same path
+budget and lexical collision checks. Create always binds the real output folder
+and refuses an unavailable one before processing or writing. Reconnecting a
+folder requires a fresh check; choosing it again or choosing Next to originals
+starts one. Typed core failures own shared explanations, including native write
+causes and damaged-versus-headerless messages. Counts deliberately use no grouping.
+
+Request-document diagnostics name short fields only; oversized or control-bearing
+field names are omitted, and JSON values are never included. This preserves the
+bounded diagnostic assurance while providing the requested schema-error reasons.

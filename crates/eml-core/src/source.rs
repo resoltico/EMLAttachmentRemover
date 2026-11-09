@@ -196,7 +196,7 @@ pub fn prepare_source(
     let bytes = match obtained {
         ObtainedBytes::OverLimit => {
             return Err(crate::error(
-                Refusal::LimitExceeded,
+                Refusal::MessageTooLarge,
                 "Raw source exceeds the admitted byte limit",
             )
             .into());

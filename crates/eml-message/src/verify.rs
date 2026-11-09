@@ -114,9 +114,34 @@ fn independent(
                     Kind::Message(child) => vec![*child],
                     _ => return Err(internal()),
                 };
-                let changed = children
+                let mut changed = children
                     .iter()
                     .any(|child| proof.nodes[*child].as_ref().is_none_or(|p| p.changed));
+                if let Kind::Multipart { epilogue, .. } = &message.nodes[id].kind {
+                    changed |= !epilogue.is_empty();
+                    let mut content = false;
+                    for chunk in
+                        message.input[epilogue.clone()].chunks(crate::PREPARATION_CHUNK_BYTES)
+                    {
+                        control.checkpoint()?;
+                        #[cfg(test)]
+                        crate::work_bounds::record(
+                            crate::work_bounds::Work::Classification,
+                            chunk.len(),
+                            control,
+                        )?;
+                        if !chunk.iter().all(u8::is_ascii_whitespace) {
+                            content = true;
+                            break;
+                        }
+                    }
+                    if content {
+                        proof.claims.push(Claim {
+                            id,
+                            reason: RemovalReason::AfterMessageEnd,
+                        });
+                    }
+                }
                 let retained: Vec<_> = children
                     .into_iter()
                     .filter(|child| proof.nodes[*child].is_some())
@@ -501,11 +526,13 @@ fn compare(
                     prefix,
                     children,
                     suffix,
+                    ..
                 },
                 Kind::Multipart {
                     prefix: out_prefix,
                     children: out_children,
                     suffix: out_suffix,
+                    epilogue: out_epilogue,
                 },
             ) => {
                 if !equal(
@@ -516,7 +543,8 @@ fn compare(
                     &source.input[suffix.clone()],
                     &output.input[out_suffix.clone()],
                     control,
-                )? || proof.children.len() != out_children.len()
+                )? || !out_epilogue.is_empty()
+                    || proof.children.len() != out_children.len()
                 {
                     return Err(internal());
                 }

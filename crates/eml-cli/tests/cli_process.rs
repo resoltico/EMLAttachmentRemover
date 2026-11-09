@@ -151,7 +151,10 @@ fn usage_errors_preserve_layout_and_explain_missing_output_folders() {
     );
     assert_eq!(missing.status.code(), Some(2));
     let text = String::from_utf8(missing.stderr).unwrap();
-    assert!(text.contains("existing, writable folder"), "{text}");
+    assert!(
+        text.contains("Reconnect it or choose another folder"),
+        "{text}"
+    );
     assert!(text.contains("OS error"), "{text}");
 }
 #[test]
@@ -245,7 +248,8 @@ fn actual_request_file_and_stdin_accept_both_output_formats_without_creating_dry
 fn malformed_and_oversize_request_errors_are_pre_stream_and_do_not_echo_document() {
     let root = root();
     for bytes in [
-        b"{\"secret-synthetic-field\":true}".to_vec(),
+        b"{\"colour\":\"secret-synthetic-field\"}".to_vec(),
+        b"{\"protocol\":\"secret-synthetic-field\"}".to_vec(),
         include_bytes!("../../../tests/contract/protocol/invalid-request.json").to_vec(),
         vec![b' '; 8 * 1024 * 1024 + 1],
     ] {
@@ -740,11 +744,11 @@ fn u3_plain_outcomes_and_diagnostics_preserve_process_exit_contract() {
         }
         if text.contains("[Code: MALFORMED") {
             assert!(
-                text.find("This file isn't a valid email.").unwrap()
+                text.find("This file isn't an email.").unwrap()
                     < text.find("[Code: MALFORMED").unwrap(),
                 "{text}"
             );
-            assert!(text.contains("It may be empty or not an email at all"));
+            assert!(text.contains("It may be empty or a different kind of file"));
         }
         assert!(text.contains(&format!("Exit {code}")));
         assert!(!text.contains("0 not processed"));

@@ -4,7 +4,8 @@ use clap::{
     Parser, ValueEnum,
     error::{ContextKind, ContextValue, ErrorKind},
 };
-use eml_core::display::DisplayPath;
+use eml_core::display::DisplayText;
+use eml_core::vocabulary::{self, InterfaceIo};
 use eml_core::{InvalidRequest, OutputLocation, RunControl, RunMode, RunRequest};
 use eml_protocol::{JsonSink, MAX_REQUEST_BYTES, decode_request};
 use std::{
@@ -121,7 +122,7 @@ fn terminal(writer: &mut impl Write, text: &str) -> io::Result<()> {
         } else {
             line
         };
-        write!(writer, "{}", DisplayPath::new(Path::new(value)))?;
+        write!(writer, "{}", DisplayText::new(value))?;
         if newline {
             writer.write_all(b"\n")?;
         }
@@ -181,33 +182,9 @@ fn argument_error_text(mut error: clap::Error) -> String {
     }
     error.to_string()
 }
-fn native_message(context: &str, error: &io::Error) -> String {
-    match error.raw_os_error() {
-        Some(code) => format!(
-            "{context}: {} ({})\n",
-            error.kind(),
-            eml_core::NativeDiagnostic::OsCode(code)
-        ),
-        None => format!("{context}: {}\n", error.kind()),
-    }
-}
 fn invalid_request(error: InvalidRequest, control: &RunControl) -> u8 {
-    let message = match error {
-        InvalidRequest::Paths(error) => format!("Invalid request: {error}\n"),
-        InvalidRequest::WorkingDirectory(error) => {
-            native_message("Cannot bind the captured working directory", &error)
-        }
-        InvalidRequest::OutputDirectory(error) => {
-            format!(
-                "{}Choose an existing, writable folder for --output-dir; create it first if needed.\n",
-                native_message("Cannot use the output folder", &error)
-            )
-        }
-        InvalidRequest::DryRunModeRequired => {
-            "The read-only operation requires a dry-run request\n".into()
-        }
-    };
-    diagnostic(&message, 2, control)
+    let failure = error.into_failure();
+    diagnostic(&failure.diagnostic(), 2, control)
 }
 fn install_termination_handler(control: &RunControl) -> Result<(), ctrlc::Error> {
     let handler_control = control.clone();
@@ -231,28 +208,28 @@ fn document_request(
         Ok(bytes) => bytes,
         Err(InputError::Cancelled) => return Err(130),
         Err(InputError::TooLarge) => {
-            return Err(diagnostic("Request document exceeds 8 MiB\n", 2, control));
+            return Err(diagnostic(
+                vocabulary::REQUEST_DOCUMENT_TOO_LARGE,
+                2,
+                control,
+            ));
         }
         Err(InputError::Io(error)) => {
             return Err(diagnostic(
-                &native_message("Cannot read request document", &error),
+                &vocabulary::interface_io_error(InterfaceIo::ReadRequest, &error),
                 2,
                 control,
             ));
         }
         Err(InputError::Setup(error)) => {
             return Err(diagnostic(
-                &native_message("Cannot start request transport", &error),
+                &vocabulary::interface_io_error(InterfaceIo::StartRequest, &error),
                 1,
                 control,
             ));
         }
         Err(InputError::Disconnected) => {
-            return Err(diagnostic(
-                "Request transport ended before returning an EOF result\n",
-                1,
-                control,
-            ));
+            return Err(diagnostic(vocabulary::REQUEST_READER_ENDED, 1, control));
         }
     };
     if control.is_stopped() {
@@ -261,11 +238,7 @@ fn document_request(
     let value = match decode_request(&bytes, working) {
         Ok(value) => value,
         Err(error) => {
-            return Err(diagnostic(
-                &format!("Invalid request document: {error}\n"),
-                2,
-                control,
-            ));
+            return Err(diagnostic(&error.to_string(), 2, control));
         }
     };
     if control.is_stopped() {
@@ -276,11 +249,7 @@ fn document_request(
 pub(super) fn entry() -> u8 {
     let control = RunControl::default();
     if install_termination_handler(&control).is_err() {
-        return diagnostic(
-            "Cannot install process-local termination handling\n",
-            1,
-            &control,
-        );
+        return diagnostic(vocabulary::STOP_HANDLER_UNAVAILABLE, 1, &control);
     }
     let arguments = match Arguments::try_parse() {
         Ok(value) => value,
@@ -310,7 +279,7 @@ pub(super) fn entry() -> u8 {
         Ok(value) => value,
         Err(error) => {
             return diagnostic(
-                &native_message("Cannot capture the working directory", &error),
+                &vocabulary::interface_io_error(InterfaceIo::WorkingFolder, &error),
                 2,
                 &control,
             );
@@ -345,7 +314,16 @@ pub(super) fn entry() -> u8 {
         }
     };
     match result {
-        Ok(outcome) => outcome.exit_class().code(),
+        Ok(outcome) => {
+            if matches!(arguments.format, Format::Human)
+                && let Some(error) = outcome.run_error()
+            {
+                let code = outcome.exit_class().code();
+                diagnostic(&error.explanation(), code, &control)
+            } else {
+                outcome.exit_class().code()
+            }
+        }
         Err(error) => invalid_request(error, &control),
     }
 }

@@ -38,6 +38,7 @@ fn observation(outcome: Outcome, root: &std::path::Path, name: &str) -> SettledI
         existing: None,
         error: None,
         related_resources: false,
+        content_changed: false,
     };
     let mut removed = vec![eml_core::RemovedPart {
         section: "2".into(),
@@ -154,6 +155,8 @@ fn view(items: Vec<SettledItem>, kind: Kind) -> Rc<crate::DesktopController> {
     let total = items.len();
     let report = ReportHandle(Rc::new(RefCell::new(RunReport {
         start: Some(RunStart {
+            run_error: None,
+            output_unavailable: false,
             dry_run: kind == Kind::Check,
             total,
             collection_complete: true,

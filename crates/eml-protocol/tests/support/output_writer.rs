@@ -34,6 +34,8 @@ impl Write for Writer {
 }
 fn start() -> RunStart {
     RunStart {
+            run_error: None,
+            output_unavailable: false,
         dry_run: true,
         total: 1,
         collection_complete: true,

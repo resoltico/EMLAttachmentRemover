@@ -44,6 +44,12 @@ impl RunControl {
 pub enum Refusal {
     /// Required MIME syntax or structure is ambiguous or damaged.
     Malformed,
+    /// The root did not establish email header syntax.
+    NotEmail,
+    /// A mailbox envelope contains several messages.
+    MailboxFile,
+    /// The raw input exceeds the byte bound.
+    MessageTooLarge,
     /// An explicit resource admission bound was exceeded.
     LimitExceeded,
     /// Protected MIME occurred in a retained body context.
@@ -104,10 +110,17 @@ pub enum RemovalReason {
     RelatedResource,
     /// A leaf that is neither plain nor HTML body content.
     NonBodyPart,
+    /// Non-whitespace bytes following a multipart closing delimiter.
+    AfterMessageEnd,
 }
 impl RemovalReason {
     /// Exhaustive domain vocabulary; wire adapters consume the canonical names.
-    pub const ALL: &'static [Self] = &[Self::Attachment, Self::RelatedResource, Self::NonBodyPart];
+    pub const ALL: &'static [Self] = &[
+        Self::Attachment,
+        Self::RelatedResource,
+        Self::NonBodyPart,
+        Self::AfterMessageEnd,
+    ];
 
     /// Canonical protocol-1 name; rendering does not duplicate MIME decisions.
     pub const fn as_str(self) -> &'static str {
@@ -115,6 +128,7 @@ impl RemovalReason {
             Self::Attachment => "attachment",
             Self::RelatedResource => "related_resource",
             Self::NonBodyPart => "non_body_part",
+            Self::AfterMessageEnd => "after_message_end",
         }
     }
 }
@@ -170,7 +184,7 @@ pub fn prepare_message(
     control.checkpoint()?;
     if input.len() > MAX_MESSAGE_BYTES {
         return Err(error(
-            Refusal::LimitExceeded,
+            Refusal::MessageTooLarge,
             "Raw message exceeds the admitted byte limit",
         ));
     }
@@ -200,9 +214,24 @@ pub fn prepare_message(
             let node = &source.nodes[claim.id];
             RemovedPart {
                 section: node.section.clone().unwrap_or_default(),
-                content_type: node.media.clone(),
-                filename: node.filename.clone(),
-                bytes: node.span.len() as u64,
+                content_type: if claim.reason == RemovalReason::AfterMessageEnd {
+                    "application/octet-stream".into()
+                } else {
+                    node.media.clone()
+                },
+                filename: if claim.reason == RemovalReason::AfterMessageEnd {
+                    None
+                } else {
+                    node.filename.clone()
+                },
+                bytes: if claim.reason == RemovalReason::AfterMessageEnd {
+                    match &node.kind {
+                        message::Kind::Multipart { epilogue, .. } => epilogue.len() as u64,
+                        _ => unreachable!(),
+                    }
+                } else {
+                    node.span.len() as u64
+                },
                 reason: claim.reason,
             }
         })

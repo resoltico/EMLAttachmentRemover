@@ -108,12 +108,15 @@ fn preparation_failure(error: SourcePreparationError) -> Box<ItemFailure<'static
         SourcePreparationError::Preparation(error @ PreparationError::Refused { .. }) => {
             let code = ErrorCode::from_preparation(&error);
             let PreparationError::Refused {
-                detail, section, ..
+                detail,
+                section,
+                kind,
             } = error
             else {
                 unreachable!()
             };
-            let mut item = failure(OperationFailure::new(code, ErrorPhase::Prepare, detail));
+            let mut item =
+                failure(OperationFailure::new(code, ErrorPhase::Prepare, detail).for_message(kind));
             item.section = section;
             return item;
         }
@@ -191,6 +194,13 @@ fn execute_prepared<'a>(
         Ok(data) => data,
         Err(error) => return ItemResult::Failed(error),
     };
+    if plan.sources().request.mode == RunMode::DryRun && plan.sources().output_failure.is_some() {
+        return ItemResult::Planned(PlannedCopy {
+            action: PlanAction::Create,
+            metadata: data,
+            existing: None,
+        });
+    }
     let inspection = match inspect_existing(
         plan,
         index,
@@ -307,7 +317,11 @@ fn run_inner(
         },
         collection_complete: plan.sources().collection_complete(),
         interrupted: control.is_stopped() || plan.state() == DestinationPlanState::Interrupted,
-        run_error: plan.run_error().or(plan.sources().run_error()).cloned(),
+        run_error: plan
+            .run_error()
+            .or(plan.sources().run_error())
+            .or(plan.sources().output_failure.as_ref())
+            .cloned(),
         delivery_failure: None,
     };
     if total == 0 && outcome.run_error.is_none() && plan.state() == DestinationPlanState::Complete {
@@ -317,7 +331,13 @@ fn run_inner(
             "Discovery found no work items",
         ));
     }
-    if !emit_start(request.mode == RunMode::DryRun, &mut outcome, control, sink) {
+    if !emit_start(
+        request.mode == RunMode::DryRun,
+        plan.sources().output_failure.is_some(),
+        &mut outcome,
+        control,
+        sink,
+    ) {
         return Ok(outcome);
     }
     let mut context = RunContext::new(plan.sources());
@@ -388,6 +408,7 @@ mod tests;
 
 fn emit_start(
     dry_run: bool,
+    output_unavailable: bool,
     outcome: &mut RunOutcome,
     control: &RunControl,
     sink: &mut impl EventSink,
@@ -396,6 +417,8 @@ fn emit_start(
         dry_run,
         total: outcome.total,
         collection_complete: outcome.collection_complete,
+        run_error: outcome.run_error.clone(),
+        output_unavailable,
     };
     if let Err(error) = sink.emit(Event::Start(&start)) {
         outcome.delivery_failure = Some(DeliveryFailure {

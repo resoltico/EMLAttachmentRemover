@@ -8,7 +8,7 @@ use std::path::PathBuf;
 pub const MAX_REQUEST_BYTES: usize = 8 * 1024 * 1024;
 
 /// Bounded transport failures, containing no user-supplied JSON or native path.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RequestDecodeError {
     /// Byte limit failed before parsing.
     TooLarge,
@@ -18,6 +18,8 @@ pub enum RequestDecodeError {
         line: usize,
         /// One-based parser column, or zero when unavailable.
         column: usize,
+        /// Structured, payload-free reason owned by core vocabulary.
+        reason: eml_core::vocabulary::RequestDocumentReason,
     },
     /// Only protocol 1 is supported.
     UnsupportedProtocol,
@@ -43,12 +45,13 @@ impl std::fmt::Display for RequestDecodeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::TooLarge => write!(f, "Request exceeds {MAX_REQUEST_BYTES} bytes"),
-            Self::InvalidDocument { line, column } => {
-                write!(
-                    f,
-                    "Invalid request document at line {line}, column {column}"
-                )
-            }
+            Self::InvalidDocument {
+                line,
+                column,
+                reason,
+            } => f.write_str(&eml_core::vocabulary::request_document_error(
+                *line, *column, reason,
+            )),
             Self::UnsupportedProtocol => f.write_str("Request must use protocol 1"),
             Self::WrongEncoding { path } => {
                 write!(f, "{path}: native encoding differs from host")
@@ -118,6 +121,7 @@ pub fn decode_request(
         serde_json::from_slice(bytes).map_err(|error| RequestDecodeError::InvalidDocument {
             line: error.line(),
             column: error.column(),
+            reason: document_reason(&error),
         })?;
     if document.protocol != 1 {
         return Err(RequestDecodeError::UnsupportedProtocol);
@@ -146,4 +150,32 @@ pub fn decode_request(
         .validate_path_limits()
         .map_err(RequestDecodeError::InvalidRequest)?;
     Ok(request)
+}
+
+fn document_reason(error: &serde_json::Error) -> eml_core::vocabulary::RequestDocumentReason {
+    use eml_core::vocabulary::RequestDocumentReason as Reason;
+    let text = error.to_string();
+    let message = text
+        .rsplit_once(" at line ")
+        .map_or(text.as_str(), |(message, _)| message);
+    if let Some(field) = message
+        .strip_prefix("unknown field `")
+        .and_then(|s| s.rsplit_once("`, expected").map(|(field, _)| field))
+    {
+        return Reason::unknown_field(field);
+    }
+    if let Some(field) = message
+        .strip_prefix("duplicate field `")
+        .and_then(|s| s.strip_suffix('`'))
+    {
+        return Reason::duplicate_field(field);
+    }
+    if message.starts_with("trailing characters") {
+        return Reason::TrailingCharacters;
+    }
+    match error.classify() {
+        serde_json::error::Category::Eof => Reason::EndOfDocument,
+        serde_json::error::Category::Data => Reason::Type,
+        _ => Reason::Syntax,
+    }
 }

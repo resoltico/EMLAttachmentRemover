@@ -68,16 +68,16 @@ impl DestinationInfo {
     pub fn observation(&self) -> DestinationObservation {
         self.observation
     }
-    fn closest_parent(&self) -> Identity {
-        *self
-            .existing_prefix
-            .last()
-            .expect("root prefix is always observed")
+    fn closest_parent(&self) -> Option<Identity> {
+        self.existing_prefix.last().copied()
     }
     fn all_parents_observed(&self) -> bool {
         self.unbound_parents == 0
     }
     fn reservation_tail(&self) -> OsString {
+        if self.existing_prefix.is_empty() {
+            return self.native.as_os_str().to_owned();
+        }
         let mut parts: Vec<_> = self
             .native
             .components()
@@ -169,7 +169,7 @@ impl DestinationPlan<'_> {
 }
 #[derive(PartialEq, Eq, Hash)]
 struct DestinationKey {
-    closest: Identity,
+    closest: Option<Identity>,
     tail: OsString,
 }
 
@@ -238,7 +238,13 @@ pub fn plan_destinations<'a>(
         if result.records[index].failure().is_some() {
             continue;
         }
-        match plan_one(&result.sources, index, control, &mut result.labels) {
+        let planned = if result.sources.output_failure.is_some() {
+            plan_unavailable(&result.sources, index, &mut result.labels)
+                .map_err(PlanningFailure::from)
+        } else {
+            plan_one(&result.sources, index, control, &mut result.labels)
+        };
+        match planned {
             Ok(planned) => {
                 if !result.admit_destination(index, planned, &ids, &mut reservations, control) {
                     break;
@@ -578,6 +584,45 @@ fn display_destination(
         ),
     }
 }
+// A spelling-only prediction has no observed root and cannot be acquired for writing.
+// It passes the same path budget, lexical reservations and collision checks as bound plans.
+fn plan_unavailable(
+    sources: &CollectedSources<'_>,
+    index: usize,
+    labels: &mut HashMap<usize, Option<OsString>>,
+) -> Result<(DestinationInfo, PathBuf, Option<OperationFailure>), OperationFailure> {
+    let source = &sources.items()[index];
+    if source.origin() == SourceOrigin::Walked && !labels.contains_key(&source.root) {
+        labels.insert(source.root, root_label(sources, source.root)?);
+    }
+    let route = mirrored_route(sources, index, labels);
+    let basename = copy_basename(
+        source
+            .native_path()
+            .file_name()
+            .expect("collected filename"),
+        255,
+    )
+    .map_err(|e| {
+        native_failure(
+            "Copy name cannot be planned",
+            io::Error::new(io::ErrorKind::InvalidInput, e),
+        )
+    })?;
+    let native = native_destination_path(sources, index, &route, &basename)?;
+    let display = display_destination(sources, index, labels, &basename);
+    Ok((
+        DestinationInfo {
+            native,
+            unbound_parents: route.components().count() + 1,
+            limit: 255,
+            existing_prefix: Vec::new(),
+            observation: DestinationObservation::Unobserved,
+        },
+        display,
+        None,
+    ))
+}
 fn plan_one(
     sources: &CollectedSources<'_>,
     index: usize,
@@ -780,7 +825,7 @@ fn is_source_alias(
         }
         if info.all_parents_observed()
             && let CollectedObservation::File { parent, .. } = item.observation()
-            && *parent == info.closest_parent()
+            && Some(*parent) == info.closest_parent()
             && item.native_path().file_name() == Some(info.basename())
         {
             return true;

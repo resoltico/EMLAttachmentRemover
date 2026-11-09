@@ -371,8 +371,12 @@ pub struct ReportPath<'a> {
     pub display: &'a Path,
 }
 /// Discovery complete; emitted before terminal item events.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct RunStart {
+    /// Whole-run admission/collection code already established before item work.
+    pub run_error: Option<OperationFailure>,
+    /// Core observed that the explicit save folder could not be opened.
+    pub output_unavailable: bool,
     /// Whether this execution is read-only.
     pub dry_run: bool,
     /// Bounded known work count.

@@ -32,26 +32,38 @@ pub enum InvalidRequest {
     /// Pure native representation/resource validation failed.
     Paths(RequestPathError),
     /// The supplied absolute working directory could not bind.
-    WorkingDirectory(io::Error),
+    WorkingDirectory {
+        /// Supplied working folder, retained without lossy formatting.
+        path: PathBuf,
+        /// Actual native cause.
+        error: io::Error,
+    },
     /// The existing output directory could not bind as an ordinary directory.
-    OutputDirectory(io::Error),
+    OutputDirectory {
+        /// Intended save folder, retained without lossy formatting.
+        path: PathBuf,
+        /// Actual native cause.
+        error: io::Error,
+    },
 }
 impl InvalidRequest {
     /// Interpret failed run admission with the core's diagnostic vocabulary.
     pub fn into_failure(self) -> OperationFailure {
         match self {
-            Self::WorkingDirectory(e) => OperationFailure::io(
+            Self::WorkingDirectory { path, error: e } => OperationFailure::io(
                 ErrorCode::BindFailed,
                 ErrorPhase::Admission,
-                "Cannot bind the supplied working directory.",
+                "The working folder could not be opened.",
                 e,
-            ),
-            Self::OutputDirectory(e) => OperationFailure::io(
+            )
+            .for_working_folder(path),
+            Self::OutputDirectory { path, error: e } => OperationFailure::io(
                 ErrorCode::BindFailed,
                 ErrorPhase::Admission,
-                "Cannot bind the existing output directory.",
+                "The save folder could not be opened.",
                 e,
-            ),
+            )
+            .for_save_folder(path),
             Self::Paths(e) => OperationFailure::io(
                 ErrorCode::InputAdmissionFailed,
                 ErrorPhase::Admission,
@@ -71,11 +83,13 @@ impl std::fmt::Display for InvalidRequest {
         match self {
             Self::DryRunModeRequired => f.write_str("dry_run requires RunMode::DryRun"),
             Self::Paths(error) => error.fmt(f),
-            Self::WorkingDirectory(error) => {
-                write!(f, "Cannot bind the supplied working directory: {error}")
-            }
-            Self::OutputDirectory(error) => {
-                write!(f, "Cannot bind the existing output directory: {error}")
+            Self::WorkingDirectory { path, .. } => write!(
+                f,
+                "The working folder isn't available: {}. Choose an existing folder and try again.",
+                crate::display::DisplayPath::new(path)
+            ),
+            Self::OutputDirectory { path, .. } => {
+                f.write_str(&crate::vocabulary::output_folder_unavailable(path))
             }
         }
     }
@@ -85,7 +99,7 @@ impl std::error::Error for InvalidRequest {
         Some(match self {
             Self::DryRunModeRequired => return None,
             Self::Paths(error) => error,
-            Self::WorkingDirectory(error) | Self::OutputDirectory(error) => error,
+            Self::WorkingDirectory { error, .. } | Self::OutputDirectory { error, .. } => error,
         })
     }
 }
@@ -174,6 +188,7 @@ pub struct CollectedSources<'a> {
     pub(super) request: &'a RunRequest,
     pub(super) context: Option<WorkingContext>,
     pub(super) output: Option<BoundDirectory>,
+    pub(super) output_failure: Option<OperationFailure>,
     pub(super) roots: Vec<Root>,
     pub(super) items: Vec<CollectedSource<'a>>,
     state: CollectionState,
@@ -189,6 +204,7 @@ impl<'a> CollectedSources<'a> {
             request,
             context: None,
             output: None,
+            output_failure: None,
             roots: Vec::new(),
             items: Vec::new(),
             state: CollectionState::Collected,
@@ -253,7 +269,8 @@ pub fn collect_sources<'a>(
     collect_with_hash(request, control, move |path| random.hash_one(path))
 }
 
-/// Check the captured output using the same read-only binding rules as collection.
+/// Strictly inspect whether the captured output is currently available.
+/// A dry-run inventory may still proceed with an unavailable-folder fact.
 /// This is an early diagnostic only: collection and publication must bind again.
 /// It neither walks sources nor creates a destination. Call outside a UI thread.
 pub fn check_output_location(request: &RunRequest) -> Result<(), InvalidRequest> {
@@ -263,8 +280,12 @@ pub fn check_output_location(request: &RunRequest) -> Result<(), InvalidRequest>
     if matches!(request.output, OutputLocation::BesideSource) {
         return Ok(());
     }
-    let context = WorkingContext::capture(&request.working_directory)
-        .map_err(InvalidRequest::WorkingDirectory)?;
+    let context = WorkingContext::capture(&request.working_directory).map_err(|error| {
+        InvalidRequest::WorkingDirectory {
+            path: request.working_directory.clone(),
+            error,
+        }
+    })?;
     bind_output(request, &context).map(|_| ())
 }
 
@@ -277,21 +298,31 @@ fn bind_output(
     };
     let observed = context
         .observe(path)
-        .map_err(|error| InvalidRequest::OutputDirectory(selection_io(error)))?;
+        .map_err(|error| InvalidRequest::OutputDirectory {
+            path: path.clone(),
+            error: selection_io(error),
+        })?;
     if observed.kind != EntryKind::Directory {
-        return Err(InvalidRequest::OutputDirectory(io::Error::new(
-            io::ErrorKind::NotADirectory,
-            "Output is not an ordinary directory",
-        )));
+        return Err(InvalidRequest::OutputDirectory {
+            path: path.clone(),
+            error: io::Error::new(
+                io::ErrorKind::NotADirectory,
+                "Output is not an ordinary directory",
+            ),
+        });
     }
-    let directory = context
-        .destination_directory(path)
-        .map_err(|error| InvalidRequest::OutputDirectory(selection_io(error)))?;
+    let directory =
+        context
+            .destination_directory(path)
+            .map_err(|error| InvalidRequest::OutputDirectory {
+                path: path.clone(),
+                error: selection_io(error),
+            })?;
     if directory.identity() != observed.identity {
-        return Err(InvalidRequest::OutputDirectory(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "Output root identity changed",
-        )));
+        return Err(InvalidRequest::OutputDirectory {
+            path: path.clone(),
+            error: io::Error::new(io::ErrorKind::InvalidData, "Output root identity changed"),
+        });
     }
     Ok(Some(directory))
 }
@@ -314,9 +345,19 @@ fn collect_with_hash<'a>(
     if !collector.checkpoint() {
         return Ok(collector.result);
     }
-    let context = WorkingContext::capture(&request.working_directory)
-        .map_err(InvalidRequest::WorkingDirectory)?;
-    collector.result.output = bind_output(request, &context)?;
+    let context = WorkingContext::capture(&request.working_directory).map_err(|error| {
+        InvalidRequest::WorkingDirectory {
+            path: request.working_directory.clone(),
+            error,
+        }
+    })?;
+    match bind_output(request, &context) {
+        Ok(output) => collector.result.output = output,
+        Err(error) if request.mode == crate::RunMode::DryRun => {
+            collector.result.output_failure = Some(error.into_failure())
+        }
+        Err(error) => return Err(error),
+    }
     collector.result.context = Some(context);
     if !collector.bind_roots() {
         return Ok(collector.result);
@@ -497,7 +538,11 @@ impl<'a, F: Fn(&OsStr) -> u64> Collector<'a, '_, F> {
                     ErrorCode::OutputOverlap,
                     ErrorPhase::Admission,
                     "Output directory is reachable below a selected directory",
-                ),
+                )
+                .for_save_folder(match &self.result.request.output {
+                    OutputLocation::Directory(p) => p.clone(),
+                    OutputLocation::BesideSource => unreachable!(),
+                }),
             );
             true
         } else {
@@ -741,6 +786,11 @@ impl<'a, F: Fn(&OsStr) -> u64> Collector<'a, '_, F> {
         }
         if replace.is_none() && self.result.items.len() == MAX_COLLECTED_ITEMS {
             self.limit("Collected work exceeds the item bound");
+            self.result
+                .error
+                .as_mut()
+                .expect("limit failure")
+                .mark_selection_limit();
             return;
         }
         let prior_charge = replace.map_or(0, |old| {

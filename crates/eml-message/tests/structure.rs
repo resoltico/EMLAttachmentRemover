@@ -33,11 +33,11 @@ fn physical_header_names_use_ftext_and_the_first_colon() {
     for byte in [0, b' ', b'\t', 0x7f, 0x80, 0xff] {
         let mut wire = vec![b'X', byte, b'Y'];
         wire.extend_from_slice(b": value\r\nnot a field\r\n");
-        refusal(&wire, Refusal::Malformed);
+        refusal(&wire, Refusal::NotEmail);
     }
     refusal(b"X:Y: still a value\r\nnot a field\r\n", Refusal::Malformed);
     let wire = b":not a field\r\nContent-Type: multipart/signed\r\n";
-    refusal(wire, Refusal::Malformed);
+    refusal(wire, Refusal::NotEmail);
 }
 #[test]
 fn unix_from_is_only_an_outer_envelope_with_a_following_field() {
@@ -49,7 +49,7 @@ fn unix_from_is_only_an_outer_envelope_with_a_following_field() {
         b"From owner\r\nnot a field\r\nContent-Type: multipart/signed\r\n".as_slice(),
         b"From owner\r\n Subject: not a field\r\n",
     ] {
-        refusal(wire, Refusal::Malformed);
+        refusal(wire, Refusal::NotEmail);
     }
     let body = b"From owner\r\nContent-Type: multipart/signed\r\n\r\nordinary text";
     let part = mixed(&[body]);
@@ -62,7 +62,7 @@ fn unix_from_is_only_an_outer_envelope_with_a_following_field() {
     let mut forward = b"Content-Type: message/rfc822\r\n\r\n".to_vec();
     forward.extend_from_slice(body);
     let wire = mixed(&[&forward]);
-    refusal(&wire, Refusal::Malformed);
+    refusal(&wire, Refusal::NotEmail);
 }
 #[test]
 fn nested_boundary_prefixes_are_distinct_but_reuse_and_premature_outer_edges_refuse() {
@@ -226,12 +226,11 @@ fn structural_parameter_forms_and_malformed_values() {
 fn full_delimiter_lines_padding_preamble_epilogue_and_missing_close() {
     let source=b"Content-Type: multipart/mixed; boundary=B\r\n\r\npreamble\r\n--BX\r\n--B \t\r\n\r\nbody\r\n--B-- \t\r\nepilogue";
     let result = prepare_message(source, &RunControl::default()).unwrap();
-    assert_eq!(result.as_bytes(), source);
-    for body in [
-        "--B--\r\n",
-        "--B\r\n\r\nbody",
-        "--B\r\n\r\nbody\r\n--B--\r\n--B\r\n",
-    ] {
+    assert_eq!(
+        result.as_bytes(),
+        &source[..source.len() - b"epilogue".len()]
+    );
+    for body in ["--B--\r\n", "--B\r\n\r\nbody"] {
         refusal(
             format!("Content-Type: multipart/mixed; boundary=B\r\n\r\n{body}").as_bytes(),
             Refusal::Malformed,

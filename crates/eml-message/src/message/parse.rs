@@ -14,6 +14,7 @@ struct Multipart {
     closed: bool,
     first: Option<usize>,
     close: usize,
+    closing_end: usize,
     children: Vec<Child>,
     pending: Option<(usize, Span)>,
     related: Option<Related>,
@@ -46,6 +47,7 @@ impl Parser<'_, '_> {
         &mut self,
         start: usize,
         envelope_allowed: bool,
+        root: bool,
     ) -> Result<(Vec<Field>, Span, Span), PreparationError> {
         let mut envelope = start..start;
         if envelope_allowed
@@ -88,9 +90,13 @@ impl Parser<'_, '_> {
                 return Err(limit());
             }
             if continuation {
-                let previous = fields
-                    .last_mut()
-                    .ok_or_else(|| malformed("Orphan MIME header continuation"))?;
+                let previous = fields.last_mut().ok_or_else(|| {
+                    if root {
+                        crate::error(Refusal::NotEmail, "Orphan MIME header continuation")
+                    } else {
+                        malformed("Orphan MIME header continuation")
+                    }
+                })?;
                 previous.value.extend_from_slice(bytes);
                 previous.span.end = end;
             } else {
@@ -130,12 +136,15 @@ impl Parser<'_, '_> {
             crate::work_bounds::record(crate::work_bounds::Work::Node, 1, self.control)?;
             let start = self.cursor.offset;
             let (fields, separator, envelope) = self
-                .headers(start, envelope_allowed)
+                .headers(start, envelope_allowed, root)
                 .map_err(|e| located(e, source_section.clone()))?;
             // A message root must establish header syntax. Ordinary MIME parts
             // can omit fields; their default media type comes from the container.
             if root && fields.is_empty() {
-                return Err(malformed("Message root has no valid header fields"));
+                return Err(crate::error(
+                    Refusal::NotEmail,
+                    "Message root has no valid header fields",
+                ));
             }
             let unique = |name: &str| -> Result<Option<&Field>, PreparationError> {
                 let mut values = fields.iter().filter(|field| field.name == name);
@@ -276,6 +285,7 @@ impl Parser<'_, '_> {
                 closed: false,
                 first: None,
                 close: 0,
+                closing_end: 0,
                 children: Vec::new(),
                 pending: None,
                 related,
@@ -310,12 +320,14 @@ impl Parser<'_, '_> {
                     "Related start does not select exactly one direct child",
                 ));
             }
-            self.active
-                .unregister(multi.registration.take().expect("registered multipart"));
+            if let Some(registration) = multi.registration.take() {
+                self.active.unregister(registration);
+            }
             node.kind = Kind::Multipart {
                 prefix: node.body.start..multi.first.expect("closed multipart has an opening"),
                 children: multi.children,
-                suffix: multi.close..end,
+                suffix: multi.close..multi.closing_end.min(end),
+                epilogue: multi.closing_end.min(end)..end,
             };
         }
         node.span.end = end;
@@ -373,6 +385,9 @@ impl Parser<'_, '_> {
         if closing {
             multi.closed = true;
             multi.close = line.content.start;
+            multi.closing_end = line.end;
+            self.active
+                .unregister(multi.registration.take().expect("registered multipart"));
             return Ok(());
         }
         let depth = frame.depth;
@@ -429,6 +444,25 @@ pub(crate) fn parse<'a>(
     input: &'a [u8],
     control: &RunControl,
 ) -> Result<Message<'a>, PreparationError> {
+    if input.starts_with(b"From ") {
+        let mut cursor = PhysicalCursor::new(input);
+        let mut blank = false;
+        while let Some(line) = cursor.peek(control)? {
+            let bytes = &input[line.content.clone()];
+            if blank
+                && bytes.starts_with(b"From ")
+                && let Some(next) = cursor.peek_following(control)?
+                && field_colon(&input[next.content], control)?.is_some()
+            {
+                return Err(crate::error(
+                    Refusal::MailboxFile,
+                    "Input contains several mailbox messages",
+                ));
+            }
+            blank = bytes.is_empty();
+            cursor.consume();
+        }
+    }
     let mut parser = Parser {
         message: Message {
             input,

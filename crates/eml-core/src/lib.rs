@@ -63,6 +63,7 @@ pub use naming::{COPY_SUFFIX, NamingError, copy_basename};
 pub use request::{
     MAX_INPUT_PATH_BYTES, MAX_INPUT_PATHS, MAX_PATH_COMPONENTS, MAX_PATH_UNITS, OutputLocation,
     PathViolation, RequestPath, RequestPathError, RunMode, RunRequest, validate_native_path,
+    validate_save_folder_path,
 };
 #[cfg(any(unix, windows))]
 pub use source::{PreparedSource, SourcePreparationError, prepare_source};

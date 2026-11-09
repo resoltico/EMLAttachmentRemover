@@ -24,8 +24,8 @@ fn every_code_and_allowed_or_disallowed_phase_matches_the_contract_table() {
     }
     assert_eq!(
         expected.len(),
-        28,
-        "Protocol 1 has exactly 28 semantic codes"
+        29,
+        "Protocol 1 has exactly 29 semantic codes"
     );
     assert_eq!(ErrorCode::ALL.len(), expected.len());
     assert_eq!(ErrorPhase::ALL.len(), 12);

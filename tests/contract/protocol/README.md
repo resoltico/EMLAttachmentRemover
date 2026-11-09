@@ -31,3 +31,6 @@ exercise transport and lifecycle handling. These examples complement native
 interruption, filesystem failure and desktop tests.
 See the [release guide](../../../docs/release.md) for archive smoke checks and
 manual release acceptance.
+
+`mailbox-file` pins the MAILBOX_FILE refusal; `created-after-end` pins the
+new after_message_end removal with a root section and byte count.
