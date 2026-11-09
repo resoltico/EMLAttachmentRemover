@@ -42,7 +42,9 @@ pub(crate) fn run(rust_only: bool) -> Result<()> {
     )?;
     if !rust_only && cfg!(target_os = "macos") {
         let out = tempfile::tempdir()?;
-        crate::dist::build(false, true, true, None, out.path())?;
+        for target in ["aarch64-apple-darwin", "x86_64-apple-darwin"] {
+            crate::dist::build(false, true, Some(target.to_owned()), out.path())?;
+        }
     }
     Ok(())
 }

@@ -30,10 +30,13 @@ and open the actual app bundle for native identity and resources:
 ```sh
 cargo xtask dist --app --out target/desktop
 mkdir -p target/desktop/app
-ditto -x -k target/desktop/emlattachmentremover-gui-*-macos-universal.zip target/desktop/app
+ditto -x -k target/desktop/emlattachmentremover-gui-*-macos-*.zip target/desktop/app
 open "target/desktop/app/EML Attachment Remover.app"
 ```
 
+The default is the Rust host architecture. To build for the other Mac CPU, add
+`--target aarch64-apple-darwin` or `--target x86_64-apple-darwin` and install that
+Rust target first. Each command creates a single-architecture app archive.
 Use a fresh output directory on subsequent distributions. The app calls core in
 process and includes no CLI. Its bundle supplies native identity and resources.
 The GUI library and testing backend support macOS and Linux. Windows supports
@@ -62,9 +65,9 @@ Obtain actionlint and shellcheck from their upstream releases or a package manag
 using the versions in tools.toml. `cargo xtask ci` checks tool versions, formatting,
 dependency policy for the headless graph, macOS native renderers alone/together, the separate fuzz lockfile, workflows, shell scripts and the
 working-tree verification budget;
-then runs Clippy and tests. On macOS it also builds the signed universal app in a
-fresh temporary directory. Structural complexity thresholds warn; other Clippy
-findings fail. Inline exceptions use `#[expect(..., reason = "...")]`.
+then runs Clippy and tests. On macOS it also builds separate signed Apple Silicon
+and Intel apps in a fresh temporary directory. Structural complexity thresholds
+warn; other Clippy findings fail. Inline exceptions use `#[expect(..., reason = "...")]`.
 
 `cargo xtask ci --rust-only` runs the native Clippy/test portion used by matrix
 jobs. On Windows CI it runs through an explicitly targeted MSVC xtask executable.
@@ -96,14 +99,37 @@ workspace, and does not rely on an executable's compiled-in configuration.
 
 ## Distribution and notices
 
-On macOS:
+On macOS, build separate archives for both CPUs:
 
 ```sh
-cargo xtask dist --cli --app --universal --out target/dist
-mkdir -p target/smoke
-tar -xzf target/dist/emlattachmentremover-*-macos-universal.tar.gz -C target/smoke
-ditto -x -k target/dist/emlattachmentremover-gui-*-macos-universal.zip target/smoke
-scripts/smoke-cli.sh target/smoke/emlattachmentremover tests/contract/mime
+rustup target add aarch64-apple-darwin x86_64-apple-darwin
+for mac_arch in aarch64 x86_64; do
+  cargo xtask dist --cli --app --target "$mac_arch-apple-darwin" --out target/dist
+done
+```
+
+Smoke the archive matching the current Mac. The example selects Apple Silicon;
+on Intel set both `mac_arch` and `mac_macho_arch` to `x86_64`. The checks reject a
+wrong-CPU or multi-architecture CLI and a Rosetta-translated shell before execution:
+
+```sh
+set -eu
+mac_arch=aarch64
+mac_macho_arch=arm64
+mkdir -p "target/smoke/$mac_arch"
+tar -xzf target/dist/emlattachmentremover-*-macos-"$mac_arch".tar.gz -C "target/smoke/$mac_arch"
+ditto -x -k target/dist/emlattachmentremover-gui-*-macos-"$mac_arch".zip "target/smoke/$mac_arch"
+host_arch=$(uname -m)
+test "$host_arch" = "$mac_macho_arch"
+translated=$(sysctl -in sysctl.proc_translated)
+test "$translated" != "1"
+cli_arch=$(lipo -archs "target/smoke/$mac_arch/emlattachmentremover")
+test "$cli_arch" = "$mac_macho_arch"
+revision=$(git rev-parse HEAD)
+app_version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "target/smoke/$mac_arch/EML Attachment Remover.app/Contents/Info.plist")
+cli_version=$("target/smoke/$mac_arch/emlattachmentremover" --version)
+test "$cli_version" = "emlattachmentremover $app_version ($revision)"
+scripts/smoke-cli.sh "target/smoke/$mac_arch/emlattachmentremover" tests/contract/mime
 ```
 
 Use a fresh output folder: distribution refuses existing archive files. Linux and
@@ -116,8 +142,8 @@ manual checklist. Build requirements and actual release acceptance are separate:
 run the floor checks before releasing.
 
 `cargo xtask notices --target <triple> --out <new-file>` generates CLI notices.
-Add `--app` and repeat `--target` for a universal app's GUI graph. It requires
-cargo-about, the selected Rust sysroot's copyright file and the retained upstream
+Add `--app` for the GUI graph and select the same target as the app archive.
+It requires cargo-about, the selected Rust sysroot's copyright file and the retained upstream
 legal texts. See [legal materials](legal/README.md).
 
 ## Focused investigation

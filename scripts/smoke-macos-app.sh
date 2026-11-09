@@ -1,15 +1,20 @@
 #!/usr/bin/env bash
 # Release floor smoke for the macOS app: no UI automation.
-# Proves: the bundle verifies (ad hoc), contains both CPU slices, launches on
+# Proves: the bundle verifies (ad hoc), contains exactly the expected CPU architecture, launches on
 # this OS with launch operands and quits on an idle Quit request without writing.
 # Core-to-desktop Start is checked through Slint and the native checklist;
 # the separate CLI archive smoke owns CLI copy verification.
-# Usage: smoke-macos-app.sh APP_BUNDLE FIXTURE.eml PROBE_BINARY [expected_archs]
+# Usage: smoke-macos-app.sh APP_BUNDLE FIXTURE.eml PROBE_BINARY EXPECTED_ARCH
 set -euo pipefail
+[[ "$#" -eq 4 ]] || { echo "Usage: $0 APP_BUNDLE FIXTURE.eml PROBE_BINARY EXPECTED_ARCH" >&2; exit 2; }
+expected_arch="$4"
+case "${expected_arch}" in
+  arm64|x86_64) ;;
+  *) echo "unsupported macOS architecture: ${expected_arch}" >&2; exit 2 ;;
+esac
 app=$(cd "$1" && pwd)
 fixture="$2"
 probe="$3"
-expected_archs="${4:-arm64 x86_64}"
 plist="${app}/Contents/Info.plist"
 bundle_id=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "${plist}")
 executable=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "${plist}")
@@ -19,10 +24,17 @@ signature=$(codesign -dv "${app}" 2>&1)
 [[ "${signature}" == *$'\nSignature=adhoc'* ]] || { echo "app is not ad hoc signed" >&2; exit 1; }
 [[ ! -e "${app}/Contents/Helpers" ]] || { echo "app still contains Helpers" >&2; exit 1; }
 binary="${app}/Contents/MacOS/${executable}"
-slices=" $(lipo -archs "${binary}") "
-for arch in ${expected_archs}; do
-  [[ "${slices}" == *" ${arch} "* ]] || { echo "missing CPU slice ${arch}: ${binary}" >&2; exit 1; }
+for product in "${binary}" "${probe}"; do
+  actual_arch=$(lipo -archs "${product}")
+  [[ "${actual_arch}" == "${expected_arch}" ]] \
+    || { echo "expected exactly ${expected_arch}, found ${actual_arch}: ${product}" >&2; exit 1; }
 done
+host_arch=$(uname -m)
+[[ "${host_arch}" == "${expected_arch}" ]] \
+  || { echo "floor smoke requires a native ${expected_arch} host" >&2; exit 1; }
+translated=$(sysctl -in sysctl.proc_translated)
+[[ "${translated}" != "1" ]] \
+  || { echo "floor smoke cannot run under Rosetta" >&2; exit 1; }
 gui_version=$("${app}/Contents/MacOS/${executable}" --version)
 app_version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "${plist}")
 revision="${EML_SOURCE_REVISION:-$(git rev-parse --verify HEAD)}"

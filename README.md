@@ -11,14 +11,20 @@ documentation at the matching release tag.
 ## Install
 
 Download from [Releases](https://github.com/resoltico/EMLAttachmentRemover/releases).
-Choose the archive matching your platform:
+Choose the archive matching your platform and CPU:
 
 | Product | Archive | Minimum platform |
 |---|---|---|
-| CLI, macOS Intel and Apple Silicon | `emlattachmentremover-VERSION-macos-universal.tar.gz` | macOS 15 |
-| Desktop app, both Mac CPUs | `emlattachmentremover-gui-VERSION-macos-universal.zip` | macOS 15 |
+| CLI, macOS Apple Silicon | `emlattachmentremover-VERSION-macos-aarch64.tar.gz` | macOS 15 |
+| CLI, macOS Intel | `emlattachmentremover-VERSION-macos-x86_64.tar.gz` | macOS 15 |
+| Desktop app, macOS Apple Silicon | `emlattachmentremover-gui-VERSION-macos-aarch64.zip` | macOS 15 |
+| Desktop app, macOS Intel | `emlattachmentremover-gui-VERSION-macos-x86_64.zip` | macOS 15 |
 | CLI, Linux x86_64 or aarch64 | `emlattachmentremover-VERSION-linux-ARCH.tar.gz` | Ubuntu 26.04 |
 | CLI, Windows x86_64 or aarch64 | `emlattachmentremover-VERSION-windows-ARCH.zip` | Windows 10 |
+
+On a Mac, open Apple menu → About This Mac: a **Chip** entry identifies Apple
+Silicon (`aarch64`); an Intel **Processor** entry uses `x86_64`. Each Mac archive
+contains only its named architecture. Choose the native build for your Mac.
 
 Extract into a new folder. On macOS and Linux, run `./emlattachmentremover --help`;
 on Windows, run `.\emlattachmentremover.exe --help` in PowerShell. Add the extracted
