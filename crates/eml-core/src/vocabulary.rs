@@ -1,10 +1,13 @@
 //! Human-facing explanations shared by the CLI and desktop, outside wire facts.
 
+/// Batch promise shared by human interfaces.
+pub const ORIGINALS_UNCHANGED: &str = "Your originals are not changed.";
+
 /// Material consequence of the body-only policy; HTML references are not rewritten.
-pub const RELATED_RESOURCE_NOTICE: &str = "Inline images or other related resources were removed. They may appear missing in the copied message.";
+pub const RELATED_RESOURCE_NOTICE: &str = "Inline images and other linked content were removed too. They may show as missing in the copy.";
 
 /// Consequence for a prepared candidate that has not been confirmed as published.
-pub const PREPARED_RELATED_RESOURCE_NOTICE: &str = "The prepared copy omits inline images or other related resources. They may appear missing if that copy is saved.";
+pub const PREPARED_RELATED_RESOURCE_NOTICE: &str = "Inline images and other linked content will be removed too. They may show as missing in the copy.";
 /// A partial inventory does not establish an I/O failure or a complete email count.
 pub const COLLECTION_INCOMPLETE_NOTICE: &str = "Selection checking did not complete";
 
@@ -157,27 +160,25 @@ impl Consequence {
     pub const fn text(self) -> &'static str {
         match self {
             Self::Published => {
-                "A complete copy was published; qualification did not complete. Inspect the destination before retrying."
+                "The copy was written, but saving it to disk couldn't be confirmed. Check the copy before running again."
             }
             Self::PublicationUnknown => {
-                "A complete copy may exist. Inspect the destination before retrying."
+                "A copy may have been written. Check the destination before running again."
             }
-            Self::NoPublication => "No new copy was published.",
+            Self::NoPublication => "No new copy was written.",
             Self::ExistingUnqualified => {
-                "Existing bytes matched; synchronization/address qualification did not complete."
+                "A matching copy already exists, but its save to disk couldn't be confirmed."
             }
-            Self::AddressUnqualified => "The requested destination address could not be qualified.",
-            Self::DurabilityUnqualified => {
-                "Required file or namespace synchronization did not complete successfully."
-            }
+            Self::AddressUnqualified => "The destination folder couldn't be confirmed.",
+            Self::DurabilityUnqualified => "Saving to disk couldn't be confirmed.",
             Self::ResidualCleanup => {
-                "A known owned temporary resource remains. Inspect the cleanup details."
+                "A temporary file was left behind. Its name is in the details."
             }
             Self::UnknownCleanup => {
-                "Temporary-resource cleanup could not be established. Inspect the cleanup details."
+                "Removing a temporary file couldn't be confirmed. See the details."
             }
             Self::CleanupCompletedWithError => {
-                "Cleanup completed, but reported a native error. Inspect the cleanup details."
+                "A temporary file was removed, but the system reported an error. See the details."
             }
         }
     }
@@ -195,7 +196,7 @@ pub struct OutcomeMeaning {
     pub related_notice: Option<&'static str>,
 }
 /// Related resources verified absent from an existing matching copy.
-pub const EXISTING_RELATED_RESOURCE_NOTICE: &str = "Inline images or other related resources are absent from the matching bytes. They may appear missing in the existing copy.";
+pub const EXISTING_RELATED_RESOURCE_NOTICE: &str = "The existing copy has no inline images or other linked content. They may show as missing in it.";
 /// Classify accepted display facts without granting any filesystem capability.
 pub fn classify(f: &OutcomeFacts) -> OutcomeMeaning {
     use crate::{AddressState, CleanupState, PlanAction};
@@ -280,7 +281,6 @@ pub fn classify(f: &OutcomeFacts) -> OutcomeMeaning {
         MeaningKind::ExistingMatched => {
             consequences.extend([Consequence::NoPublication, Consequence::ExistingUnqualified])
         }
-        MeaningKind::NotPublished => consequences.push(Consequence::NoPublication),
         MeaningKind::Unestablished => match f.publication {
             Publication::Published => consequences.push(Consequence::Published),
             Publication::Unknown => consequences.push(Consequence::PublicationUnknown),
@@ -566,10 +566,7 @@ mod tests {
             ]
         );
         f.publication = Publication::NotPublished;
-        assert_eq!(
-            classify(&f).consequences,
-            [Consequence::NoPublication, Consequence::ResidualCleanup]
-        );
+        assert_eq!(classify(&f).consequences, [Consequence::ResidualCleanup]);
         f.publication = Publication::Unknown;
         f.cleanup.state = CleanupState::Unknown;
         assert_eq!(
@@ -955,28 +952,92 @@ impl BatchTotals {
             }
         )
     }
-    /// Shared summary nouns, independent of interface layout.
-    pub fn summary(&self, checking: bool) -> String {
+    /// Shared verdict and nonzero supporting facts for a settled batch.
+    pub fn headline(&self, mode: HeadlineMode) -> Headline {
         let mut parts = Vec::new();
-        for (outcome, n) in [
-            (Outcome::Ready, self.count(Outcome::Ready)),
-            (
-                Outcome::NothingToRemove,
-                self.count(Outcome::NothingToRemove),
-            ),
-            (Outcome::CopySaved, self.saved()),
-            (Outcome::AlreadyExists, self.count(Outcome::AlreadyExists)),
-            (Outcome::WillVerify, self.count(Outcome::WillVerify)),
-        ] {
-            if n > 0 {
-                parts.push(outcome.count_label(n));
+        let verdict = match mode {
+            HeadlineMode::Check { total } => {
+                if self.attachments > 0 {
+                    parts.push(attachment_count(self.attachments));
+                    if self.bytes_removed > 0 {
+                        parts.push(self.removal_summary(true));
+                    }
+                } else {
+                    let n = self.count(Outcome::NothingToRemove);
+                    if n > 0 {
+                        parts.push(Outcome::NothingToRemove.count_label(n));
+                    }
+                }
+                let n = self.count(Outcome::WillVerify);
+                if n > 0 {
+                    parts.push(Outcome::WillVerify.count_label(n));
+                }
+                total.map_or_else(|| "Emails not checked".into(), email_count)
             }
-        }
-        parts.push(self.problem_label());
-        parts.push(Outcome::NotProcessed.count_label(self.count(Outcome::NotProcessed)));
-        parts.push(self.removal_summary(checking));
-        parts.join(" · ")
+            HeadlineMode::Stopped => {
+                for (outcome, n) in [
+                    (Outcome::CopySaved, self.saved()),
+                    (Outcome::NotProcessed, self.count(Outcome::NotProcessed)),
+                ] {
+                    if n > 0 {
+                        parts.push(outcome.count_label(n));
+                    }
+                }
+                "Stopped".into()
+            }
+            HeadlineMode::Done { incomplete_create } => {
+                if self.bytes_removed > 0 {
+                    parts.push(self.removal_summary(false));
+                }
+                for outcome in [Outcome::CopiedAsIs, Outcome::AlreadyExists] {
+                    let n = self.count(outcome);
+                    if n > 0 {
+                        parts.push(outcome.count_label(n));
+                    }
+                }
+                let saved = self.saved();
+                if saved == 0 && (self.has_attention() || incomplete_create) {
+                    "Results need attention".into()
+                } else if saved == 0 && self.problems > 0 {
+                    "No copies saved".into()
+                } else if saved == 0 && self.count(Outcome::AlreadyExists) > 0 {
+                    let n = self.count(Outcome::AlreadyExists);
+                    format!(
+                        "{n} {} already {}",
+                        if n == 1 { "copy" } else { "copies" },
+                        if n == 1 { "exists" } else { "exist" }
+                    )
+                } else {
+                    Outcome::CopySaved.count_label(saved)
+                }
+            }
+        };
+        Headline { verdict, parts }
     }
+}
+/// Settled batch context, independent of presentation and transport.
+#[derive(Clone, Copy, Debug)]
+pub enum HeadlineMode {
+    /// Read-only result with the admitted inventory, if established.
+    Check {
+        /// Number of discovered emails.
+        total: Option<usize>,
+    },
+    /// A completed copy attempt, including incomplete worker observations.
+    Done {
+        /// Whether the copy worker ended without a complete result.
+        incomplete_create: bool,
+    },
+    /// Deliberately stopped work, using settled totals.
+    Stopped,
+}
+/// A batch verdict and its nonzero supporting facts.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Headline {
+    /// Primary result sentence fragment.
+    pub verdict: String,
+    /// Supporting facts in their shared order.
+    pub parts: Vec<String>,
 }
 /// Copy Details field labels shared with human diagnostic renderers.
 pub mod fields {

@@ -1,10 +1,15 @@
 //! Human rendering of core outcomes; never a GUI protocol.
 use eml_core::{
     Event, EventSink,
-    vocabulary::{BatchTotals, Outcome, OutcomeFacts, RunFailure, fields, format_bytes},
+    vocabulary::{
+        BatchTotals, HeadlineMode, Outcome, OutcomeFacts, RunFailure, Severity, fields,
+        format_bytes,
+    },
 };
 use eml_protocol::{BoundedEventBuffer, MAX_LINE_BYTES};
 use std::io::{self, Write};
+const LABEL_WIDTH: usize = 24;
+const PATH_COLUMN: usize = LABEL_WIDTH + 1;
 type HumanItem = (Outcome, usize, Option<(u64, u64)>);
 pub(crate) struct HumanSink<W> {
     writer: W,
@@ -81,7 +86,8 @@ fn write_error(writer: &mut impl Write, error: &eml_core::OperationFailure) -> i
     let [code, phase, detail] = [fields::CODE, fields::PHASE, fields::DETAIL];
     write!(
         writer,
-        "                 [{code}: {} · {phase}: {} · {detail}: {}",
+        "{:PATH_COLUMN$}[{code}: {} · {phase}: {} · {detail}: {}",
+        "",
         error.code(),
         error.phase(),
         error.detail()
@@ -97,7 +103,8 @@ fn write_cleanup(writer: &mut impl Write, cleanup: &eml_core::CleanupReceipt) ->
     }
     write!(
         writer,
-        "                 [{}: {}",
+        "{:PATH_COLUMN$}[{}: {}",
+        "",
         fields::CLEANUP,
         eml_core::vocabulary::cleanup_label(cleanup.state)
     )?;
@@ -158,10 +165,26 @@ fn write_human(
                     .map(|&(outcome, parts, bytes)| (Some(outcome), parts, bytes)),
                 counts.not_processed(),
             );
+            let headline = totals.headline(if value.interrupted() {
+                HeadlineMode::Stopped
+            } else if checking {
+                HeadlineMode::Check {
+                    total: Some(totals.emails),
+                }
+            } else {
+                HeadlineMode::Done {
+                    incomplete_create: false,
+                }
+            });
+            let mut summary = headline.verdict;
+            if !headline.parts.is_empty() {
+                summary += " · ";
+                summary += &headline.parts.join(" · ");
+            }
             writeln!(
                 writer,
                 "{}. Exit {}{}",
-                totals.summary(checking),
+                summary,
                 value.exit_class().code(),
                 if value.interrupted() {
                     "; interrupted"
@@ -184,7 +207,10 @@ fn write_item(writer: &mut impl Write, value: &eml_core::ItemEvent<'_>) -> io::R
     let data = value.result.metadata();
     let outcome = Outcome::from(&facts, data.map_or(0, |d| d.removed.len()));
     write_label(writer, outcome, value.source.display)?;
-    if let Some(path) = value.destination {
+    if outcome.severity() != Severity::Failure
+        && data.is_some_and(|d| !d.removed.is_empty())
+        && let Some(path) = value.destination
+    {
         write!(
             writer,
             " → {}",
@@ -192,13 +218,17 @@ fn write_item(writer: &mut impl Write, value: &eml_core::ItemEvent<'_>) -> io::R
         )?;
     }
     if let Some(data) = data {
-        write!(
-            writer,
-            " · {} · {} → {}",
-            eml_core::vocabulary::attachment_count(data.removed.len()),
-            format_bytes(data.source_bytes),
-            format_bytes(data.copy_bytes)
-        )?;
+        if data.removed.is_empty() || outcome.severity() == Severity::Failure {
+            write!(writer, " · {}", format_bytes(data.source_bytes))?;
+        } else {
+            write!(
+                writer,
+                " · {} · {} → {}",
+                eml_core::vocabulary::attachment_count(data.removed.len()),
+                format_bytes(data.source_bytes),
+                format_bytes(data.copy_bytes)
+            )?;
+        }
     }
     writeln!(writer)?;
     if let Some(data) = data {
@@ -211,7 +241,8 @@ fn write_item(writer: &mut impl Write, value: &eml_core::ItemEvent<'_>) -> io::R
             let kind = eml_core::vocabulary::part_kind(part.reason, &part.content_type);
             write!(
                 writer,
-                "                 {}",
+                "{:PATH_COLUMN$}{}",
+                "",
                 eml_protocol::DisplayText::new(name)
             )?;
             if !kind.is_empty() && kind != name {
@@ -221,15 +252,15 @@ fn write_item(writer: &mut impl Write, value: &eml_core::ItemEvent<'_>) -> io::R
         }
     }
     if let eml_core::ItemResult::Failed(failure) = &value.result {
-        writeln!(writer, "                 {}", outcome.explanation())?;
+        writeln!(writer, "{:PATH_COLUMN$}{}", "", outcome.explanation())?;
         write_error(writer, failure.error())?;
         for consequence in eml_core::vocabulary::classify(&facts).consequences {
-            writeln!(writer, "                 {}", consequence.text())?;
+            writeln!(writer, "{:PATH_COLUMN$}{}", "", consequence.text())?;
         }
         write_cleanup(writer, &facts.cleanup)?;
     }
     if let Some(notice) = eml_core::vocabulary::classify(&facts).related_notice {
-        writeln!(writer, "                 {notice}")?;
+        writeln!(writer, "{:PATH_COLUMN$}{notice}", "")?;
     }
     Ok(())
 }
@@ -351,7 +382,7 @@ mod tests {
         assert!(
             String::from_utf8(human.into_inner())
                 .unwrap()
-                .contains("1 can’t be copied · 0 not processed")
+                .contains("1 email. Exit 1")
         );
         let mut json = eml_protocol::JsonSink::new(Vec::new());
         run(&req, &RunControl::default(), &mut json).unwrap();
@@ -364,6 +395,49 @@ mod tests {
         assert_eq!(records[2]["counts"]["failed"], 1);
         assert_eq!(records[2]["counts"]["not_processed"], 0);
         root.close().unwrap();
+    }
+    #[test]
+    fn v3_stopped_human_run_uses_settled_core_headline() {
+        struct StopAfterTwo<'a> {
+            human: HumanSink<Vec<u8>>,
+            control: &'a RunControl,
+            seen: usize,
+        }
+        impl EventSink for StopAfterTwo<'_> {
+            fn emit(&mut self, event: Event<'_>) -> io::Result<()> {
+                let item = matches!(event, Event::Item(_));
+                self.human.emit(event)?;
+                if item {
+                    self.seen += 1;
+                    if self.seen == 2 {
+                        self.control.request_stop();
+                    }
+                }
+                Ok(())
+            }
+        }
+        let root = root();
+        fs::write(
+            root.path().join("a.eml"),
+            include_bytes!("../../../tests/contract/mime/inputs/01-gmail-attachment.eml"),
+        )
+        .unwrap();
+        fs::write(root.path().join("b.eml"), b"Subject: Plain\r\n\r\nBody\r\n").unwrap();
+        fs::write(root.path().join("c.eml"), b"").unwrap();
+        let mut req = request(root.path(), RunMode::Create);
+        req.paths.extend(["b.eml".into(), "c.eml".into()]);
+        let control = RunControl::default();
+        let mut sink = StopAfterTwo {
+            human: HumanSink::new(Vec::new()),
+            control: &control,
+            seen: 0,
+        };
+        run(&req, &control, &mut sink).unwrap();
+        let text = String::from_utf8(sink.human.into_inner()).unwrap();
+        assert_eq!(
+            text.lines().last().unwrap(),
+            "Stopped · 2 copies saved · 1 not processed. Exit 130; interrupted"
+        );
     }
     fn root() -> tempfile::TempDir {
         let parent = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/event-tests");
@@ -392,11 +466,8 @@ mod tests {
         let text = String::from_utf8(sink.into_inner()).unwrap();
         assert!(!text.contains('\u{1b}'));
         assert!(!text.contains('\u{2028}'));
-        assert!(text.contains("No new copy was published."));
-        assert!(
-            text.contains("1 can’t be copied · 1 not processed"),
-            "{text}"
-        );
+        assert!(!text.contains("No new copy was"));
+        assert!(text.contains("No copies saved. Exit 1"), "{text}");
         assert_eq!(
             fs::read(root.path().join("a.no-attachments.eml")).unwrap(),
             b"different"
@@ -412,7 +483,7 @@ fn write_label(
 ) -> io::Result<()> {
     write!(
         writer,
-        "{:<24} {}",
+        "{:<LABEL_WIDTH$} {}",
         outcome.label(),
         eml_protocol::DisplayPath::new(source)
     )
@@ -435,7 +506,7 @@ mod cleanup_tests {
         write_cleanup(&mut output, &receipt).unwrap();
         assert_eq!(
             String::from_utf8(output).unwrap(),
-            "                 [Cleanup: Residual · Native code: 13 · Residual resource: .emlattachmentremover-\\u{202e}.tmp]\n"
+            "                         [Cleanup: Residual · Native code: 13 · Residual resource: .emlattachmentremover-\\u{202e}.tmp]\n"
         );
     }
 }

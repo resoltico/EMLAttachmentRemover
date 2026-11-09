@@ -41,11 +41,11 @@ emlattachmentremover --output-dir copies -- mail-folder
 emlattachmentremover --format json -- message.eml
 ```
 
-Human output uses the same outcome labels as the app (JSON is unchanged):
+Human output uses the app’s core outcome labels and batch headline (JSON is unchanged):
 
 ```text
 Ready                    message.eml → message.no-attachments.eml · 1 attachment · 392 B → 183 B
-1 ready · 0 can’t be copied · 0 not processed · 209 B would be removed. Exit 0
+1 email · 1 attachment · 209 B would be removed. Exit 0
 ```
 
 Copies use `<stem>.no-attachments.eml`. Explicit files go directly into the chosen

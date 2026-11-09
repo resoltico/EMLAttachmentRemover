@@ -220,7 +220,7 @@ fn completed_cleanup_with_a_native_error_is_not_reported_as_unconfirmed() {
             .any(|c| c.text().contains("could not be established"))
     );
     assert!(meaning.consequences.iter().any(|c| c.text()
-        == "Cleanup completed, but reported a native error. Inspect the cleanup details."));
+        == "A temporary file was removed, but the system reported an error. See the details."));
     assert_eq!(
         Outcome::from(&f, 0),
         Outcome::Failed(eml_core::ErrorCode::CleanupFailed)
@@ -317,4 +317,145 @@ fn represented_preexecution_failures_count_without_inventing_outcomes() {
     assert!(Severity::Attention.is_problem());
     assert!(!Severity::Pending.is_problem());
     assert!(!Severity::Neutral.is_problem());
+}
+
+fn assert_headline(outcomes: &[Outcome], mode: HeadlineMode, verdict: &str, parts: &[&str]) {
+    let totals = BatchTotals::from(outcomes.iter().map(|o| (Some(*o), 1, Some((200, 100)))), 0);
+    let headline = totals.headline(mode);
+    assert_eq!(headline.verdict, verdict);
+    assert_eq!(headline.parts, parts);
+    assert!(headline.parts.iter().all(|p| !p.starts_with("0 ")));
+}
+#[test]
+fn headline_check_removals() {
+    assert_headline(
+        &[Outcome::Ready],
+        HeadlineMode::Check { total: Some(1) },
+        "1 email",
+        &["1 attachment", "100 B would be removed"],
+    );
+}
+#[test]
+fn headline_check_plain_and_existing() {
+    assert_headline(
+        &[Outcome::NothingToRemove, Outcome::WillVerify],
+        HeadlineMode::Check { total: Some(2) },
+        "2 emails",
+        &["1 with no attachments", "1 copy to verify"],
+    );
+}
+#[test]
+fn headline_check_unknown_inventory() {
+    assert_headline(
+        &[],
+        HeadlineMode::Check { total: None },
+        "Emails not checked",
+        &[],
+    );
+}
+#[test]
+fn headline_done_counts_copied_as_is_in_verdict() {
+    assert_headline(
+        &[
+            Outcome::CopySaved,
+            Outcome::CopiedAsIs,
+            Outcome::Failed(eml_core::ErrorCode::Malformed),
+        ],
+        HeadlineMode::Done {
+            incomplete_create: false,
+        },
+        "2 copies saved",
+        &["100 B removed", "1 copied as is"],
+    );
+}
+#[test]
+fn headline_done_attention() {
+    assert_headline(
+        &[Outcome::NeedsChecking],
+        HeadlineMode::Done {
+            incomplete_create: false,
+        },
+        "Results need attention",
+        &[],
+    );
+}
+#[test]
+fn headline_done_incomplete() {
+    assert_headline(
+        &[],
+        HeadlineMode::Done {
+            incomplete_create: true,
+        },
+        "Results need attention",
+        &[],
+    );
+}
+#[test]
+fn headline_done_failure() {
+    assert_headline(
+        &[Outcome::Failed(eml_core::ErrorCode::Malformed)],
+        HeadlineMode::Done {
+            incomplete_create: false,
+        },
+        "No copies saved",
+        &[],
+    );
+}
+#[test]
+fn headline_done_all_existing() {
+    for (outcomes, verdict, part) in [
+        (
+            vec![Outcome::AlreadyExists],
+            "1 copy already exists",
+            "1 already existed",
+        ),
+        (
+            vec![Outcome::AlreadyExists; 40],
+            "40 copies already exist",
+            "40 already existed",
+        ),
+    ] {
+        assert_headline(
+            &outcomes,
+            HeadlineMode::Done {
+                incomplete_create: false,
+            },
+            verdict,
+            &[part],
+        );
+    }
+}
+#[test]
+fn headline_stopped_omits_zero_counts() {
+    assert_headline(
+        &[
+            Outcome::CopySaved,
+            Outcome::CopiedAsIs,
+            Outcome::NotProcessed,
+        ],
+        HeadlineMode::Stopped,
+        "Stopped",
+        &["2 copies saved", "1 not processed"],
+    );
+    assert_headline(
+        &[Outcome::NotProcessed],
+        HeadlineMode::Stopped,
+        "Stopped",
+        &["1 not processed"],
+    );
+    assert_headline(&[], HeadlineMode::Stopped, "Stopped", &[]);
+}
+
+#[test]
+fn v4_plain_failure_has_no_redundant_no_publication() {
+    let mut f = facts();
+    f.result = ResultKind::Failed;
+    f.publication = Publication::NotPublished;
+    f.error = Some(eml_core::ErrorCode::Malformed);
+    f.cleanup.state = CleanupState::NotNeeded;
+    assert!(
+        !classify(&f)
+            .consequences
+            .contains(&Consequence::NoPublication)
+    );
 }
