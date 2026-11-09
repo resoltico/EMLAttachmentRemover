@@ -544,6 +544,7 @@ impl crate::DesktopController {
                 .position(|row| row.selected)
                 .map_or(-1, |i| i as i32),
             state: state.into(),
+            editing: matches!(state, State::Checking | State::Ready),
             title: header.title.into(),
             summary: header.summary.into(),
             problems: header.problems.into(),

@@ -1,9 +1,50 @@
 // Copyright 2026 Ervins Strauhmanis
 // SPDX-License-Identifier: MPL-2.0
 import { Tone } from "models.slint";
+import { WidgetMetrics } from "widget-metrics.slint";
 import { Palette } from "std-widgets.slint";
 
 export global Theme {
+    out property <length> scroll-inset: WidgetMetrics.scroll-inset;
+    out property <float> email-fraction: 0.32;
+    out property <float> detail-fraction: 0.3;
+    out property <length> size-column: 145px;
+    out property <length> status-column: 175px;
+    out property <length> wide-breakpoint: 900px;
+    out property <length> column-header-height: 28px;
+    out property <length> part-size-column: 75px;
+    out property <length> name-line: 18px;
+    out property <length> folder-line: 17px;
+    out property <length> chip-line: 22px;
+    out property <length> path-line: 18px;
+    out property <length> detail-cap: 200px;
+    out property <length> dot-box: 8px;
+    out property <length> drop-outline: 2px;
+    out property <length> focus-border: 2px;
+    out property <length> attachment-chip-width: 180px;
+    out property <length> attachment-chip-padding: 6px;
+    out property <length> window-min-width: 760px;
+    out property <length> window-min-height: 520px;
+    out property <length> window-width: 1080px;
+    out property <length> window-height: 700px;
+    out property <length> destination-popup-width: 340px;
+    out property <length> destination-popup-base-height: 88px;
+    out property <length> popup-row-height: 36px;
+    out property <length> output-popup-width: 420px;
+    out property <length> output-popup-cap: 400px;
+    out property <length> quit-dialog-y: 70px;
+    out property <length> quit-dialog-width: 480px;
+    out property <length> about-width: 440px;
+    out property <length> about-height: 490px;
+    out property <length> about-notice-height: 64px;
+    out property <length> about-icon-size: 64px;
+    out property <length> slint-notice-width: 280px;
+    out property <length> slint-notice-height: 100px;
+    out property <length> license-width: 720px;
+    out property <length> license-height: 560px;
+    out property <length> empty-width: 560px;
+    out property <length> empty-padding: 32px;
+
     out property <length> diagnostic-height: 100px;
     out property <color> clear: transparent;
     out property <bool> dark: Palette.color-scheme == ColorScheme.dark;

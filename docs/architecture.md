@@ -178,9 +178,9 @@ mapping. No text-size input is exposed. The list uses fixed 44 px virtual rows,
 centred cells and separators. The header reserves a 32 px summary line even when
 there is no problems chip. Band backgrounds span the window; content stays in a
 centred column at most 980 px wide. Below 900 px the Size column and naming hint
-are hidden. The visible detail pane has a fixed preferred height of 240 px, capped
-at 40% of the window, scrolls internally and keeps its actions visible. Selecting
-another email does not resize the list. At minimum size two list rows remain
+are hidden. The visible detail pane has a fixed preferred height of 200 px, capped
+at 30% of the window, keeps its actions beside the email name and scrolls its body
+internally. Selecting another email does not resize the list. At minimum size three list rows remain
 visible, including with long details. Popups anchor to their command controls.
 Buttons, menus and controller boundaries share predicates in `actions.rs`.
 

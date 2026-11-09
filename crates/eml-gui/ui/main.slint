@@ -19,7 +19,7 @@ export component MainWindow inherits Window {
     in-out property <bool> drop-hovered;
     title: root.product-name; icon: @image-url("eml-icon.png"); background: Theme.surface;
     default-font-size: Theme.body;
-    min-width: 760px; min-height: 520px; preferred-width: 1080px; preferred-height: 700px;
+    min-width: Theme.window-min-width; min-height: Theme.window-min-height; preferred-width: Theme.window-width; preferred-height: Theme.window-height;
     callback choose-files(); callback choose-folder(); callback choose-destination(); callback beside-source(); callback recent-destination(int);
     callback start-selection(); callback start-over(); callback stop(); callback toggle-problems();
     callback select-email(string); callback navigate-email(int,int); callback clear-selected();
@@ -68,8 +68,8 @@ export component MainWindow inherits Window {
         destination => { destinations.show(); } output => { root.show-output(); }
     }
 
-    destinations := PopupWindow { x: batch-pane.destination-anchor-x; y: batch-pane.destination-anchor-y - self.height; width: 340px;
-        height: 88px + root.recent-destinations.length * 36px;
+    destinations := PopupWindow { x: batch-pane.destination-anchor-x; y: batch-pane.destination-anchor-y - self.height; width: Theme.destination-popup-width;
+        height: Theme.destination-popup-base-height + root.recent-destinations.length * Theme.popup-row-height;
         Rectangle { background: Theme.raised; border-width: 1px; border-color: Theme.border; border-radius: Theme.radius-container;
             VerticalBox { padding: Theme.space-2; spacing: Theme.space-1;
                 ActionButton { text: root.words.next-to; clicked => { destinations.close(); root.beside-source(); } }
@@ -78,16 +78,16 @@ export component MainWindow inherits Window {
             }
         }
     }
-    outputs := PopupWindow { x: batch-pane.output-anchor-x + batch-pane.output-anchor-width - self.width; y: batch-pane.output-anchor-y - self.height; width: 420px; height: min(400px,16px + root.output-roots.length * 36px);
+    outputs := PopupWindow { x: batch-pane.output-anchor-x + batch-pane.output-anchor-width - self.width; y: batch-pane.output-anchor-y - self.height; width: Theme.output-popup-width; height: min(Theme.output-popup-cap,Theme.space-4 + root.output-roots.length * Theme.popup-row-height);
         Rectangle { background: Theme.raised; border-width: 1px; border-color: Theme.border; border-radius: Theme.radius-container;
-            ListView { x: 8px; y: 8px; width: parent.width - 16px; height: parent.height - 16px; content-width: self.visible-width;
-                for path[index] in root.output-roots: ActionButton { text: path; min-width: 0px; min-height: 36px; clicked => { outputs.close(); root.reveal-output(index); } }
+            ListView { x: Theme.space-2; y: Theme.space-2; width: parent.width - Theme.space-4; height: parent.height - Theme.space-4; content-width: self.visible-width;
+                for path[index] in root.output-roots: ActionButton { text: path; min-width: 0px; min-height: Theme.popup-row-height; clicked => { outputs.close(); root.reveal-output(index); } }
             }
         }
     }
     private property <bool> show-quit: root.view.quit;
     changed show-quit => { if root.show-quit { decision.show(); } else { decision.close(); } }
-    decision := PopupWindow { x: max(0px,(root.width - self.width) / 2); y: 70px; width: min(480px,root.width - Theme.space-6 * 2); height: content.preferred-height + 32px; close-policy: no-auto-close;
+    decision := PopupWindow { x: max(0px,(root.width - self.width) / 2); y: Theme.quit-dialog-y; width: min(Theme.quit-dialog-width,root.width - Theme.space-6 * 2); height: content.preferred-height + (Theme.space-4 * 2); close-policy: no-auto-close;
         Rectangle { background: Theme.raised; border-width: 1px; border-color: Theme.border; border-radius: Theme.radius-container;
             FocusScope { forward-focus: cancel;
                 init => { cancel.focus(); }

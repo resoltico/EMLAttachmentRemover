@@ -180,12 +180,13 @@ fn visual_literals(node: &SyntaxNode) -> Vec<String> {
                     parent.kind() == SyntaxKind::QualifiedName && parent.text() == item.text()
                 }));
         let size = item.kind() == SyntaxKind::NumberLiteral
-            && item.parent_ancestors().any(|parent| {
-                parent.kind() == SyntaxKind::Binding
-                    && parent
-                        .first_token()
-                        .is_some_and(|name| matches!(name.text(), "font-size" | "border-radius"))
-            });
+            && ((item.text().ends_with("px") && !matches!(item.text(), "0px" | "1px"))
+                || item.parent_ancestors().any(|parent| {
+                    parent.kind() == SyntaxKind::Binding
+                        && parent.first_token().is_some_and(|name| {
+                            matches!(name.text(), "font-size" | "border-radius")
+                        })
+                }));
         if colour || size {
             found.push(item.text().to_owned());
         }
@@ -267,7 +268,8 @@ fn u4_visual_literals_are_rejected() {
                 .node
                 .descendants_with_tokens()
                 .filter_map(|item| item.into_token())
-                .any(|token| token.kind() == SyntaxKind::Identifier && token.text() == "ui-size")
+                .any(|token| token.kind() == SyntaxKind::Identifier
+                    && matches!(token.text(), "ui-size" | "UiMetrics"))
         );
         if path.file_name().unwrap() != "theme.slint" {
             assert!(
@@ -319,6 +321,7 @@ fn u1_controls_reject_comment_raw_multiline_and_macro_bypasses() {
 #[test]
 fn u4_controls_reject_expression_colours_and_comment_only_references() {
     for binding in [
+        "width: 175px;",
         "font-size: 12px;",
         "font-size: (12px);",
         "border-radius: 1px + 2px;",

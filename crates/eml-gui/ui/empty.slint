@@ -13,9 +13,9 @@ export component EmptyBatch inherits Rectangle {
     in property <bool> hovered;
     callback add-files(); callback add-folder();
     background: Theme.surface;
-    Rectangle { width: min(560px, parent.width - Theme.space-6 * 2); height: content.preferred-height + 64px;
+    Rectangle { width: min(Theme.empty-width, parent.width - Theme.space-6 * 2); height: content.preferred-height + (Theme.empty-padding * 2);
         x: (parent.width - self.width) / 2; y: max(0px,(parent.height - self.height) / 2);
-        border-width: 2px; border-color: root.hovered ? Theme.accent : Theme.border; border-radius: Theme.radius-container;
+        border-width: Theme.drop-outline; border-color: root.hovered ? Theme.accent : Theme.border; border-radius: Theme.radius-container;
         background: root.hovered ? Theme.accent-soft : Theme.surface;
         content := VerticalBox { padding: Theme.space-6; spacing: Theme.space-4; alignment: center;
             Label { text: root.words.empty-title; font-size: Theme.title; font-weight: 700; horizontal-alignment: center; wrap: word-wrap; }

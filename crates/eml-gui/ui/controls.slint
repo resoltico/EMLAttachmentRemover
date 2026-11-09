@@ -1,12 +1,6 @@
 // Copyright 2026 Ervins Strauhmanis
 // SPDX-License-Identifier: MPL-2.0
 import { Theme } from "theme.slint";
-import { WidgetMetrics } from "widget-metrics.slint";
-
-// Application relationships, rather than independent per-window magic numbers.
-export global UiMetrics {
-    out property <length> scroll-inset: WidgetMetrics.scroll-inset;
-}
 // One keyboard and accessibility implementation; command and link styles differ.
 export component TextButton inherits Rectangle {
     in property <string> text;
@@ -62,7 +56,7 @@ export component ActionButton inherits TextButton {
     text-alignment: center;
     background: root.primary && root.enabled ? Theme.accent : root.hovered && root.enabled ? Theme.raised : Theme.surface;
     foreground: root.primary && root.enabled ? Theme.on-accent : Theme.text;
-    border-width: root.has-focus ? 2px : 1px;
+    border-width: root.has-focus ? Theme.focus-border : 1px;
     border-color: root.has-focus || (root.primary && root.enabled) ? Theme.accent : Theme.border;
     opacity: root.pressed ? 0.8 : 1;
 }
@@ -75,20 +69,20 @@ export component Chip inherits TextButton {
     accessible-checked: root.selected;
     background: root.selected ? Theme.accent-soft : Theme.surface;
     foreground: root.selected ? Theme.accent : Theme.text;
-    border-width: root.has-focus ? 2px : 1px;
+    border-width: root.has-focus ? Theme.focus-border : 1px;
     border-color: root.selected || root.has-focus ? Theme.accent : Theme.border;
 }
 export component ToneDot inherits Rectangle {
     in property <color> tone;
-    width: 8px; height: 8px; border-radius: Theme.radius-control;
+    width: Theme.dot-box; height: Theme.dot-box; border-radius: Theme.radius-control;
     background: root.tone;
     accessible-role: none;
 }
 
 export component AttachmentChip inherits Rectangle {
     in property <string> text;
-    min-width: 0px; preferred-width: min(180px,caption.preferred-width + 12px); max-width: 180px; horizontal-stretch: 0;
-    preferred-height: 22px; min-height: 22px; max-height: 22px; vertical-stretch: 0;
+    min-width: 0px; preferred-width: min(Theme.attachment-chip-width,caption.preferred-width + (Theme.attachment-chip-padding * 2)); max-width: Theme.attachment-chip-width; horizontal-stretch: 0;
+    preferred-height: Theme.chip-line; min-height: Theme.chip-line; max-height: Theme.chip-line; vertical-stretch: 0;
     background: Theme.raised; border-width: 1px; border-color: Theme.border; border-radius: Theme.radius-control;
-    caption := Label { x: 6px; width: max(0px,parent.width - 12px); height: parent.height; text: root.text; font-size: Theme.small; overflow: elide; }
+    caption := Label { x: Theme.attachment-chip-padding; width: max(0px,parent.width - (Theme.attachment-chip-padding * 2)); height: parent.height; text: root.text; font-size: Theme.small; overflow: elide; }
 }
