@@ -42,3 +42,16 @@ fn y2_field_epilogue_metadata_counts_exact_source_bytes() {
         (input.len() - start) as u64
     );
 }
+
+#[test]
+fn z1_mixed_line_endings_keep_the_enclosing_framing() {
+    let input =
+        include_bytes!("../../../tests/contract/mime/inputs/19-mixed-line-ending-epilogue.eml");
+    let expected =
+        include_bytes!("../../../tests/contract/mime/golden/19-mixed-line-ending-epilogue.eml");
+    let message = prepare_message(input, &RunControl::default()).unwrap();
+    assert_eq!(message.as_bytes(), expected);
+    assert_eq!(message.removed().len(), 1);
+    assert_eq!(message.removed()[0].reason, RemovalReason::AfterMessageEnd);
+    assert_eq!(message.removed()[0].bytes, 2);
+}

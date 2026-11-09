@@ -1943,3 +1943,33 @@ fn y5_gui_saved_and_existing_failures_share_the_core_headline() {
     assert_eq!(c.window().get_view().title, "17 copies already exist");
     assert_eq!(c.window().get_view().summary, "6 can’t be copied");
 }
+
+#[test]
+fn z6_failure_labels_and_file_destination_are_truthful() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let empty = write(root.path(), "empty.eml", b"");
+    let damaged = write(
+        root.path(),
+        "damaged.eml",
+        include_bytes!("../../../../tests/contract/mime/inputs/18-incomplete-multipart.eml"),
+    );
+    let target = root.path().join("file");
+    std::fs::write(&target, b"owned").unwrap();
+    let mut preferences = Preferences::load(root.path().join("preferences.json"));
+    preferences.set_destination(Some(target.clone())).unwrap();
+    let c = controller(root.path(), eml_core::run);
+    c.stage(vec![empty, damaged]).unwrap();
+    pump(&c, || !c.is_busy());
+    let rows = c.window().get_rows();
+    let statuses: Vec<_> = rows.iter().map(|r| r.status.to_string()).collect();
+    assert!(statuses.iter().any(|s| s == "Not an email"), "{statuses:?}");
+    assert!(
+        statuses.iter().any(|s| s == "Damaged email"),
+        "{statuses:?}"
+    );
+    assert!(c.window().get_view().banner.contains(&format!(
+        "The save folder is a file, not a folder: {}. Choose a folder.",
+        target.display()
+    )));
+}
