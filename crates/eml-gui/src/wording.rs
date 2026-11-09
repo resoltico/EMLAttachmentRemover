@@ -26,7 +26,12 @@ pub(super) fn header(
         .create
         .as_ref()
         .and_then(|slot| slot.completion.as_ref())
-        .is_some_and(|completion| completion.state == eml_app::WorkerState::Incomplete);
+        .is_some_and(|completion| {
+            matches!(
+                completion.state,
+                crate::worker::WorkerState::Incomplete | crate::worker::WorkerState::Rejected
+            )
+        });
     let (title, parts) = match batch.state() {
         State::Empty => (String::new(), vec![]),
         State::Checking => (
@@ -192,7 +197,7 @@ pub(super) fn footer(state: State) -> String {
 pub(super) fn progress(done: usize, total: u32, remaining: Option<u64>) -> String {
     format!("{done} of {total} done · {}", estimate(remaining))
 }
-pub(super) fn attachment(part: &eml_protocol::records::RemovedRecord) -> crate::AttachmentView {
+pub(super) fn attachment(part: &eml_core::RemovedPart) -> crate::AttachmentView {
     let kind = eml_core::vocabulary::part_kind(part.reason, &part.content_type);
     crate::AttachmentView {
         name: attachment_name(part).into(),
@@ -204,7 +209,7 @@ pub(super) fn attachment(part: &eml_protocol::records::RemovedRecord) -> crate::
 pub(super) const NOTHING_ADDED: &str = "Nothing was added.";
 pub(super) const NO_ATTACHMENTS_CHIP: &str = "None";
 
-pub(super) fn request_error(error: &eml_app::RequestError) -> String {
+pub(super) fn request_error(error: &eml_core::RequestPathError) -> String {
     error.to_string()
 }
 
@@ -220,9 +225,9 @@ pub(super) const OPENING: &str = "Opening…";
 pub(super) const OPEN_SENT: &str = "Open command sent.";
 pub(super) const OPEN_FAILED: &str = "The native open operation did not complete.";
 
-pub(super) fn attachment_name(part: &eml_protocol::records::RemovedRecord) -> String {
+pub(super) fn attachment_name(part: &eml_core::RemovedPart) -> String {
     eml_core::display::DisplayText::new(eml_core::vocabulary::part_name(
-        part.filename.value().map(String::as_str),
+        part.filename.as_deref(),
         part.reason,
         &part.content_type,
     ))
@@ -233,12 +238,12 @@ pub(super) const WAITING_DETAIL: &str = "Waiting to be copied.";
 pub(super) const MISSING: &str = "No longer found";
 pub(super) const MISSING_DETAIL: &str = "This file was no longer there when the copies were made.";
 pub(super) const START_FAILED: &str = "Couldn’t copy";
-pub(super) const LAUNCH_FAILED: &str =
-    "The copy process couldn’t start. Reinstall the app if this keeps happening.";
-pub(super) const WORKER_FAILED: &str = "The copy process stopped unexpectedly. Results shown may be incomplete. Save Report… for details.";
+pub(super) const LAUNCH_FAILED: &str = "Couldn’t start processing. Try again.";
+pub(super) const WORKER_FAILED: &str =
+    "Processing stopped unexpectedly. Results shown may be incomplete. Save Report… for details.";
 pub(super) const STARTING: &str = "Starting…";
 pub(super) const CHECK_METADATA: &str = "Metadata from: read-only check\n";
-pub(super) const CREATE_METADATA: &str = "Metadata from: copy process\n";
+pub(super) const CREATE_METADATA: &str = "Metadata from: attachment removal\n";
 
 pub(crate) const INVALID_SAVED_FOLDERS: &str = "Saved folders must use absolute, NUL-free native paths within the path limits; at most three recent destinations are supported.";
 
@@ -322,5 +327,30 @@ pub(super) const WEBSITE_FAILED: &str = "Couldn’t open the project website.";
 #[cfg(feature = "native")]
 pub(super) const LICENSES_FAILED: &str = "Couldn’t open bundled third-party notices.";
 
-pub(super) const REQUEST_REFUSED: &str = "The request was refused before processing any emails.";
-pub(super) const DIAGNOSTICS_TRUNCATED: &str = "\nDiagnostic output was truncated.";
+pub(super) fn failure_details(error: &eml_core::OperationFailure) -> String {
+    use eml_core::vocabulary::fields;
+    let detail = eml_core::display::DisplayText::new(error.detail());
+    let native = error
+        .native_diagnostic()
+        .map(|n| format!(" ({n})"))
+        .unwrap_or_default();
+    format!(
+        "{}: {}\n{}: {}\n{}: {detail}{native}\n",
+        fields::CODE,
+        error.code(),
+        fields::PHASE,
+        error.phase(),
+        fields::DETAIL
+    )
+}
+
+pub(super) fn report_cleanup_failed(
+    error: &std::io::Error,
+    path: &std::path::Path,
+    cleanup: &std::io::Error,
+) -> String {
+    format!(
+        "{error}; could not remove private report staging file {}: {cleanup}",
+        eml_core::display::DisplayPath::new(path)
+    )
+}

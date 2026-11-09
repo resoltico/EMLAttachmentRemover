@@ -86,7 +86,7 @@ impl DesktopController {
         let target = path.clone();
         match std::thread::Builder::new()
             .name("report-export".into())
-            .spawn(move || eml_app::export_report(&path, &source.jsonl))
+            .spawn(move || export_report(&path, &source.jsonl))
         {
             Ok(task) => r.export = Some(ExportJob { path: target, task }),
             Err(error) => self.message(&wording::report_failed(&error.to_string())),
@@ -114,5 +114,44 @@ impl DesktopController {
     /// Native path of the most recent successful report save.
     pub fn saved_report_path(&self) -> Option<PathBuf> {
         self.saved_report.borrow().clone()
+    }
+}
+
+use std::io::Write;
+/// Save the exact received JSONL, including an incomplete stream when a run failed.
+/// The caller owns approval of the target, including replacement.
+/// The final name exposes only complete, file-synchronized bytes. This does not
+/// promise that the directory entry survives power loss. A crash can leave an
+/// owned private staging file beside the requested destination.
+fn export_report(path: &Path, jsonl: &[u8]) -> io::Result<()> {
+    let directory = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let mut stage = tempfile::Builder::new()
+        .prefix(".emlattachmentremover-report-")
+        .suffix(".tmp")
+        .tempfile_in(directory)?;
+    if let Err(error) = stage
+        .as_file_mut()
+        .write_all(jsonl)
+        .and_then(|()| stage.as_file().sync_all())
+    {
+        return Err(discard(stage, error));
+    }
+    stage
+        .persist(path)
+        .map(|_| ())
+        .map_err(|failure| discard(failure.file, failure.error))
+}
+
+fn discard(stage: tempfile::NamedTempFile, error: io::Error) -> io::Error {
+    let path = stage.path().to_path_buf();
+    match stage.close() {
+        Ok(()) => error,
+        Err(cleanup) => io::Error::new(
+            error.kind(),
+            crate::wording::report_cleanup_failed(&error, &path, &cleanup),
+        ),
     }
 }

@@ -40,15 +40,14 @@ pub struct OperationFailure {
 impl OperationFailure {
     /// A frontend event/report adapter failed. This grants no publication facts
     /// and cannot erase receipts already observed before delivery ended.
-    pub fn delivery(error: io::Error) -> Self {
-        Self::io(
-            ErrorCode::OutputFailed,
-            ErrorPhase::Delivery,
-            "Result delivery did not complete.",
-            error,
-        )
+    pub fn delivery(error: impl Into<Arc<io::Error>>) -> Self {
+        Self {
+            code: ErrorCode::OutputFailed,
+            phase: ErrorPhase::Delivery,
+            detail: "Result delivery did not complete.",
+            cause: Some(error.into()),
+        }
     }
-
     /// Exact numeric cause without unbounded/localized io::Error text or payload.
     pub fn native_diagnostic(&self) -> Option<NativeDiagnostic> {
         let error = self.native_error()?;

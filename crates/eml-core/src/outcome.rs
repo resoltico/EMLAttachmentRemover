@@ -409,6 +409,11 @@ pub struct DeliveryFailure {
     pub(super) error: Arc<io::Error>,
 }
 impl DeliveryFailure {
+    /// Core diagnostic for a frontend adapter, preserving the shared native cause.
+    pub fn operation_failure(&self) -> OperationFailure {
+        OperationFailure::delivery(self.error.clone())
+    }
+
     /// Failed event kind.
     pub fn phase(&self) -> DeliveryPhase {
         self.phase

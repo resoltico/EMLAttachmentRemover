@@ -5,7 +5,7 @@ fn stale_native_opener_feedback_cannot_replace_a_later_batch_notice() {
     i_slint_backend_testing::init_no_event_loop();
     let root = tempfile::tempdir().unwrap();
     let c = DesktopController::new(
-        root.path().join("absent-cli"),
+        eml_core::run,
         root.path().to_owned(),
         preferences::Preferences::load(root.path().join("settings")),
     )
@@ -34,7 +34,7 @@ fn quit_waits_for_owned_report_writer_and_invalidates_late_panels() {
     i_slint_backend_testing::init_no_event_loop();
     let root = tempfile::tempdir().unwrap();
     let c = DesktopController::new(
-        root.path().join("absent"),
+        eml_core::run,
         root.path().to_owned(),
         preferences::Preferences::load(root.path().join("settings")),
     )
@@ -137,7 +137,7 @@ fn native_open_remains_nonblocking_scoped_and_clears_recovered_errors() {
     i_slint_backend_testing::init_no_event_loop();
     let root = tempfile::tempdir().unwrap();
     let c = DesktopController::new(
-        root.path().join("unused-cli"),
+        eml_core::run,
         root.path().to_owned(),
         preferences::Preferences::load(root.path().join("settings")),
     )
@@ -203,7 +203,7 @@ fn native_open_remains_nonblocking_scoped_and_clears_recovered_errors() {
 #[test]
 fn attachment_labels_name_unnamed_parts_by_kind() {
     use eml_core::RemovalReason;
-    use eml_protocol::records::{Nullable, RemovedRecord};
+    use eml_core::RemovedPart;
     for (content_type, reason, expected) in [
         ("image/png", RemovalReason::RelatedResource, "Inline image"),
         ("Image/JPEG", RemovalReason::RelatedResource, "Inline image"),
@@ -223,10 +223,10 @@ fn attachment_labels_name_unnamed_parts_by_kind() {
             "Calendar invite",
         ),
     ] {
-        let part = RemovedRecord {
+        let part = RemovedPart {
             section: "2".into(),
             content_type: content_type.into(),
-            filename: Nullable::Value(String::new()),
+            filename: Some(String::new()),
             bytes: 100,
             reason,
         };
@@ -242,12 +242,12 @@ mod polish_state;
 
 #[test]
 fn request_rejection_wording_preserves_the_actual_cause() {
-    let error = eml_app::RequestError::AbsoluteSelectionRequired;
+    let error = eml_core::RequestPathError::AbsoluteSelectionRequired;
     assert_eq!(crate::wording::request_error(&error), error.to_string());
-    let error = eml_app::RequestError::InvalidRequest(eml_core::RequestPathError::InvalidPath {
+    let error = eml_core::RequestPathError::InvalidPath {
         path: eml_core::RequestPath::Input(0),
         violation: eml_core::PathViolation::EmbeddedNul,
-    });
+    };
     assert!(crate::wording::request_error(&error).contains("NUL"));
     assert!(!crate::wording::request_error(&error).contains("Too many items"));
 }
@@ -259,7 +259,7 @@ fn invalid_destination_keeps_the_choice_and_renders_the_core_path_cause() {
     i_slint_backend_testing::init_no_event_loop();
     let root = tempfile::tempdir().unwrap();
     let c = DesktopController::new(
-        root.path().join("unused-cli"),
+        eml_core::run,
         root.path().to_owned(),
         preferences::Preferences::load(root.path().join("settings")),
     )
@@ -279,4 +279,63 @@ fn invalid_destination_keeps_the_choice_and_renders_the_core_path_cause() {
     }
     .to_string();
     assert_eq!(c.notice.borrow().as_ref().unwrap().0, expected);
+}
+
+#[test]
+fn quit_now_still_waits_for_the_owned_report_writer() {
+    use i_slint_backend_testing::mock_elapsed_time;
+    use std::{
+        sync::{Mutex, mpsc},
+        time::{Duration, Instant},
+    };
+    i_slint_backend_testing::init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let input = root.path().join("mail.eml");
+    std::fs::write(&input, b"Subject: Plain\r\n\r\nBody\r\n").unwrap();
+    let (tx, rx) = mpsc::channel();
+    let rx = Mutex::new(rx);
+    let c = DesktopController::new(
+        move |r, control, sink| {
+            if r.mode == RunMode::Create {
+                rx.lock().unwrap().recv().unwrap();
+            }
+            eml_core::run(r, control, sink)
+        },
+        root.path().to_owned(),
+        preferences::Preferences::load(root.path().join("settings")),
+    )
+    .unwrap();
+    c.stage(vec![input]).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while c.is_busy() {
+        c.tick();
+        assert!(Instant::now() < deadline);
+        std::thread::yield_now();
+    }
+    c.start_selection();
+    let (write_tx, write_rx) = mpsc::channel();
+    let task = std::thread::spawn(move || {
+        write_rx.recv().unwrap();
+        Ok(())
+    });
+    c.runtime.borrow_mut().export = Some(ExportJob {
+        path: root.path().join("report.jsonl"),
+        task,
+    });
+    c.request_quit();
+    c.stop_and_quit();
+    mock_elapsed_time(Duration::from_secs(5));
+    c.tick();
+    c.quit_now();
+    assert!(!c.should_exit());
+    assert!(c.runtime.borrow().active.is_some());
+    write_tx.send(()).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while !c.should_exit() {
+        c.tick();
+        assert!(Instant::now() < deadline);
+        std::thread::yield_now();
+    }
+    assert!(c.runtime.borrow().active.is_some());
+    tx.send(()).unwrap();
 }

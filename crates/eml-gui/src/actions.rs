@@ -39,7 +39,7 @@ impl DesktopController {
                 .check
                 .as_ref()
                 .and_then(|slot| slot.report.as_ref())
-                .and_then(|handle| handle.with_report(eml_app::RunReport::can_offer_copy))
+                .map(|handle| handle.with_report(worker::RunReport::can_offer_copy))
                 .unwrap_or(false),
             State::Empty | State::Removing | State::Done => false,
         }
