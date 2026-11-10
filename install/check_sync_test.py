@@ -10,7 +10,7 @@ spec.loader.exec_module(check_sync)
 
 class EngineComparison(unittest.TestCase):
     def test_product_literals_and_crlf_do_not_change_engine(self):
-        first = b"# BEGIN PRODUCT SETTINGS\ncommand_name='pdfconcat'\n# END PRODUCT SETTINGS\nprintf same\n"
+        first = b"# BEGIN PRODUCT SETTINGS\ncommand_name='pdfconcat'\narchive_rooted=0\n# END PRODUCT SETTINGS\nprintf same\n"
         other = first.replace(b"pdfconcat", b"emlattachmentremover").replace(b"\n", b"\r\n")
         self.assertEqual(check_sync.engine(first, "install.sh"), check_sync.engine(other, "install.sh"))
         changed = other.replace(b"printf same", b"printf different")
@@ -27,7 +27,7 @@ class EngineComparison(unittest.TestCase):
                 check_sync.engine(data, "install.sh")
 
     def test_powershell_literals_are_data(self):
-        first = b"# BEGIN PRODUCT SETTINGS\n$product = @{\n Name = 'PDFConcat'\n LegalFiles = @('LICENSE', 'NOTICE')\n VersionedArchive = $false\n}\n# END PRODUCT SETTINGS\nInvoke-Installer\n"
+        first = b"# BEGIN PRODUCT SETTINGS\n$product = @{\n Name = 'PDFConcat'\n LegalFiles = @('LICENSE', 'NOTICE')\n VersionedArchive = $false\n RootedArchive = $false\n}\n# END PRODUCT SETTINGS\nInvoke-Installer\n"
         second = first.replace(b"PDFConcat", b"EML Attachment Remover")
         self.assertEqual(check_sync.engine(first, "install.ps1"), check_sync.engine(second, "install.ps1"))
         with self.assertRaises(ValueError):

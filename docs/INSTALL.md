@@ -52,8 +52,8 @@ does not install or remove the app. See [CLI usage](../README.md#cli).
 The documented Windows command runs in a child process, so its PATH changes do
 not reach an already-open parent terminal. Running the script directly in the
 current PowerShell session may also update that session's PATH. On macOS/Linux,
-follow the quoted command printed by the installer to update the current shell,
-or open a new terminal. `--no-modify-path` / `-NoModifyPath` leaves persistent
+use the quoted full executable path printed by the installer while this terminal
+keeps its current PATH, or open a new terminal after successful persistence. `--no-modify-path` / `-NoModifyPath` leaves persistent
 and current-session PATH unchanged.
 
 ## Update and choose a release
@@ -149,6 +149,12 @@ kind. A PATH entry can be conservatively retained with a warning if unrelated
 files remain in the shared install directory; removing it could break other tools.
 `NoModifyPath` also suppresses PATH cleanup during
 uninstall and reports the entry left for manual removal.
+
+Windows uninstall in this checkout removes an owned PATH entry before deleting
+the executable or receipt. A failed PATH write leaves those files intact for
+retry. A later file-removal failure can leave partial progress; inspect the
+reported paths before retrying or using the manual cleanup above. Published
+installer scripts receive this fix only in a release containing it.
 
 Your emails, copies, reports and desktop app preferences are not installer-managed files.
 

@@ -12,6 +12,7 @@ $Product = @{
     ArchivePrefix = 'emlattachmentremover-'
     Separator = '-'
     VersionedArchive = $true
+    RootedArchive = $false
     MacOS = 'macos'
     X64 = 'x86_64'
     Arm64 = 'aarch64'
@@ -51,7 +52,7 @@ function Invoke-CliInstaller {
         return [string]::Equals($a2, $b2, [StringComparison]::OrdinalIgnoreCase)
     }
     function Enter-PathLock {
-        # A named mutex coordinates both products across sessions of this user.
+        # A named mutex coordinates CLI installers across sessions of this user.
         # Windows requires no administrator privilege for a global mutex.
         $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
         $mutex = [Threading.Mutex]::new($false, ('Global\CliReleaseInstaller.Path.' + $sid))
@@ -265,10 +266,11 @@ namespace CliInstaller {
         if ($Uninstall) {
             if (-not $receipt) { Write-Host "$($Product.Name) is not managed here. Nothing was changed."; return }
             if ($ModifyPath -and $receipt.PathEntry) { $pathMutex = Enter-PathLock }
-            Invoke-RetiredRemoval $receipt
-            if (Test-Path -LiteralPath $exe) { Remove-Item -LiteralPath $exe -Force }
-            Invoke-StateRemoval $stateDir $receipt.Legal
-            $others = @(Get-ChildItem -LiteralPath $InstallDir -Force | Where-Object { $_.FullName -cne $lockPath })
+            # Determine sharing while ownership is intact; only validated owned
+            # entries may be excluded. PATH failure must leave a retryable install.
+            $owned = @($exe, $stateDir, $lockPath)
+            if ($receipt.Retired) { $owned += Join-Path $InstallDir $receipt.Retired.Name }
+            $others = @(Get-ChildItem -LiteralPath $InstallDir -Force | Where-Object { $owned -notcontains $_.FullName })
             if ($receipt.PathEntry) {
                 if (-not $ModifyPath -or $others.Count -gt 0) { Write-Step 'Note' 'Owned PATH entry was retained (NoModifyPath or a shared folder); remove it manually when no longer needed.' }
                 else {
@@ -279,6 +281,9 @@ namespace CliInstaller {
                     if ($index -ge 0) { $parts.RemoveAt($index); $env:Path = [string]::Join(';', $parts.ToArray()) }
                 }
             }
+            Invoke-RetiredRemoval $receipt
+            if (Test-Path -LiteralPath $exe) { Remove-Item -LiteralPath $exe -Force }
+            Invoke-StateRemoval $stateDir $receipt.Legal
             $created = $receipt.DirectoryCreated
             Write-Host "$($Product.Name) has been uninstalled. Your documents and unrelated files were not touched."
             return
@@ -334,8 +339,10 @@ namespace CliInstaller {
         Add-Type -AssemblyName System.IO.Compression.FileSystem
         $zip = [IO.Compression.ZipFile]::OpenRead($archive)
         try {
+            $memberPrefix = if ($Product.RootedArchive) { $asset.Substring(0, $asset.Length - 4) + '/' } else { '' }
             foreach ($name in @($Product.Command + '.exe') + @($Product.LegalFiles)) {
-                $entries = @($zip.Entries | Where-Object { $_.FullName -ceq $name })
+                $member = $memberPrefix + $name
+                $entries = @($zip.Entries | Where-Object { $_.FullName -ceq $member })
                 if ($entries.Count -ne 1) { Exit-Installer "Archive has no unique regular $name." }
                 $kind = ($entries[0].ExternalAttributes -shr 16) -band 0xf000
                 if (($kind -ne 0 -and $kind -ne 0x8000) -or ($entries[0].ExternalAttributes -band 0x410)) { Exit-Installer "Archive member is not regular: $name" }
