@@ -113,6 +113,7 @@ function Test-ArchiveMemberSelection {
     # Exercise the production ZIP extraction block without executing a fixture binary.
     $node = $ast.FindAll({ param($n) $n -is [Management.Automation.Language.TryStatementAst] -and $null -ne $n.Finally -and $n.Finally.Extent.Text.Trim() -ceq '{ $zip.Dispose() }' }, $true)[0]
     $extract = [scriptblock]::Create($node.Extent.Text)
+    Add-Type -AssemblyName System.IO.Compression
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $asset = $Product.ArchivePrefix
     if ($Product.VersionedArchive) { $asset += '1.2.3' + $Product.Separator }
