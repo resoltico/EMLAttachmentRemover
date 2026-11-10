@@ -109,6 +109,146 @@ function Save-RegistryPath([hashtable]$Record) {
         else { $key.DeleteValue('Path', $false) }
     } finally { $key.Close() }
 }
+function Test-ArchiveMemberSelection {
+    # Exercise the production ZIP extraction block without executing a fixture binary.
+    $node = $ast.FindAll({ param($n) $n -is [Management.Automation.Language.TryStatementAst] -and $null -ne $n.Finally -and $n.Finally.Extent.Text.Trim() -ceq '{ $zip.Dispose() }' }, $true)[0]
+    $extract = [scriptblock]::Create($node.Extent.Text)
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $asset = $Product.ArchivePrefix
+    if ($Product.VersionedArchive) { $asset += '1.2.3' + $Product.Separator }
+    $asset += 'windows' + $Product.Separator + $Product.X64 + '.zip'
+    $root = if ($Product.RootedArchive) { $command + '-1.2.3-windows-x86_64/' } else { '' }
+    $cases = @('valid', 'duplicate', 'reparse')
+    if ($Product.RootedArchive) { $cases += @('wrong-root', 'flat') }
+    foreach ($case in $cases) {
+        $folder = Join-Path $work ('archive-member-' + $case)
+        $stage = Join-Path $folder 'stage'
+        $nextState = Join-Path $stage 'state'
+        [void][IO.Directory]::CreateDirectory((Join-Path $nextState 'legal'))
+        $archive = Join-Path $folder $asset
+        $zip = [IO.Compression.ZipFile]::Open($archive, [IO.Compression.ZipArchiveMode]::Create)
+        try {
+            foreach ($name in @($command + '.exe') + @($Product.LegalFiles)) {
+                $member = $root + $name
+                if ($name -ceq ($command + '.exe')) {
+                    if ($case -eq 'wrong-root') { $member = 'wrong-root/' + $name }
+                    if ($case -eq 'flat') { $member = $name }
+                }
+                $entry = $zip.CreateEntry($member)
+                $stream = [IO.StreamWriter]::new($entry.Open())
+                try { $stream.Write('fixture:' + $name) } finally { $stream.Dispose() }
+                if ($name -ceq ($command + '.exe')) {
+                    if ($case -eq 'duplicate') { [void]$zip.CreateEntry($member) }
+                    if ($case -eq 'reparse') { $entry.ExternalAttributes = 0x400 }
+                }
+            }
+        } finally { $zip.Dispose() }
+        $zip = [IO.Compression.ZipFile]::OpenRead($archive)
+        $failure = ''
+        try { & $extract } catch { $failure = $_.Exception.Message }
+        if ($case -eq 'valid') {
+            Check 'archive extraction accepts exact release members' ($failure -eq '')
+            foreach ($name in @($command + '.exe') + @($Product.LegalFiles)) {
+                $path = if ($name -ceq ($command + '.exe')) { Join-Path $stage $name } else { Join-Path (Join-Path $nextState 'legal') $name }
+                Check ('extracted bytes match release member ' + $name) ((Test-Path -LiteralPath $path) -and [IO.File]::ReadAllText($path) -ceq ('fixture:' + $name))
+            }
+        } else {
+            $cause = if ($case -eq 'reparse') { 'Archive member is not regular' } else { 'Archive has no unique regular' }
+            Check ("$case member rejects for the intended cause before activation") ($failure.Contains($cause) -and -not (Test-Path -LiteralPath (Join-Path $stage ($command + '.exe'))))
+        }
+    }
+}
+
+function Test-UninstallPathFailure {
+    # Execute the staged production uninstall branch and file/PATH helpers.
+    # Only registry access and the OS mutex are replaced; user settings are untouched.
+    foreach ($name in @('Get-ItemOrNull', 'Assert-Regular', 'Get-Digest', 'Test-SamePath', 'Invoke-OwnedPathRemoval', 'Write-Receipt', 'Read-Receipt', 'Invoke-StateRemoval', 'Invoke-RetiredRemoval', 'Write-Step')) {
+        $node = $ast.FindAll({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -ceq $name }, $true)[0]
+        . ([scriptblock]::Create($node.Extent.Text))
+    }
+    $node = $ast.FindAll({ param($n) $n -is [Management.Automation.Language.IfStatementAst] -and $n.Clauses[0].Item1.Extent.Text -ceq '$Uninstall' }, $true)[0]
+    $body = $node.Clauses[0].Item2.Extent.Text
+    $uninstallBranch = [scriptblock]::Create($body.Substring(1, $body.Length - 2))
+    function Enter-PathLock { return $null }
+    function Get-UserPath { return $script:fixturePath.Clone() }
+    function Save-UserPath($record) {
+        if ($script:denyPathWrite) { throw 'fixture registry write denied' }
+        $script:fixturePath = $record
+    }
+    # Production AST helpers read these variables from this dynamic scope.
+    Set-Variable -Name utf8 -Value ([Text.UTF8Encoding]::new($false))
+    $sessionPath = $env:Path
+    try {
+        foreach ($case in @('failure', 'shared', 'no-modify', 'changed-path', 'locked')) {
+            if ($case -eq 'locked' -and $PSVersionTable.PSEdition -eq 'Core' -and -not $IsWindows) { continue }
+            $InstallDir = Join-Path $work ('path-uninstall-' + $case)
+            $exe = Join-Path $InstallDir ($Product.Command + '.exe')
+            $stateDir = Join-Path $InstallDir ('.' + $Product.Command + '-install')
+            $lockPath = Join-Path $InstallDir ('.' + $Product.Command + '-install.lock')
+            [void][IO.Directory]::CreateDirectory($stateDir)
+            [IO.File]::WriteAllText($exe, 'owned executable fixture')
+            [IO.File]::WriteAllText($lockPath, 'owned lock fixture')
+            $receipt = @{ Schema = 1; Directory = $InstallDir; Command = $Product.Command; Version = '1.2.3'; BinaryHash = Get-Digest $exe; DirectoryCreated = $true; PathEntry = $InstallDir; PathWasAbsent = $false; Legal = @(); Retired = $null }
+            foreach ($name in @($Product.LegalFiles)) {
+                $legalDir = Join-Path $stateDir 'legal'
+                [void][IO.Directory]::CreateDirectory($legalDir)
+                $path = Join-Path $legalDir $name
+                [IO.File]::WriteAllText($path, 'owned legal fixture')
+                $receipt.Legal += @{ Name = $name; Hash = Get-Digest $path }
+            }
+            $retired = Join-Path $InstallDir ('.' + $Product.Command + '-retired-' + ('a' * 32) + '.exe')
+            [IO.File]::WriteAllText($retired, 'owned retired fixture')
+            $receipt.Retired = @{ Name = [IO.Path]::GetFileName($retired); Hash = Get-Digest $retired }
+            Write-Receipt $stateDir $receipt
+            $receiptFile = Join-Path $stateDir 'receipt.json'
+            $sealFile = Join-Path $stateDir 'receipt.sha256'
+            $before = @((Get-Digest $exe), (Get-Digest $receiptFile), (Get-Digest $sealFile))
+            Set-Variable -Name ModifyPath -Value ($case -ne 'no-modify')
+            $raw = if ($case -eq 'changed-path') { 'C:\Keep;;' } else { $InstallDir + ';C:\Keep;;' }
+            $env:Path = $raw
+            $script:fixturePath = @{ Exists = $true; Value = $raw }
+            $script:denyPathWrite = $case -ne 'locked'
+            if ($case -eq 'shared') { [IO.File]::WriteAllText((Join-Path $InstallDir 'unrelated.old'), 'keep') }
+            $held = $null
+            if ($case -eq 'locked') { $held = [IO.File]::Open($exe, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read) }
+            $failure = ''
+            try { & $uninstallBranch } catch { $failure = $_.Exception.Message }
+            finally { if ($held) { $held.Dispose() } }
+            if ($case -eq 'failure' -or $case -eq 'locked') {
+                Check ("$case uninstall reports its cause") ($failure -match $(if ($case -eq 'failure') { 'fixture registry write denied' } else { '.' }))
+                $intact = (Test-Path -LiteralPath $exe) -and (Test-Path -LiteralPath $receiptFile) -and (Test-Path -LiteralPath $sealFile)
+                if ($intact) { $intact = (Get-Digest $exe) -ceq $before[0] -and (Get-Digest $receiptFile) -ceq $before[1] -and (Get-Digest $sealFile) -ceq $before[2] }
+                Check ("$case uninstall preserves executable and both ownership files") $intact
+                Check ("$case uninstall leaves the expected persistent PATH") ($script:fixturePath.Value -ceq $(if ($case -eq 'failure') { $raw } else { 'C:\Keep;;' }))
+                # A failed preservation assertion must not cause an unrelated missing-file error.
+                if ($intact) {
+                    if ($PSVersionTable.PSEdition -ne 'Core' -or $IsWindows) {
+                        $verified = $null
+                        try { $verified = Read-Receipt $true } catch { Write-Host ("Receipt verification failed: " + $_.Exception.Message) }
+                        Check ("$case uninstall leaves a receipt accepted for retry") ($null -ne $verified)
+                    }
+                    $script:denyPathWrite = $false
+                    $failure = ''
+                    try { & $uninstallBranch } catch { $failure = $_.Exception.Message }
+                    Check ("$case uninstall retry removes managed files") ($failure -eq '' -and -not (Test-Path -LiteralPath $exe) -and -not (Test-Path -LiteralPath $stateDir))
+                    Check ("$case uninstall retry removes only its PATH entry") ($script:fixturePath.Value -ceq 'C:\Keep;;')
+                }
+            } else {
+                Check ("$case uninstall removes managed files") ($failure -eq '' -and -not (Test-Path -LiteralPath $exe) -and -not (Test-Path -LiteralPath $stateDir))
+                Check ("$case uninstall preserves PATH") ($script:fixturePath.Value -ceq $raw -and $env:Path -ceq $raw)
+                if ($case -eq 'shared') { Check 'shared uninstall preserves unrelated file' ([IO.File]::ReadAllText((Join-Path $InstallDir 'unrelated.old')) -ceq 'keep') }
+            }
+            $receipt = $null
+            $failure = ''
+            try { & $uninstallBranch } catch { $failure = $_.Exception.Message }
+            Check ("$case repeat without receipt is a no-op") ($failure -eq '')
+        }
+    } finally {
+        $env:Path = $sessionPath
+        Remove-Variable -Scope Script -Name fixturePath, denyPathWrite -ErrorAction SilentlyContinue
+    }
+}
+
 function Save-Manifest([string]$Directory) {
     $lines = @()
     foreach ($file in Get-ChildItem -LiteralPath $Directory -Filter '*.zip') { $lines += (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant() + '  ' + $file.Name }
@@ -197,6 +337,8 @@ try {
         Check ('non-absolute directory refused: ' + $relative) $refused
     }
     Check 'PowerShell command quoting preserves apostrophes' ((ConvertTo-QuotedCommand "C:\user's tools\program.exe") -ceq "'C:\user''s tools\program.exe'")
+    Test-UninstallPathFailure
+    Test-ArchiveMemberSelection
     if ($PSVersionTable.PSEdition -eq 'Core' -and -not $IsWindows) {
         Write-Host 'Native Windows integration not run on this host; published script helper checks completed.'
         if ($script:failures -gt 0) { throw "$($script:failures) helper checks failed." }
@@ -208,6 +350,10 @@ try {
     if ($versions.Count -ne 1) { throw 'Expected one release version in the native Windows archives.' }
     $testVersion = $versions[0]
     $shells = @('powershell', 'pwsh') | Where-Object { Get-Command $_ -ErrorAction SilentlyContinue }
+    if ($env:CI) {
+        Check 'CI requires Windows PowerShell and PowerShell Core' (@($shells).Count -eq 2)
+        if (@($shells).Count -ne 2) { throw 'Both supported Windows shells are required for CI qualification.' }
+    }
     Check 'a native PowerShell is available' (@($shells).Count -gt 0)
     if (-not $RunInCurrentShell) {
         # One worker session per supported PowerShell retains the same lifecycle
@@ -304,7 +450,9 @@ try {
         [IO.File]::WriteAllText((Join-Path $duplicate $checksumName), $manifest + "`n" + $manifest)
         Check 'duplicate checksums fail without replacement' ((Invoke-Installer $shell @('-InstallDir', $dir, '-NoModifyPath') $duplicate) -ne 0 -and (Get-FileHash -LiteralPath $exe).Hash -eq $before)
         Add-Type -AssemblyName System.IO.Compression.FileSystem
-        foreach ($kind in @('duplicate', 'reparse')) {
+        $badKinds = @('duplicate', 'reparse')
+        if ($Product.RootedArchive) { $badKinds += @('wrong-root', 'flat') }
+        foreach ($kind in $badKinds) {
             $badZip = Join-Path $work ("$shellName-$kind-zip")
             [void][IO.Directory]::CreateDirectory($badZip)
             foreach ($file in Get-ChildItem -LiteralPath $Dist -Filter '*.zip') {
@@ -312,8 +460,20 @@ try {
                 [IO.File]::Copy($file.FullName, $path)
                 $zip = [IO.Compression.ZipFile]::Open($path, [IO.Compression.ZipArchiveMode]::Update)
                 try {
-                    if ($kind -eq 'duplicate') { [void]$zip.CreateEntry($command + '.exe') }
-                    else { $zip.GetEntry($command + '.exe').ExternalAttributes = 0x400 }
+                    $member = $command + '.exe'
+                    if ($Product.RootedArchive) { $member = [IO.Path]::GetFileNameWithoutExtension($file.Name) + '/' + $member }
+                    if ($kind -eq 'duplicate') { [void]$zip.CreateEntry($member) }
+                    elseif ($kind -eq 'reparse') { $zip.GetEntry($member).ExternalAttributes = 0x400 }
+                    else {
+                        $entry = $zip.GetEntry($member)
+                        $destination = if ($kind -eq 'flat') { $command + '.exe' } else { 'wrong-root/' + $command + '.exe' }
+                        $inputStream = $entry.Open()
+                        $bytes = [IO.MemoryStream]::new()
+                        try { $inputStream.CopyTo($bytes) } finally { $inputStream.Dispose() }
+                        $entry.Delete()
+                        $replacement = $zip.CreateEntry($destination).Open()
+                        try { $bytes.Position = 0; $bytes.CopyTo($replacement) } finally { $replacement.Dispose(); $bytes.Dispose() }
+                    }
                 } finally { $zip.Dispose() }
             }
             Save-Manifest $badZip

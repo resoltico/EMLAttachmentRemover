@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Windows uninstall preserves the executable and ownership receipt when removing its owned PATH entry fails, so cleanup can be retried.
+
 ## [8.0.0] - 2026-11-09
 
 - Ship separate Apple Silicon (`macos-aarch64`) and Intel (`macos-x86_64`) CLI and app archives, each built, signed and checked independently; both retain macOS 15 support.

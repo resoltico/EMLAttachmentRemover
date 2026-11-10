@@ -9,6 +9,7 @@ env_prefix='EMLATTACHMENTREMOVER'
 archive_prefix='emlattachmentremover-'
 archive_separator='-'
 archive_versioned=1
+archive_rooted=0
 macos_token='macos'
 x64_token='x86_64'
 arm64_token='aarch64'
@@ -48,6 +49,7 @@ validate_settings() {
     case "${env_prefix}" in '' | *[!A-Z0-9_]* | [0-9]*) die 'Invalid installer environment prefix.' ;; *) : ;; esac
     case "${command_name}" in '' | *[!A-Za-z0-9_-]*) die 'Invalid installer command name.' ;; *) : ;; esac
     case "${archive_versioned}" in 0 | 1) : ;; *) die 'Invalid archive naming setting.' ;; esac
+    case "${archive_rooted}" in 0 | 1) : ;; *) die 'Invalid archive layout setting.' ;; esac
     for token in "${archive_prefix}" "${archive_separator}" "${macos_token}" "${x64_token}" "${arm64_token}" "${checksum_name}"; do
         case "${token}" in '' | *[!A-Za-z0-9_.-]* | . | ..) die 'Invalid installer archive setting.' ;; *) : ;; esac
     done
@@ -287,7 +289,10 @@ download_and_verify() {
     step Downloaded "${asset}"; step Verified 'SHA-256 matches the release checksums'
     mkdir "${tmp}/extract"
     tar -tzf "${tmp}/archive.tar.gz" > "${tmp}/archive-list" || die 'The archive cannot be read.'
-    for member in "${command_name}" ${legal_files}; do
+    member_prefix=''
+    [ "${archive_rooted}" = 0 ] || member_prefix=${asset%.tar.gz}/
+    for name in "${command_name}" ${legal_files}; do
+        member=${member_prefix}${name}
         count=$(grep -Fxc -- "${member}" "${tmp}/archive-list" || :)
         [ "${count}" = 1 ] || die "The archive must contain exactly one ${member}."
         tar -tvzf "${tmp}/archive.tar.gz" "${member}" > "${tmp}/member-type" || die "Could not inspect ${member}."
@@ -296,8 +301,8 @@ download_and_verify() {
         first=$(cut -c 1 "${tmp}/member-type")
         [ "${first}" = - ] || die "Archive member is not a regular file: ${member}"
         # -O streams only this regular member; archive paths/links are never written.
-        tar -xOzf "${tmp}/archive.tar.gz" "${member}" > "${tmp}/extract/${member}" || die "Could not extract ${member}."
-        if [ "${member}" != "${command_name}" ] && [ ! -s "${tmp}/extract/${member}" ]; then die "Required legal material is empty: ${member}"; fi
+        tar -xOzf "${tmp}/archive.tar.gz" "${member}" > "${tmp}/extract/${name}" || die "Could not extract ${member}."
+        if [ "${name}" != "${command_name}" ] && [ ! -s "${tmp}/extract/${name}" ]; then die "Required legal material is empty: ${member}"; fi
     done
     candidate=${tmp}/extract/${command_name}; chmod 755 "${candidate}"
     new_version=$(reported_version "${candidate}")

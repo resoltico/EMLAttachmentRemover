@@ -12,12 +12,12 @@ from pathlib import Path
 FILES = ("install.sh", "install.ps1")
 SHELL_KEYS = {
     "product_name", "command_name", "repo_url", "env_prefix", "archive_prefix",
-    "archive_separator", "archive_versioned", "macos_token", "x64_token",
+    "archive_separator", "archive_versioned", "archive_rooted", "macos_token", "x64_token",
     "arm64_token", "checksum_name", "minimum_macos", "legal_files",
 }
 PS_KEYS = {
     "name", "command", "repository", "environment", "archiveprefix", "separator",
-    "versionedarchive", "macos", "x64", "arm64", "checksums", "windowsfolder",
+    "versionedarchive", "rootedarchive", "macos", "x64", "arm64", "checksums", "windowsfolder",
     "minimummacos", "legalfiles",
 }
 BEGIN = "# BEGIN PRODUCT SETTINGS"
@@ -105,7 +105,7 @@ def main():
             failed = True
             sys.stderr.writelines(difflib.unified_diff(
                 expected.splitlines(True), actual.splitlines(True),
-                fromfile=f"pdfconcat/{revision}/{name}", tofile=f"eml/{name}",
+                fromfile=f"pdfconcat/{revision}/{name}", tofile=f"{root.parent.name}/{name}",
             ))
     if failed:
         raise ValueError("Installer engines differ; synchronize the reviewed PDFConcat engine and pin")

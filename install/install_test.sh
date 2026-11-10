@@ -18,6 +18,10 @@ setting() {
 }
 command_name=$(setting command_name); product_name=$(setting product_name); env_prefix=$(setting env_prefix)
 archive_prefix=$(setting archive_prefix); archive_separator=$(setting archive_separator); archive_versioned=$(setting archive_versioned)
+archive_rooted=$(setting archive_rooted)
+archive_member() {
+    if [[ "${archive_rooted}" == 1 ]]; then printf '%s/%s' "${1%.tar.gz}" "$2"; else printf '%s' "$2"; fi
+}
 macos_token=$(setting macos_token); x64_token=$(setting x64_token); arm64_token=$(setting arm64_token)
 checksum_name=$(setting checksum_name); legal_files=$(setting legal_files); repo_url=$(setting repo_url)
 [[ -f "${dist}/${checksum_name}" ]] || { echo "Missing ${checksum_name}" >&2; exit 2; }
@@ -50,7 +54,8 @@ expected_archive=$(awk -v name="${native_asset}" '$2==name || $2=="*"name {count
 actual_archive=$(hash_file "${native_archive}")
 [[ "${expected_archive}" == "${actual_archive}" ]] || { echo 'Primary native archive does not match its release checksum' >&2; exit 1; }
 mkdir "${work}/bootstrap-home"
-tar -xOzf "${native_archive}" "${command_name}" > "${work}/${command_name}"
+native_member=$(archive_member "${native_asset}" "${command_name}")
+tar -xOzf "${native_archive}" "${native_member}" > "${work}/${command_name}"
 chmod 755 "${work}/${command_name}"
 version_output=$(env -i HOME="${work}/bootstrap-home" PATH="${base_path}" TMPDIR="${work}" "${work}/${command_name}" --version)
 expected_version=${version_output#"${command_name} "}; expected_version=${expected_version%% *}
@@ -81,33 +86,45 @@ run_installer() {
 marker_count() { if [[ -f "$1" ]]; then grep -cF "# added by the ${product_name} installer" "$1" || :; else printf '0\n'; fi; }
 resolve_in() { env -i HOME="${fixture_home}" PATH="${base_path}" "$@" 2>/dev/null | tail -n 1; }
 new_asset() { if [[ "${archive_versioned}" == 1 ]]; then printf '%s%s%s%s%s%s.tar.gz' "${archive_prefix}" "${fixture_version}" "${archive_separator}" "${os}" "${archive_separator}" "${arch}"; else printf '%s%s%s%s.tar.gz' "${archive_prefix}" "${os}" "${archive_separator}" "${arch}"; fi; }
-make_release() {
-    local target=$1 body=$2 asset legal
-    mkdir -p "${target}/payload"
-    printf '#!/bin/sh\n%s\n' "${body}" > "${target}/payload/${command_name}"
-    chmod 755 "${target}/payload/${command_name}"
-    local members=("${command_name}")
-    for legal in ${legal_files}; do printf 'fixture legal material\n' > "${target}/payload/${legal}"; members+=("${legal}"); done
+pack_release() {
+    local target=$1 asset name digest
+    shift
     asset=$(new_asset)
+    local members=()
+    for name in "$@"; do members+=("$(archive_member "${asset}" "${name}")"); done
     tar -czf "${target}/${asset}" -C "${target}/payload" "${members[@]}"
-    local digest
     digest=$(hash_file "${target}/${asset}")
     printf '%s  %s\n' "${digest}" "${asset}" > "${target}/${checksum_name}"
+}
+make_release() {
+    local target=$1 body=$2 asset executable legal member
+    asset=$(new_asset); executable=$(archive_member "${asset}" "${command_name}")
+    mkdir -p "${target}/payload/${executable%"${command_name}"}"
+    printf '#!/bin/sh\n%s\n' "${body}" > "${target}/payload/${executable}"
+    chmod 755 "${target}/payload/${executable}"
+    local members=("${command_name}")
+    for legal in ${legal_files}; do
+        member=$(archive_member "${asset}" "${legal}")
+        printf 'fixture legal material\n' > "${target}/payload/${member}"
+        members+=("${legal}")
+    done
+    pack_release "${target}" "${members[@]}"
 }
 
 begin 'primary archive checksum blocks execution before version bootstrap'
 primary_control=${work}/primary-control; mkdir -p "${primary_control}/dist" "${primary_control}/payload" "${primary_control}/tmp"
 cp "${installer}" "${primary_control}/dist/install.sh"
 cp "${dist}/${checksum_name}" "${primary_control}/dist/${checksum_name}"
-cat > "${primary_control}/payload/${command_name}" <<'EOF'
+mkdir -p "${primary_control}/payload/${native_member%"${command_name}"}"
+cat > "${primary_control}/payload/${native_member}" <<'EOF'
 #!/bin/sh
 candidate_dir=${0%/*}
 control_root=${candidate_dir%/*}
 printf 'executed\n' > "${control_root}/bootstrap-executed"
 EOF
-printf "printf '%%s\\n' '%s 1.2.3'\n" "${command_name}" >> "${primary_control}/payload/${command_name}"
-chmod 755 "${primary_control}/payload/${command_name}"
-tar -czf "${primary_control}/dist/${native_asset}" -C "${primary_control}/payload" "${command_name}"
+printf "printf '%%s\\n' '%s 1.2.3'\n" "${command_name}" >> "${primary_control}/payload/${native_member}"
+chmod 755 "${primary_control}/payload/${native_member}"
+tar -czf "${primary_control}/dist/${native_asset}" -C "${primary_control}/payload" "${native_member}"
 if TMPDIR="${primary_control}/tmp" bash "$0" "${primary_control}/dist" --verify-primary > "${work}/out" 2>&1; then last_exit=0; else last_exit=$?; fi
 expect_failure 'tampered primary archive'
 assert 'primary archive failure is checksum-specific' grep -q 'Primary native archive does not match' "${work}/out"
@@ -381,7 +398,7 @@ make_release "${provenance_release}" "printf '%s\\n' '${command_name} 1.2.3 (abc
 download_base=${provenance_release}; run_installer /bin/sh --no-modify-path
 expect_exit 0 'actual PDF producer provenance shape'
 
-begin 'strict candidate identity, original execution diagnostics and link members'
+begin 'strict candidate identity and original execution diagnostics'
 fixture_version=1.2.3
 payload_number=0
 for bad in "printf '%s\\n' '${command_name} invalid'" "printf '%s\\n' '${command_name} 1.2.3 extra'" "printf '%s\\n' '${command_name} 1.2.3' 'extra line'" "printf '%s\\n' '${command_name} 1.2.3 (nested (field))'" "printf '%s\\n' '${command_name} 1.2.3 (field) extra'" "printf '%s\\r\\n' '${command_name} 1.2.3 (field)'" "printf 'loader failure sentinel\\n' >&2; exit 9"; do
@@ -389,11 +406,77 @@ for bad in "printf '%s\\n' '${command_name} invalid'" "printf '%s\\n' '${command
     download_base=${candidate_release}; run_installer /bin/sh --no-modify-path; expect_failure 'invalid candidate'
 done
 assert 'original execution cause shown' grep -q 'loader failure sentinel' "${work}/out"
-link_release=${work}/link-release; mkdir -p "${link_release}/payload"; ln -s /bin/sh "${link_release}/payload/${command_name}"
-asset=$(new_asset); tar -czf "${link_release}/${asset}" -C "${link_release}/payload" "${command_name}"
-digest=$(hash_file "${link_release}/${asset}"); printf '%s  %s\n' "${digest}" "${asset}" > "${link_release}/${checksum_name}"
-download_base=${link_release}; run_installer /bin/sh --no-modify-path; expect_failure 'archive symlink member'
-assert 'regular-file rejection reported' grep -q 'not a regular file' "${work}/out"
+
+begin 'exact archive root and required regular members protect the active installation'
+fixture_version=1.2.3
+valid_release=${work}/valid-layout
+make_release "${valid_release}" "printf '%s\\n' '${command_name} 1.2.3'"
+download_base=${valid_release}; run_installer /bin/sh --no-modify-path
+expect_exit 0 'valid configured archive layout'
+before=$(hash_file "${fixture_home}/.local/bin/${command_name}")
+state_before=$(hash_file "${fixture_home}/.local/bin/.${command_name}-install/state.sha256")
+asset=$(new_asset)
+required_members=("${command_name}")
+for legal in ${legal_files}; do required_members+=("${legal}"); done
+for layout in wrong-root alternate-layout; do
+    layout_release=${work}/${layout}
+    mkdir -p "${layout_release}/payload"
+    if [[ "${layout}" == alternate-layout && "${archive_rooted}" == 1 ]]; then prefix=''
+    elif [[ "${layout}" == alternate-layout ]]; then prefix=${asset%.tar.gz}/
+    else prefix=${asset%.tar.gz}-wrong/; fi
+    mkdir -p "${layout_release}/payload/${prefix}"
+    layout_members=()
+    for name in "${required_members[@]}"; do
+        source_member=$(archive_member "${asset}" "${name}")
+        cp "${valid_release}/payload/${source_member}" "${layout_release}/payload/${prefix}${name}"
+        layout_members+=("${prefix}${name}")
+    done
+    tar -czf "${layout_release}/${asset}" -C "${layout_release}/payload" "${layout_members[@]}"
+    digest=$(hash_file "${layout_release}/${asset}")
+    printf '%s  %s\n' "${digest}" "${asset}" > "${layout_release}/${checksum_name}"
+    download_base=${layout_release}; run_installer /bin/sh --no-modify-path; expect_failure "${layout} archive"
+    expected_member=$(archive_member "${asset}" "${command_name}")
+    assert 'layout failure identifies exact expected member' grep -Fq "The archive must contain exactly one ${expected_member}." "${work}/out"
+    after=$(hash_file "${fixture_home}/.local/bin/${command_name}")
+    state_after=$(hash_file "${fixture_home}/.local/bin/.${command_name}-install/state.sha256")
+    assert 'wrong layout preserves program' test "${before}" = "${after}"
+    assert 'wrong layout preserves ownership' test "${state_before}" = "${state_after}"
+done
+for name in "${required_members[@]}"; do
+    expected_member=$(archive_member "${asset}" "${name}")
+    for defect in missing duplicate symlink; do
+        member_release=${work}/member-${name}-${defect}
+        make_release "${member_release}" "printf '%s\\n' '${command_name} 1.2.3'"
+        members=()
+        for other in "${required_members[@]}"; do
+            [[ "${defect}" != missing || "${other}" != "${name}" ]] || continue
+            members+=("${other}")
+        done
+        case "${defect}" in
+            missing)
+                # Keep even the no-legal-files archive nonempty, without the selected member.
+                printf 'unrelated\n' > "${member_release}/payload/$(archive_member "${asset}" unrelated)"
+                members+=(unrelated)
+                ;;
+            duplicate) members+=("${name}") ;;
+            symlink)
+                rm "${member_release}/payload/${expected_member}"
+                ln -s /bin/sh "${member_release}/payload/${expected_member}"
+                ;;
+            *) fail "Unknown archive member defect: ${defect}"; exit 1 ;;
+        esac
+        pack_release "${member_release}" "${members[@]}"
+        download_base=${member_release}; run_installer /bin/sh --no-modify-path
+        expect_failure "${defect} archive member ${expected_member}"
+        if [[ "${defect}" == symlink ]]; then diagnostic="Archive member is not a regular file: ${expected_member}"
+        else diagnostic="The archive must contain exactly one ${expected_member}."; fi
+        assert 'member failure reports the intended boundary' grep -Fq "${diagnostic}" "${work}/out"
+        after=$(hash_file "${fixture_home}/.local/bin/${command_name}")
+        state_after=$(hash_file "${fixture_home}/.local/bin/.${command_name}-install/state.sha256")
+        assert 'invalid member preserves program' test "${before}" = "${after}"
+        assert 'invalid member preserves ownership' test "${state_before}" = "${state_after}"
+    done
+done
 
 begin 'receipt edits, extra sidecar data and per-transaction rollback'
 run_installer /bin/sh --no-modify-path; expect_exit 0 'rollback baseline install'

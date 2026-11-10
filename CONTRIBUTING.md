@@ -188,8 +188,8 @@ with Windows PowerShell 5.1 and PowerShell 7. The PowerShell script stays ASCII.
 
 The common engine bodies are owned by PDFConcat. Only literal product settings
 may differ inside `BEGIN PRODUCT SETTINGS` / `END PRODUCT SETTINGS`. Changes to
-behavior must be synchronized in both repositories, with EML's reviewed upstream
-pin updated. The published scripts are self-contained; neither installer fetches
+behavior must be synchronized in PDFConcat, EML Attachment Remover and Auditory
+Lab, with both consumers' reviewed upstream pins updated. The published scripts are self-contained; neither installer fetches
 code or configuration from the other repository at runtime. `install/engine-source.txt`
 contains the full reviewed PDF commit. Check body parity locally against that Git
 object, or fetch its files over HTTPS for development/CI:
