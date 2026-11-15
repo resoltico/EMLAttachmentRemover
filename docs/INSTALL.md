@@ -67,12 +67,12 @@ to match their receipt.
 Select a release explicitly, for example:
 
 ```sh
-curl -fsSL https://github.com/resoltico/EMLAttachmentRemover/releases/latest/download/install.sh | sh -s -- --version 8.0.0
+curl -fsSL https://github.com/resoltico/EMLAttachmentRemover/releases/download/v9.0.0/install.sh | sh -s -- --version 9.0.0
 ```
 
 ```powershell
-$env:EMLATTACHMENTREMOVER_VERSION = '8.0.0'
-irm https://github.com/resoltico/EMLAttachmentRemover/releases/latest/download/install.ps1 | iex
+$env:EMLATTACHMENTREMOVER_VERSION = '9.0.0'
+irm https://github.com/resoltico/EMLAttachmentRemover/releases/download/v9.0.0/install.ps1 | iex
 ```
 
 The environment pin remains set in that session. Clear it to return to latest:
@@ -107,9 +107,8 @@ for ownership receipts and managed data. It verifies managed file hashes before
 update or removal and refuses unowned files by default and changed managed files.
 A matching filename, version output or PATH entry does not establish ownership.
 
-The checkout installer adds the following recovery behavior; it is not present
-in the published 8.0.0 installers. Use a reviewed installer and payload from the
-same qualified build, rather than passing new options to an older saved script.
+Use the installer and payload from the same qualified release. The installer
+verifies ownership before replacement and preserves recoverable state on failure.
 
 Unix uninstall and rollback preserve private recovery images before rewriting
 startup files in place, retaining their symlink and hardlink identities. A failed
@@ -136,10 +135,10 @@ user edits blindly.
   failures remain precise conservative refusals; the replacement flag cannot bypass them.
 - Unix accepts aliases only when requested and recorded directories still
   resolve to the same physical directory, preserving exact recorded PATH text.
-  Windows normalizes ordinary spellings but refuses reparse-point directories.
+  Windows normalizes ordinary spellings but refuses a reparse-point install directory.
   Moved receipts are not adopted; use the recorded-path command in the diagnostic.
 
-After obtaining a qualified installer containing these changes:
+To explicitly back up and replace a receiptless executable:
 
 ```sh
 sh ./install-emlattachmentremover.sh --install-dir "$HOME/.local/bin" --replace-unmanaged
@@ -161,8 +160,8 @@ or removals of owned startup entries are preserved.
 To manage an installation manually, preserve valuable executable/state files,
 inspect exact diagnostics and choose a fresh directory if needed. Never remove an
 entire shared bin directory, copy a receipt from another directory or edit hashes
-to bypass a refusal. The published installer continues refusing receiptless files;
-its version output is not ownership proof.
+to bypass a refusal. A receiptless executable requires explicit backed-up
+replacement; its version output is not ownership proof.
 
 PowerShell pipeline cancellation uses the same restoration path as ordinary
 activation failures. Recovery checks actual file slots and verified receipt and
@@ -209,11 +208,10 @@ files remain in the shared install directory; removing it could break other tool
 `NoModifyPath` also suppresses PATH cleanup during
 uninstall and reports the entry left for manual removal.
 
-Windows uninstall in this checkout removes an owned PATH entry before deleting
+Windows uninstall removes an owned PATH entry before deleting
 the executable or receipt. A failed PATH write leaves those files intact for
 retry. A later file-removal failure can leave partial progress; inspect the
-reported paths before retrying or using the manual cleanup above. Published
-installer scripts receive this fix only in a release containing it.
+reported paths before retrying or using the manual cleanup above.
 
 Your emails, copies, reports and desktop app preferences are not installer-managed files.
 
@@ -224,7 +222,7 @@ Your emails, copies, reports and desktop app preferences are not installer-manag
 | `--version X.Y.Z` | `-Version X.Y.Z` | `EMLATTACHMENTREMOVER_VERSION` | Choose a stable release; one leading `v` is allowed. |
 | `--install-dir DIR` | `-InstallDir DIR` | `EMLATTACHMENTREMOVER_INSTALL_DIR` | Choose an absolute directory. |
 | `--no-modify-path` | `-NoModifyPath` | `EMLATTACHMENTREMOVER_NO_MODIFY_PATH=1` | Do not change PATH or shell startup files. |
-| `--replace-unmanaged` | `-ReplaceUnmanaged` | | Checkout only: back up and replace a receiptless ordinary executable; install only. |
+| `--replace-unmanaged` | `-ReplaceUnmanaged` | | Back up and replace a receiptless ordinary executable; install only. |
 | `--uninstall` | `-Uninstall` | `EMLATTACHMENTREMOVER_UNINSTALL=1` (Windows) | Remove unchanged owned files. |
 | `--help` | `-Help` | | Show usage. |
 

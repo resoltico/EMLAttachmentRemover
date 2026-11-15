@@ -89,7 +89,7 @@ Commit reviewed inputs before distributing: packages built from a dirty checkout
 carry the base revision and are development evidence, not exact source snapshots.
 
 `CFBundleShortVersionString` is the workspace version. `CFBundleVersion` is derived
-as `major * 10000 + minor * 100 + patch` (8.0.0 becomes 80000). App packaging
+as `major * 10000 + minor * 100 + patch` (9.0.0 becomes 90000). App packaging
 requires X.Y.Z without suffixes, minor/patch at most 99,
 and a result representable as a u32. These bounds keep the mapping ordered and
 collision-free. Increase the release version before distributing changed builds;

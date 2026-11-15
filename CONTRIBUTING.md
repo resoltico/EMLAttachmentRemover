@@ -147,38 +147,11 @@ for mac_arch in aarch64 x86_64; do
 done
 ```
 
-Smoke the archive matching the current Mac. The example selects Apple Silicon;
-on Intel set both `mac_arch` and `mac_macho_arch` to `x86_64`. The checks reject a
-wrong-CPU or multi-architecture CLI and a Rosetta-translated shell before execution:
-
-```sh
-set -eu
-mac_arch=aarch64
-mac_macho_arch=arm64
-mkdir -p "target/smoke/$mac_arch"
-tar -xzf target/dist/emlattachmentremover-*-macos-"$mac_arch".tar.gz -C "target/smoke/$mac_arch"
-ditto -x -k target/dist/emlattachmentremover-gui-*-macos-"$mac_arch".zip "target/smoke/$mac_arch"
-host_arch=$(uname -m)
-test "$host_arch" = "$mac_macho_arch"
-translated=$(sysctl -in sysctl.proc_translated)
-test "$translated" != "1"
-cli_arch=$(lipo -archs "target/smoke/$mac_arch/emlattachmentremover")
-test "$cli_arch" = "$mac_macho_arch"
-revision=$(git rev-parse HEAD)
-app_version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "target/smoke/$mac_arch/EML Attachment Remover.app/Contents/Info.plist")
-cli_version=$("target/smoke/$mac_arch/emlattachmentremover" --version)
-test "$cli_version" = "emlattachmentremover $app_version ($revision)"
-scripts/smoke-cli.sh "target/smoke/$mac_arch/emlattachmentremover" tests/contract/mime
-```
-
-Use a fresh output folder: distribution refuses existing archive files. Linux and
-Windows use native target builds. On Linux, run
-`cargo xtask dist --cli --target <native-triple> --out <fresh-folder>`. On Windows,
-run `cargo run --locked -p xtask --target <native-triple> -- dist --cli --target <native-triple> --out <fresh-folder>`.
-Windows triples end in `pc-windows-msvc`; `.cargo/config.toml` sets `+crt-static`.
-See [release instructions](docs/release.md) for exact-archive floor smoke and the
-manual checklist. Build requirements and actual release acceptance are separate:
-run the floor checks before releasing.
+Use a fresh output folder: distribution refuses existing archives. Follow the
+[release guide](docs/release.md#build-and-inspect-locally) for native Linux and
+Windows commands, exact-archive architecture/source checks, macOS floor smoke
+and the manual acceptance checklist. Release workflows build and qualify the
+published archive bytes once; a separate local rehearsal is not required.
 
 `cargo xtask notices --target <triple> --out <new-file>` generates CLI notices.
 Add `--app` for the GUI graph and select the same target as the app archive.

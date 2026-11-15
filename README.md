@@ -36,9 +36,10 @@ On Windows in PowerShell:
 The installers verify the selected release, test the binary and record ownership
 before updating or removing it. They retain the CLI's license material in a
 private directory beside the executable, and edit only their own PATH entries.
-An existing unowned or changed target is refused; remove it yourself or choose a
-fresh directory. Read [install, update and uninstall](docs/INSTALL.md) for paths,
-options, mirrors, trust and recovery. They do not install the Mac desktop app.
+An existing unowned target is refused unless you explicitly request a backed-up
+replacement. Changed managed files are refused. Read
+[install, update and uninstall](docs/INSTALL.md) for paths, options, mirrors, trust
+and recovery. They do not install the Mac desktop app.
 
 ### Manual downloads
 

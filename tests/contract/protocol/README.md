@@ -23,14 +23,14 @@ fallback. Partial namespace, unattempted required edges and confirmed cleanup
 with an earlier native error are valid failure observations; they cannot qualify
 success. The invalid request has no event stream and must exit 2.
 
-The `eml-app` splitter/reducer consumes all 22 JSONL cases at every byte split.
-`eml-protocol` tests compare real core output against the native-path and
-attachment scenarios. CLI process tests exercise real Create/UpToDate operations
-against the independent MIME golden. Supervisor tests use stub CLI processes to
-exercise transport and lifecycle handling. These examples complement native
-interruption, filesystem failure and desktop tests.
+`eml-protocol` record tests discover all 24 JSONL scenarios, preserve known wire
+values and reject missing required fields, including nullable nested fields.
+Its event tests compare real core output against the native-path and attachment
+scenarios. CLI process tests exercise real Create/UpToDate operations against the
+independent MIME golden. Desktop tests drive typed core events through the
+in-process runner; they do not consume a subprocess protocol stream.
 See the [release guide](../../../docs/release.md) for archive smoke checks and
 manual release acceptance.
 
 `mailbox-file` pins the MAILBOX_FILE refusal; `created-after-end` pins the
-new after_message_end removal with a root section and byte count.
+after_message_end removal with a root section and byte count.
