@@ -1044,6 +1044,8 @@ begin 'startup rewrites preserve complete user bytes across failures and handled
 if python3 - "${installer}" "${fixture_home}" "${signal_old}" "${command_name}" "${env_prefix}" "${base_path}" <<'PY'
 import hashlib, json, os, pathlib, shutil, signal, stat, subprocess, sys
 installer, folder, release, command, prefix, base_path = sys.argv[1:]
+real_dd = shutil.which("dd", path=base_path)
+assert real_dd, "dd is required for startup rewrite qualification"
 root = pathlib.Path(folder)
 original = b"# ORIGINAL USER CONFIGURATION\nexport KEEP_TOKEN=preserved\n# CRITICAL USER SUFFIX\n"
 suffix = b"# CONCURRENT USER SUFFIX\nexport NEW_KEEP=2\n"
@@ -1101,6 +1103,22 @@ for number, (operation, layout, mode) in enumerate(cases):
         owned_before = owned_snapshot() if target.exists() else {}
         tools = home / "tools"
         tools.mkdir()
+        # Model implementations that truncate redirected stdout unless callers
+        # explicitly request notrunc; BSD/GNU dd alone concealed this assumption.
+        (tools / "dd").write_text('''#!/bin/sh
+has_output=0; keep_output=0
+for argument do
+    case "$argument" in of=*) has_output=1 ;; conv=*notrunc*) keep_output=1 ;; esac
+done
+if [ "$has_output" = 0 ] && [ "$keep_output" = 0 ]; then
+    printf 'truncated redirected stdout\\n' >> "$HOME/dd-boundaries"
+    "$REWRITE_TEST_PYTHON" -c 'import os; os.ftruncate(1, 0)'
+elif [ "$keep_output" = 1 ]; then
+    printf 'preserved redirected stdout\\n' >> "$HOME/dd-boundaries"
+fi
+exec "$REWRITE_TEST_DD" "$@"
+''')
+        (tools / "dd").chmod(0o755)
         (tools / "cat").write_text('''#!/bin/sh
 case "$1" in
     */path-updated.* | */rollback-updated | */rollback-updated.*)
@@ -1160,7 +1178,7 @@ exec /bin/rm "$@"
 ''')
             (tools / "rm").chmod(0o755)
         faulty = dict(env, PATH=str(tools) + ":" + base_path,
-                      REWRITE_TEST_MODE=mode, REWRITE_TEST_AT="999" if operation in ("uninstall-move", "uninstall-cleanup") else ("2" if layout == "second" else "1"))
+                      REWRITE_TEST_MODE=mode, REWRITE_TEST_DD=real_dd, REWRITE_TEST_PYTHON=sys.executable, REWRITE_TEST_AT="999" if operation in ("uninstall-move", "uninstall-cleanup") else ("2" if layout == "second" else "1"))
         selected = args + (["--uninstall"] if operation.startswith("uninstall") else [])
         code, output = invoke(selected, faulty)
         (home / "fault-output.txt").write_text(output)
