@@ -181,7 +181,7 @@ function Test-UninstallPathFailure {
     Set-Variable -Name utf8 -Value ([Text.UTF8Encoding]::new($false))
     $sessionPath = $env:Path
     try {
-        foreach ($case in @('failure', 'shared', 'no-modify', 'changed-path', 'locked')) {
+        foreach ($case in @('failure', 'shared', 'no-modify', 'changed-path', 'changed-kind', 'locked')) {
             if ($case -eq 'locked' -and $PSVersionTable.PSEdition -eq 'Core' -and -not $IsWindows) { continue }
             $InstallDir = Join-Path $work ('path-uninstall-' + $case)
             $exe = Join-Path $InstallDir ($Product.Command + '.exe')
@@ -191,6 +191,7 @@ function Test-UninstallPathFailure {
             [IO.File]::WriteAllText($exe, 'owned executable fixture')
             [IO.File]::WriteAllText($lockPath, 'owned lock fixture')
             $receipt = @{ Schema = 1; Directory = $InstallDir; Command = $Product.Command; Version = '1.2.3'; BinaryHash = Get-Digest $exe; DirectoryCreated = $true; PathEntry = $InstallDir; PathWasAbsent = $false; Legal = @(); Retired = $null }
+            $receipt.PathWasAbsent = $case -eq 'changed-kind'
             foreach ($name in @($Product.LegalFiles)) {
                 $legalDir = Join-Path $stateDir 'legal'
                 [void][IO.Directory]::CreateDirectory($legalDir)
@@ -206,10 +207,10 @@ function Test-UninstallPathFailure {
             $sealFile = Join-Path $stateDir 'receipt.sha256'
             $before = @((Get-Digest $exe), (Get-Digest $receiptFile), (Get-Digest $sealFile))
             Set-Variable -Name ModifyPath -Value ($case -ne 'no-modify')
-            $raw = if ($case -eq 'changed-path') { 'C:\Keep;;' } else { $InstallDir + ';C:\Keep;;' }
+            $raw = if ($case -eq 'changed-path') { 'C:\Keep;;' } elseif ($case -eq 'changed-kind') { $InstallDir } else { $InstallDir + ';C:\Keep;;' }
             $env:Path = $raw
-            $script:fixturePath = @{ Exists = $true; Value = $raw }
-            $script:denyPathWrite = $case -ne 'locked'
+            $script:fixturePath = @{ Exists = $true; Value = $raw; Kind = [Microsoft.Win32.RegistryValueKind]::String }
+            $script:denyPathWrite = $case -ne 'locked' -and $case -ne 'changed-kind'
             if ($case -eq 'shared') { [IO.File]::WriteAllText((Join-Path $InstallDir 'unrelated.old'), 'keep') }
             $held = $null
             if ($case -eq 'locked') { $held = [IO.File]::Open($exe, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read) }
@@ -237,7 +238,9 @@ function Test-UninstallPathFailure {
                 }
             } else {
                 Check ("$case uninstall removes managed files") ($failure -eq '' -and -not (Test-Path -LiteralPath $exe) -and -not (Test-Path -LiteralPath $stateDir))
-                Check ("$case uninstall preserves PATH") ($script:fixturePath.Value -ceq $raw -and $env:Path -ceq $raw)
+                if ($case -eq 'changed-kind') {
+                    Check 'uninstall preserves a user-edited empty String PATH container' ($script:fixturePath.Exists -and $script:fixturePath.Value -ceq '' -and $script:fixturePath.Kind -eq [Microsoft.Win32.RegistryValueKind]::String)
+                } else { Check ("$case uninstall preserves PATH") ($script:fixturePath.Value -ceq $raw -and $env:Path -ceq $raw) }
                 if ($case -eq 'shared') { Check 'shared uninstall preserves unrelated file' ([IO.File]::ReadAllText((Join-Path $InstallDir 'unrelated.old')) -ceq 'keep') }
             }
             $receipt = $null
@@ -251,20 +254,23 @@ function Test-UninstallPathFailure {
     }
 }
 
-function Test-ActivationRecovery {
+function Test-ActivationRecovery([string]$Group = 'configured', [string[]]$Legal = $Product.LegalFiles) {
+    $Product = $Product.Clone()
+    $Product.LegalFiles = @($Legal)
     # Execute the production activation transaction with real files. Only PATH
     # persistence is mocked; injected failures occur at an actual write boundary.
-    foreach ($name in @('Get-ItemOrNull', 'Assert-Regular', 'Get-Digest', 'Test-SamePath', 'Get-AbsoluteDirectory', 'ConvertTo-QuotedCommand', 'Write-Receipt', 'Read-Receipt', 'Get-InstallationFingerprint', 'Invoke-StateRemoval', 'Invoke-RetiredRemoval')) {
+    foreach ($name in @('Get-ItemOrNull', 'Assert-Regular', 'Get-Digest', 'Test-SamePath', 'Get-AbsoluteDirectory', 'ConvertTo-QuotedCommand', 'Write-Receipt', 'Read-Receipt', 'Get-InstallationFingerprint', 'Invoke-StateRemoval', 'Invoke-RetiredRemoval', 'Restore-Activation', 'Write-Step')) {
         $node = $ast.FindAll({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -ceq $name }, $true)[0]
         . ([scriptblock]::Create($node.Extent.Text))
     }
     $writer = ${function:Write-Receipt}
     $remover = ${function:Invoke-StateRemoval}
     $node = $ast.FindAll({ param($n) $n -is [Management.Automation.Language.TryStatementAst] -and $n.CatchClauses.Count -gt 0 -and $n.Body.Extent.Text.Contains('Write-Receipt $nextState $newReceipt') }, $true)[-1]
-    $activation = [scriptblock]::Create($node.Extent.Text)
+    $outer = $ast.FindAll({ param($n) $n -is [Management.Automation.Language.TryStatementAst] -and $null -ne $n.Finally -and $n.Finally.Extent.Text.Contains('$pathMutex.ReleaseMutex()') }, $true)[0]
+    $activateScript = [scriptblock]::Create('try {' + $node.Extent.Text + '} finally ' + $outer.Finally.Extent.Text)
     Set-Variable -Name utf8 -Value ([Text.UTF8Encoding]::new($false))
     foreach ($case in @('unmanaged-restore', 'missing-restore', 'changed-after-preflight', 'unmanaged-restore-failure')) {
-        $InstallDir = Join-Path $work $case
+        $InstallDir = Join-Path $work ($Group + '-' + $case)
         $exe = Join-Path $InstallDir ($Product.Command + '.exe')
         $stateDir = Join-Path $InstallDir ('.' + $Product.Command + '-install')
         $stage = Join-Path $InstallDir 'fixture-stage'
@@ -277,16 +283,16 @@ function Test-ActivationRecovery {
         Set-Variable -Name Uninstall -Value $false
         $receipt = $null
         Set-Variable -Name ModifyPath -Value $false
-        Set-Variable -Name addedPath -Value $false
         Set-Variable -Name hadBinary -Value $unmanaged
         Set-Variable -Name retired -Value $null
-        Set-Variable -Name backupState -Value $null
-        $unmanagedBackup = $null
+        $activation = $null
+        Set-Variable -Name backupPath -Value $(if ($unmanaged) { Join-Path $work ('.' + $Product.Command + '-unmanaged-' + [guid]::NewGuid().ToString('N') + '.exe') } else { $null })
+        Set-Variable -Name pathMutex -Value $null
+        Set-Variable -Name tmp -Value $null
+        Set-Variable -Name lock -Value $null
+        Set-Variable -Name created -Value $false
+        Set-Variable -Name pathRoot -Value ([IO.Path]::GetPathRoot($InstallDir))
         Set-Variable -Name preserveStage -Value $false
-        Set-Variable -Name movedOldBinary -Value $false
-        Set-Variable -Name movedOldState -Value $false
-        Set-Variable -Name newStateActive -Value $false
-        Set-Variable -Name newBinaryActive -Value $false
         $r = @{ Schema = 1; Directory = $InstallDir; Command = $Product.Command; Version = '1.2.3'; BinaryHash = Get-Digest $candidate; DirectoryCreated = $false; PathEntry = $null; PathWasAbsent = $false; Legal = @(); Retired = $null }
         if ($unmanaged) { [IO.File]::WriteAllText($exe, 'unowned original') }
         else {
@@ -301,7 +307,15 @@ function Test-ActivationRecovery {
             $receipt = Read-Receipt $true
         }
         $preflight = Get-InstallationFingerprint
-        Set-Variable -Name newReceipt -Value ($r.Clone())
+        $nextReceipt = $r.Clone()
+        $nextReceipt.Legal = @()
+        foreach ($name in @($Product.LegalFiles)) {
+            $legalDir = Join-Path $nextState 'legal'
+            [void][IO.Directory]::CreateDirectory($legalDir)
+            [IO.File]::WriteAllText((Join-Path $legalDir $name), 'next legal fixture')
+            $nextReceipt.Legal += @{ Name = $name; Hash = Get-Digest (Join-Path $legalDir $name) }
+        }
+        Set-Variable -Name newReceipt -Value $nextReceipt
         # Deleting the candidate forces activation failure after old-file/state
         # moves, rather than failing before the restoration path is exercised.
         function Write-Receipt([string]$Directory, [hashtable]$Receipt) {
@@ -316,19 +330,19 @@ function Test-ActivationRecovery {
         }
         if ($case -eq 'changed-after-preflight') { [IO.File]::WriteAllText($exe, 'concurrent replacement') }
         $failure = ''
-        try { . $activation } catch { $failure = $_.Exception.Message }
+        try { . $activateScript } catch { $failure = $_.Exception.Message }
         if ($case -eq 'changed-after-preflight') {
             Check 'locked revalidation refuses changed receiptless target' ($failure.Contains('changed after preflight') -and [IO.File]::ReadAllText($exe) -ceq 'concurrent replacement' -and -not (Test-Path -LiteralPath $stateDir))
         } elseif ($case -eq 'unmanaged-restore-failure') {
             $recoveryFile = Join-Path $stage 'recovery.txt'
             $recoveryText = if (Test-Path -LiteralPath $recoveryFile) { [IO.File]::ReadAllText($recoveryFile) } else { '' }
-            Check 'failed unmanaged restore preserves transaction stage' ($preserveStage -and (Test-Path -LiteralPath $stage) -and $failure.Contains('restoration is incomplete'))
-            Check 'failed unmanaged restore names exact retained original backup' ($null -ne $unmanagedBackup -and (Test-Path -LiteralPath $unmanagedBackup) -and [IO.File]::ReadAllText($unmanagedBackup) -ceq 'unowned original' -and $failure.Contains($unmanagedBackup) -and $recoveryText.Contains($unmanagedBackup))
+            Check 'failed unmanaged restore preserves transaction stage' ($preserveStage -and (Test-Path -LiteralPath $stage) -and ($failure -match 'restoration is incomplete'))
+            Check 'failed unmanaged restore names exact retained original backup' ($activation -and (Test-Path -LiteralPath $activation.OldBinarySlot) -and [IO.File]::ReadAllText($activation.OldBinarySlot) -ceq 'unowned original' -and $recoveryText.Contains($activation.OldBinarySlot))
             Check 'failed restore retains concurrent directory and no active receipt' ((Get-Item -LiteralPath $exe).PSIsContainer -and -not (Test-Path -LiteralPath $stateDir))
         } elseif ($unmanaged) {
-            Check 'activation failure restores original unmanaged bytes' ($failure.Contains('prior installation was restored') -and [IO.File]::ReadAllText($exe) -ceq 'unowned original' -and -not (Test-Path -LiteralPath $stateDir) -and $null -eq $unmanagedBackup)
+            Check 'activation failure restores original unmanaged bytes' ($failure.Contains("this transaction's changes were rolled back") -and [IO.File]::ReadAllText($exe) -ceq 'unowned original' -and -not (Test-Path -LiteralPath $stateDir) -and -not (Test-Path -LiteralPath $activation.OldBinarySlot))
         } else {
-            Check 'repair activation rollback preserves prior payload absence' ($failure.Contains('prior installation was restored') -and -not (Test-Path -LiteralPath $exe) -and (Get-InstallationFingerprint) -ceq $preflight)
+            Check 'repair activation rollback preserves prior payload absence' ($failure.Contains("this transaction's changes were rolled back") -and -not (Test-Path -LiteralPath $exe) -and (Get-InstallationFingerprint) -ceq $preflight)
         }
     }
 }
@@ -357,6 +371,10 @@ function Test-LegalInventory {
     Write-Receipt $stateDir $r
     $verified = Read-Receipt $true
     Check 'expanded legal requirements accept smaller verified receipt inventory' ($verified.Legal.Count -eq 1 -and $verified.Legal[0].Name -ceq 'LICENSE')
+    $missingExpected = Join-Path $InstallDir 'missing-staged-ownership'
+    $failure = ''
+    try { [void](Read-Receipt $true $missingExpected $exe ('a' * 64)) } catch { $failure = $_.Exception.Message }
+    Check 'missing expected ownership names its exact state without suggesting unmanaged replacement' ($failure.Contains('Expected owned installer state is missing') -and $failure.Contains($missingExpected) -and -not $failure.Contains('ReplaceUnmanaged') -and [IO.File]::ReadAllText($exe) -ceq 'owned executable')
     foreach ($defect in @('duplicate', 'unallowed', 'missing', 'changed', 'extra')) {
         [IO.File]::WriteAllText($licenseFile, 'original owned license')
         $bad = $r.Clone()
@@ -399,6 +417,238 @@ function Test-LegalInventory {
     $stateDir = $nextState
     $verified = Read-Receipt $true
     Check 'new expanded legal inventory is accepted by the actual receipt reader' ($verified.Legal.Count -eq 2)
+}
+
+function Test-PipelineCancellation {
+    # Stop the actual transaction at debugger sequence points after real file or
+    # PATH writes. This is pipeline cancellation, not process termination.
+    if (-not ('CliInstaller.CancellationProbe' -as [type])) {
+        Add-Type @'
+using System.Threading;
+namespace CliInstaller {
+    public static class CancellationProbe {
+        public static ManualResetEvent Ready = new ManualResetEvent(false);
+        public static ManualResetEvent Resume = new ManualResetEvent(false);
+    }
+}
+'@
+    }
+    $names = @('Get-ItemOrNull', 'Assert-Regular', 'Get-Digest', 'Test-SamePath', 'Get-AbsoluteDirectory', 'ConvertTo-QuotedCommand', 'Write-Receipt', 'Read-Receipt', 'Get-InstallationFingerprint', 'Invoke-StateRemoval', 'Invoke-RetiredRemoval', 'Restore-Activation', 'Exit-Installer', 'Write-Step', 'Test-PathEntry')
+    $nativeRegistry = ($PSVersionTable.PSEdition -ne 'Core' -or $IsWindows) -and [bool]$env:CI
+    if ($nativeRegistry) { $names += @('Get-UserPath', 'Save-UserPath', 'Enter-PathLock') }
+    $definitions = foreach ($name in $names) {
+        $wanted = $name
+        $node = $ast.FindAll({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -ceq $wanted }, $true)[0]
+        . ([scriptblock]::Create($node.Extent.Text))
+        $node.Extent.Text
+    }
+    $inputs = foreach ($name in @('Product', 'stable', 'identifier', 'semver')) {
+        $wanted = '$' + $name
+        $node = $ast.FindAll({ param($n) $n -is [Management.Automation.Language.AssignmentStatementAst] -and $n.Left.Extent.Text -ceq $wanted }, $true)[0]
+        $node.Extent.Text
+    }
+    $node = $ast.FindAll({ param($n) $n -is [Management.Automation.Language.TryStatementAst] -and $n.CatchClauses.Count -gt 0 -and $n.Body.Extent.Text.Contains('Write-Receipt $nextState $newReceipt') }, $true)[-1]
+    $outer = $ast.FindAll({ param($n) $n -is [Management.Automation.Language.TryStatementAst] -and $null -ne $n.Finally -and $n.Finally.Extent.Text.Contains('$pathMutex.ReleaseMutex()') }, $true)[0]
+    $scriptText = [IO.File]::ReadAllText($installer)
+    $afterActivation = $scriptText.Substring($node.Extent.EndOffset, $outer.Finally.Extent.StartOffset - $node.Extent.EndOffset)
+    # The substring ends with the outer try's closing brace and finally keyword.
+    $afterActivation = $afterActivation.Substring(0, $afterActivation.LastIndexOf('}'))
+    $transaction = "try {`n" + $node.Extent.Text + $afterActivation + "} finally " + $outer.Finally.Extent.Text
+    $cases = @()
+    foreach ($kind in @('managed', 'missing', 'fresh', 'unmanaged')) {
+        $phases = @('path', 'new-state', 'new-binary')
+        if ($kind -eq 'managed') { $phases += @('old-binary', 'old-state', 'validated') }
+        if ($kind -eq 'missing') { $phases += 'old-state' }
+        if ($kind -eq 'unmanaged') { $phases += 'unmanaged-binary' }
+        foreach ($phase in $phases) { $cases += @{ Kind = $kind; Phase = $phase; Stop = $true } }
+        $cases += @{ Kind = $kind; Phase = 'new-binary'; Stop = $false }
+    }
+    $cases += @{ Kind = 'managed'; Phase = 'old-binary'; Stop = $true; Conflict = $true }
+    $cases += @{ Kind = 'managed'; Phase = 'path'; Stop = $true; AmbiguousPath = $true }
+    $cases += @{ Kind = 'managed'; Phase = 'path'; Stop = $true; AppendPath = $true }
+    $cases += @{ Kind = 'fresh'; Phase = 'path'; Stop = $true; PathKindEdit = $true }
+    $savedRegistry = if ($nativeRegistry) { Get-RegistryPath } else { $null }
+    $savedSessionPath = $env:Path
+    try {
+        foreach ($case in $cases) {
+            [void][CliInstaller.CancellationProbe]::Ready.Reset()
+            [void][CliInstaller.CancellationProbe]::Resume.Reset()
+            $folder = Join-Path $work ('pipeline-' + [guid]::NewGuid().ToString('N'))
+            [void][IO.Directory]::CreateDirectory($folder)
+            $InstallDir = Join-Path $folder 'bin'
+            $exe = Join-Path $InstallDir ($Product.Command + '.exe')
+            $stateDir = Join-Path $InstallDir ('.' + $Product.Command + '-install')
+            $pathBefore = @{ Exists = $true; Value = 'C:\Keep;;'; Kind = [Microsoft.Win32.RegistryValueKind]::String }
+            if ($case.Kind -eq 'fresh') { $pathBefore.Exists = $false; $pathBefore.Value = ''; $pathBefore.Kind = [Microsoft.Win32.RegistryValueKind]::ExpandString }
+            if ($nativeRegistry) { Save-RegistryPath $pathBefore }
+            else { [IO.File]::WriteAllText((Join-Path $folder 'path.json'), ($pathBefore | ConvertTo-Json)) }
+            $quotedFolder = "'" + $folder.Replace("'", "''") + "'"
+            $prefix = "`$ErrorActionPreference='Stop'`nSet-StrictMode -Version 3`n" + ($inputs -join "`n") + "`n" + ($definitions -join "`n") + "`n"
+            $prefix += '$fixtureFolder=' + $quotedFolder + "`n" + '$kind=' + "'" + $case.Kind + "'`n"
+            if (-not $nativeRegistry) {
+                $prefix += @'
+function Enter-PathLock { return $null }
+function Get-UserPath {
+    $r = [IO.File]::ReadAllText((Join-Path $fixtureFolder 'path.json')) | ConvertFrom-Json
+    return @{ Exists = [bool]$r.Exists; Value = [string]$r.Value; Kind = [Microsoft.Win32.RegistryValueKind][int]$r.Kind }
+}
+function Save-UserPath([hashtable]$Record) { [IO.File]::WriteAllText((Join-Path $fixtureFolder 'path.json'), ($Record | ConvertTo-Json)) }
+'@
+            }
+            $prefix += @'
+$utf8=[Text.UTF8Encoding]::new($false)
+$env:Path='C:\Session'
+$InstallDir=Join-Path $fixtureFolder 'bin'
+$exe=Join-Path $InstallDir ($Product.Command+'.exe')
+$stateDir=Join-Path $InstallDir ('.'+$Product.Command+'-install')
+$stage=Join-Path $InstallDir ('.'+$Product.Command+'-stage-fixture')
+$nextState=Join-Path $stage 'state'
+$candidate=Join-Path $stage ($Product.Command+'.exe')
+[void][IO.Directory]::CreateDirectory($nextState)
+[IO.File]::WriteAllText($candidate,'new candidate bytes')
+$receipt=$null
+if($kind -ne 'fresh' -and $kind -ne 'missing') { [IO.File]::WriteAllText($exe,'original executable bytes') }
+if($kind -eq 'managed' -or $kind -eq 'missing') {
+    [void][IO.Directory]::CreateDirectory($stateDir)
+    $receipt=@{Schema=1;Directory=$InstallDir;Command=$Product.Command;Version='1.2.3';BinaryHash='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';DirectoryCreated=$false;PathEntry=$null;PathWasAbsent=$false;Legal=@();Retired=$null}
+    if($kind -eq 'managed') { $receipt.BinaryHash=Get-Digest $exe }
+    foreach($name in @($Product.LegalFiles)) {
+        [void][IO.Directory]::CreateDirectory((Join-Path $stateDir 'legal'))
+        $file=Join-Path (Join-Path $stateDir 'legal') $name
+        [IO.File]::WriteAllText($file,('original legal '+$name))
+        $receipt.Legal+=@{Name=$name;Hash=Get-Digest $file}
+    }
+    Write-Receipt $stateDir $receipt
+}
+foreach($name in @($Product.LegalFiles)) {
+    [void][IO.Directory]::CreateDirectory((Join-Path $nextState 'legal'))
+    [IO.File]::WriteAllText((Join-Path (Join-Path $nextState 'legal') $name),('new legal '+$name))
+}
+$before=@{}
+if(Test-Path -LiteralPath $exe) { $before[$Product.Command+'.exe']=Get-Digest $exe }
+if(Test-Path -LiteralPath $stateDir) { foreach($f in Get-ChildItem -LiteralPath $stateDir -File -Force -Recurse) { $before[$f.FullName.Substring($InstallDir.Length+1)]=Get-Digest $f.FullName } }
+[IO.File]::WriteAllText((Join-Path $fixtureFolder 'before.json'),($before|ConvertTo-Json))
+$ReplaceUnmanaged=$true;$Uninstall=$false;$ModifyPath=$true
+$preflight=Get-InstallationFingerprint
+$newVersion='1.2.4';$created=$kind -eq 'fresh'
+$newReceipt=@{Schema=1;Directory=$InstallDir;Command=$Product.Command;Version=$newVersion;BinaryHash=Get-Digest $candidate;DirectoryCreated=$created;PathEntry=$null;PathWasAbsent=$false;Legal=@();Retired=$null}
+foreach($name in @($Product.LegalFiles)) { $newReceipt.Legal+=@{Name=$name;Hash=Get-Digest (Join-Path (Join-Path $nextState 'legal') $name)} }
+$retired=$null;$hadBinary=Test-Path -LiteralPath $exe
+if($receipt -and $hadBinary) {
+    $retired=Join-Path $InstallDir ('.'+$Product.Command+'-retired-'+[guid]::NewGuid().ToString('N')+'.exe')
+    $newReceipt.Retired=@{Name=[IO.Path]::GetFileName($retired);Hash=$receipt.BinaryHash}
+}
+$unmanaged=$kind -eq 'unmanaged'
+$backupPath=if($unmanaged){Join-Path $fixtureFolder ('.'+$Product.Command+'-unmanaged-'+[guid]::NewGuid().ToString('N')+'.exe')}else{$retired}
+$activation=$null;$preserveStage=$false;$pathMutex=$null;$tmp=$null;$lock=$null;$pathRoot=[IO.Path]::GetPathRoot($InstallDir)
+'@
+            $body = $prefix + "`n" + $transaction
+            $childFile = Join-Path $folder 'transaction.ps1'
+            [IO.File]::WriteAllText($childFile, $body, [Text.UTF8Encoding]::new($true))
+            $lines = [IO.File]::ReadAllLines($childFile)
+            $needle = switch ($case.Phase) {
+                'path' { 'if ($pathExpected) { Save-UserPath $pathExpected }' }
+                'old-binary' { '[IO.Directory]::Move($stateDir, $activation.PreviousState)' }
+                'old-state' { 'if ($unmanaged) { [IO.File]::Move($exe, $backupPath) }' }
+                'unmanaged-binary' { '[IO.Directory]::Move($nextState, $stateDir)' }
+                'new-state' { '[IO.File]::Move($candidate, $exe)' }
+                'new-binary' { '[void](Read-Receipt $false $stateDir $exe $activation.NewReceiptHash)' }
+                'validated' { '$activation.Committed = $true' }
+            }
+            $line = 0
+            for ($i = 0; $i -lt $lines.Length; $i++) { if ($lines[$i].Trim() -ceq $needle) { $line = $i + 1; break } }
+            # PATH stops at the following statement, after the real save returns.
+            if ($case.Phase -eq 'path') { $line++ }
+            if ($line -le 0) { throw "Missing cancellation sequence point: $needle" }
+            $ps = [powershell]::Create()
+            $quotedChild = "'" + $childFile.Replace("'", "''") + "'"
+            [void]$ps.AddScript(('Set-PSBreakpoint -Script ' + $quotedChild + ' -Line ' + $line + ' -Action { [void][CliInstaller.CancellationProbe]::Ready.Set(); [void][CliInstaller.CancellationProbe]::Resume.WaitOne() } | Out-Null; & ' + $quotedChild))
+            try {
+                $running = $ps.BeginInvoke()
+                if (-not [CliInstaller.CancellationProbe]::Ready.WaitOne(10000)) { throw "Cancellation boundary was not reached: $($case.Kind)/$($case.Phase): $($ps.Streams.Error | Out-String)" }
+                $editedPath = $null
+                if ($case.ContainsKey('Conflict')) {
+                    [void][IO.Directory]::CreateDirectory($exe)
+                    [IO.File]::WriteAllText((Join-Path $exe 'keep.txt'), 'concurrent user content')
+                }
+                if ($case.ContainsKey('AmbiguousPath') -or $case.ContainsKey('AppendPath') -or $case.ContainsKey('PathKindEdit')) {
+                    $value = $InstallDir + $(if ($pathBefore.Exists) { ';' + $pathBefore.Value } else { '' })
+                    if ($case.ContainsKey('AppendPath')) { $value += ';C:\Added' }
+                    if ($case.ContainsKey('AmbiguousPath')) { $value = 'C:\User;' + $value }
+                    $kind = if ($case.ContainsKey('PathKindEdit')) { [Microsoft.Win32.RegistryValueKind]::String } else { [Microsoft.Win32.RegistryValueKind]::ExpandString }
+                    $editedPath = @{ Exists = $true; Value = $value; Kind = $kind }
+                    if ($nativeRegistry) { Save-RegistryPath $editedPath }
+                    else { [IO.File]::WriteAllText((Join-Path $folder 'path.json'), ($editedPath | ConvertTo-Json)) }
+                }
+                if ($case.Stop) {
+                    $stopping = $ps.BeginStop($null, $null)
+                    Start-Sleep -Milliseconds 50
+                    [void][CliInstaller.CancellationProbe]::Resume.Set()
+                    $ps.EndStop($stopping)
+                } else { [void][CliInstaller.CancellationProbe]::Resume.Set() }
+                $stopped = $false; $invokeFailure = ''
+                try { [void]$ps.EndInvoke($running) } catch { $stopped = $ps.InvocationStateInfo.State -eq 'Stopped'; $invokeFailure = $_.Exception.Message }
+                $label = "$($case.Kind)/$($case.Phase)/stop=$($case.Stop)"
+                if ($case.ContainsKey('Conflict')) { $label += '/concurrent-directory' }
+                if ($case.ContainsKey('AmbiguousPath')) { $label += '/reordered-PATH' }
+                if ($case.ContainsKey('AppendPath')) { $label += '/appended-PATH' }
+                if ($case.ContainsKey('PathKindEdit')) { $label += '/PATH-kind-only' }
+                if ($invokeFailure -and -not $stopped) { Write-Host ("Child failure: " + $invokeFailure + "; " + ($ps.Streams.Error | Out-String)) }
+                Check ("$label has the expected pipeline outcome") ($stopped -eq $case.Stop -and $ps.Streams.Error.Count -eq 0 -and ($case.Stop -or $ps.InvocationStateInfo.State -eq 'Completed'))
+                $committedAtStop = $false
+                if ($case.Stop -and $case.Phase -eq 'validated') {
+                    # A scalar commit assignment can finish before Stop is
+                    # observed. Accept only a fully validated committed outcome.
+                    $observed = Read-Receipt $false $stateDir $exe
+                    $committedAtStop = $observed.Version -ceq '1.2.4'
+                }
+                if ($case.Stop -and -not $committedAtStop) {
+                    $before = [IO.File]::ReadAllText((Join-Path $folder 'before.json')) | ConvertFrom-Json
+                    $after = @{}
+                    if (Test-Path -LiteralPath $InstallDir) { foreach ($f in Get-ChildItem -LiteralPath $InstallDir -File -Force -Recurse) { $after[$f.FullName.Substring($InstallDir.Length + 1)] = Get-Digest $f.FullName } }
+                    $same = @($before.PSObject.Properties).Count -eq $after.Count
+                    foreach ($property in $before.PSObject.Properties) { $same = $same -and $after.ContainsKey($property.Name) -and $after[$property.Name] -ceq $property.Value }
+                    if ($case.ContainsKey('Conflict') -or $case.ContainsKey('AmbiguousPath')) {
+                        $stagePath = Join-Path $InstallDir ('.' + $Product.Command + '-stage-fixture')
+                        $note = [IO.File]::ReadAllText((Join-Path $stagePath 'recovery.txt'))
+                        Check "$label retains durable incomplete-restoration facts" ($note -match 'restoration is incomplete')
+                        if ($case.ContainsKey('Conflict')) {
+                            $backups = @(Get-ChildItem -LiteralPath $InstallDir -File -Force | Where-Object { $_.Name -like ('.' + $Product.Command + '-retired-*') })
+                            Check 'failed restore preserves original bytes and concurrent directory' ($backups.Count -eq 1 -and [IO.File]::ReadAllText($backups[0].FullName) -ceq 'original executable bytes' -and [IO.File]::ReadAllText((Join-Path $exe 'keep.txt')) -ceq 'concurrent user content' -and $note.Contains($backups[0].FullName))
+                        } else {
+                            $preserved = $true
+                            foreach ($property in $before.PSObject.Properties) { $preserved = $preserved -and $after.ContainsKey($property.Name) -and $after[$property.Name] -ceq $property.Value }
+                            Check 'ambiguous PATH edit preserves every original executable and receipt byte' $preserved
+                        }
+                    } else { Check ("$label restores exact prior executable and receipt bytes") $same }
+                    if ($case.Kind -eq 'fresh') { Check 'cancelled fresh install removes its created empty directory' (-not (Test-Path -LiteralPath $InstallDir)) }
+                    $afterPath = if ($nativeRegistry) { Get-RegistryPath } else { [IO.File]::ReadAllText((Join-Path $folder 'path.json')) | ConvertFrom-Json }
+                    $expectedPath = if ($case.ContainsKey('AmbiguousPath')) { $editedPath } else { $pathBefore.Clone() }
+                    if ($case.ContainsKey('AppendPath')) { $expectedPath.Value += ';C:\Added'; $expectedPath.Kind = [Microsoft.Win32.RegistryValueKind]::ExpandString }
+                    if ($case.ContainsKey('PathKindEdit')) { $expectedPath.Exists = $true; $expectedPath.Value = ''; $expectedPath.Kind = [Microsoft.Win32.RegistryValueKind]::String }
+                    Check ("$label preserves the required raw PATH value, kind and absence") ($afterPath.Exists -eq $expectedPath.Exists -and $afterPath.Value -ceq $expectedPath.Value -and [int]$afterPath.Kind -eq [int]$expectedPath.Kind)
+                } else {
+                    $verified = Read-Receipt $false $stateDir $exe
+                    Check ("$label commits a fully verifiable new installation") (($committedAtStop -or $ps.InvocationStateInfo.State -eq 'Completed') -and $verified.Version -ceq '1.2.4' -and [IO.File]::ReadAllText($exe) -ceq 'new candidate bytes')
+                    $afterPath = if ($nativeRegistry) { Get-RegistryPath } else { [IO.File]::ReadAllText((Join-Path $folder 'path.json')) | ConvertFrom-Json }
+                    Check "$label owns its actual saved PATH entry" ($verified.PathEntry -ceq $InstallDir -and $afterPath.Value -ceq ($InstallDir + $(if ($pathBefore.Exists) { ';' + $pathBefore.Value } else { '' })))
+                    if ($case.Kind -eq 'unmanaged') {
+                        $backups = @(Get-ChildItem -LiteralPath $folder -File -Force | Where-Object { $_.Name -like ('.' + $Product.Command + '-unmanaged-*') })
+                        Check 'uninterrupted unmanaged replacement retains exact external backup' ($backups.Count -eq 1 -and [IO.File]::ReadAllText($backups[0].FullName) -ceq 'original executable bytes')
+                    }
+                }
+            } finally {
+                [void][CliInstaller.CancellationProbe]::Resume.Set()
+                if ($ps.InvocationStateInfo.State -eq 'Running') { $ps.Stop() }
+                $ps.Dispose()
+                $env:Path = $savedSessionPath
+                if ($nativeRegistry) { Save-RegistryPath $savedRegistry }
+            }
+        }
+    } finally {
+        $env:Path = $savedSessionPath
+        if ($nativeRegistry) { Save-RegistryPath $savedRegistry }
+    }
 }
 
 function Save-Manifest([string]$Directory) {
@@ -492,7 +742,9 @@ try {
     Test-UninstallPathFailure
     Test-ArchiveMemberSelection
     Test-ActivationRecovery
+    Test-ActivationRecovery -Group 'nonempty-legal' -Legal @('LICENSE', 'EXTRA-NOTICE')
     Test-LegalInventory
+    Test-PipelineCancellation
     if ($PSVersionTable.PSEdition -eq 'Core' -and -not $IsWindows) {
         Write-Host 'Native Windows integration not run on this host; published script helper checks completed.'
         if ($script:failures -gt 0) { throw "$($script:failures) helper checks failed." }
@@ -777,6 +1029,10 @@ try {
                 Save-RegistryPath @{ Exists = $false; Value = ''; Kind = [Microsoft.Win32.RegistryValueKind]::ExpandString }
                 Check 'absent PATH install succeeds' ((Invoke-Installer $shell @('-InstallDir', $dir)) -eq 0)
                 Check 'absent PATH restored as absent' ((Invoke-Installer $shell @('-InstallDir', $dir, '-Uninstall')) -eq 0 -and -not (Get-RegistryPath).Exists)
+                Save-RegistryPath @{ Exists = $false; Value = ''; Kind = [Microsoft.Win32.RegistryValueKind]::ExpandString }
+                Check 'absent PATH install for later kind edit succeeds' ((Invoke-Installer $shell @('-InstallDir', $dir)) -eq 0)
+                Save-RegistryPath @{ Exists = $true; Value = $dir; Kind = [Microsoft.Win32.RegistryValueKind]::String }
+                Check 'uninstall removes owned entry but retains edited empty String container' ((Invoke-Installer $shell @('-InstallDir', $dir, '-Uninstall')) -eq 0 -and (Get-RegistryPath).Exists -and (Get-RegistryPath).Value -ceq '' -and (Get-RegistryPath).Kind -eq [Microsoft.Win32.RegistryValueKind]::String)
                 Save-RegistryPath @{ Exists = $true; Value = 'C:\Keep;;'; Kind = [Microsoft.Win32.RegistryValueKind]::String }
                 Check 'NoModifyPath install leaves raw PATH' ((Invoke-Installer $shell @('-InstallDir', $dir, '-NoModifyPath')) -eq 0 -and (Get-RegistryPath).Value -ceq 'C:\Keep;;')
                 Check 'NoModifyPath uninstall leaves raw PATH' ((Invoke-Installer $shell @('-InstallDir', $dir, '-Uninstall', '-NoModifyPath')) -eq 0 -and (Get-RegistryPath).Value -ceq 'C:\Keep;;')
