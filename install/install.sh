@@ -23,6 +23,8 @@ umask 077
 docs_url=${repo_url}/blob/main/docs/INSTALL.md
 marker="# added by the ${product_name} installer"
 tmp='' stage='' locked=0 transition=0 binary_switched=0 state_moved=0 state_switched=0 path_locked=0 recovery='' path_preparation=''
+rewrite_count=0 rewrite_owned=0 rewrite_recovery=0 cleaning=0
+uninstall_transition=0 uninstall_binary_moved=0 uninstall_state_moved=0
 
 # Names here come only from this script and its literal settings, never user data.
 setting() { eval "printf '%s' \"\${${env_prefix}_$1-}\""; }
@@ -263,7 +265,7 @@ validate_state() {
 # interruption, records the completed move, then honors the original exit code.
 activation_move() {
     activation_phase=$1; activation_error=$2; shift 2
-    case "${activation_phase}" in previous-state | binary | ownership) : ;; *) die 'Invalid activation move.' ;; esac
+    case "${activation_phase}" in previous-state | binary | ownership | uninstall-binary | uninstall-state) : ;; *) die 'Invalid activation move.' ;; esac
     activation_signal=0; activation_status=0
     trap 'activation_signal=130' INT
     trap 'activation_signal=143' TERM HUP
@@ -273,6 +275,8 @@ activation_move() {
             previous-state) state_moved=1 ;;
             binary) binary_switched=1 ;;
             ownership) state_switched=1 ;;
+            uninstall-binary) uninstall_binary_moved=1 ;;
+            uninstall-state) uninstall_state_moved=1 ;;
             *) die 'Invalid activation move.' ;;
         esac
     fi
@@ -280,6 +284,115 @@ activation_move() {
     trap 'exit 143' TERM HUP
     [ "${activation_signal}" = 0 ] || exit "${activation_signal}"
     [ "${activation_status}" = 0 ] || die "${activation_error}" "mv exited ${activation_status}."
+}
+
+# In-place writes preserve symlink/hardlink identity. Immutable private images
+# survive any failed write; ownership is recorded before opening the live file.
+# Explicit result variables let callers handle failures without conditional
+# function calls disabling errexit inside these recovery operations.
+profile_rewrite() {
+    profile_rewrite_status=1
+    rw_file=$1; rw_before=$2; rw_after=$3
+    rw_dir=${stage}/rewrite.${rewrite_count}
+    mkdir "${rw_dir}" || return 0
+    printf '%s\n' "${rw_file}" > "${rw_dir}/file" || return 0
+    stat -L "${identity_option}" '%d:%i' "${rw_file}" > "${rw_dir}/identity" || return 0
+    cp "${rw_before}" "${rw_dir}/preimage" || return 0
+    cp "${rw_after}" "${rw_dir}/postimage" || return 0
+    rw_identity=$(stat -L "${identity_option}" '%d:%i' "${rw_file}") || return 0
+    rw_expected_identity=$(cat "${rw_dir}/identity") || return 0
+    [ "${rw_identity}" = "${rw_expected_identity}" ] && cmp -s "${rw_file}" "${rw_dir}/preimage" || return 0
+    rewrite_count=$((rewrite_count + 1)); rewrite_owned=1
+    rw_signal=0; rw_status=0
+    trap 'rw_signal=130' INT || return 0
+    trap 'rw_signal=143' TERM HUP || return 0
+    (trap '' INT TERM HUP; exec cat "${rw_after}") > "${rw_file}" || rw_status=$?
+    if [ "${rw_status}" = 0 ]; then
+        rw_identity=$(stat -L "${identity_option}" '%d:%i' "${rw_file}") || rw_status=1
+        rw_expected_identity=$(cat "${rw_dir}/identity") || rw_status=1
+        if [ "${rw_identity}" != "${rw_expected_identity}" ] || ! cmp -s "${rw_file}" "${rw_dir}/postimage"; then rw_status=1; fi
+    fi
+    if [ "${cleaning}" = 1 ]; then trap '' INT TERM HUP || return 0
+    else trap 'exit 130' INT || return 0; trap 'exit 143' TERM HUP || return 0; fi
+    if [ "${rw_status}" != 0 ]; then
+        profile_restore "${rw_dir}"
+        [ "${profile_restore_status}" = 0 ] || rewrite_recovery=1
+        if [ "${rw_signal}" != 0 ] && [ "${cleaning}" = 0 ]; then exit "${rw_signal}"; fi
+        # Even a successful immediate restore leaves this operation uncommitted.
+        return 0
+    fi
+    if [ "${rw_signal}" != 0 ] && [ "${cleaning}" = 0 ]; then exit "${rw_signal}"; fi
+    profile_rewrite_status=0
+    return 0
+}
+
+profile_restore() {
+    profile_restore_status=1
+    rr_dir=$1
+    if [ -f "${rr_dir}/restored" ]; then profile_restore_status=0; return 0; fi
+    # A failed restoration keeps its complete target and observed bytes intact;
+    # cleanup must never reconstruct them from the now-partial live file.
+    [ ! -f "${rr_dir}/restore-start" ] || return 0
+    : > "${rr_dir}/restore-start" || return 0
+    rr_file=$(cat "${rr_dir}/file") || return 0
+    rr_identity=$(stat -L "${identity_option}" '%d:%i' "${rr_file}") || return 0
+    printf '%s\n' "${rr_identity}" > "${rr_dir}/observed-identity" || return 0
+    [ -f "${rr_file}" ] && [ -r "${rr_file}" ] || return 0
+    cat "${rr_file}" > "${rr_dir}/observed" || return 0
+    rr_expected_identity=$(cat "${rr_dir}/identity") || return 0
+    [ "${rr_identity}" = "${rr_expected_identity}" ] && [ -w "${rr_file}" ] || return 0
+    rr_size=$(wc -c < "${rr_dir}/observed") || return 0
+    rr_size=${rr_size##* }
+    rr_pre_size=$(wc -c < "${rr_dir}/preimage") || return 0
+    rr_pre_size=${rr_pre_size##* }
+    # A preimage already restored by another writer may have a later suffix.
+    # Inverting the shorter postimage in that case would duplicate original bytes.
+    if [ "${rr_size}" -ge "${rr_pre_size}" ]; then
+        dd if="${rr_dir}/observed" of="${rr_dir}/check" bs=1 count="${rr_pre_size}" 2>/dev/null || return 0
+        if cmp -s "${rr_dir}/check" "${rr_dir}/preimage"; then : > "${rr_dir}/restored" || return 0; profile_restore_status=0; return 0; fi
+    fi
+    rr_post_size=$(wc -c < "${rr_dir}/postimage") || return 0
+    rr_post_size=${rr_post_size##* }
+    # A completed write may have a later append: preserve that exact suffix.
+    # A short write is attributable only when it is an exact postimage prefix.
+    if [ "${rr_post_size}" = 0 ] && [ "${rr_size}" != 0 ]; then return 0; fi
+    if [ "${rr_size}" -ge "${rr_post_size}" ]; then
+        dd if="${rr_dir}/observed" of="${rr_dir}/check" bs=1 count="${rr_post_size}" 2>/dev/null || return 0
+        cmp -s "${rr_dir}/check" "${rr_dir}/postimage" || return 0
+        cp "${rr_dir}/preimage" "${rr_dir}/restore-image" || return 0
+        dd if="${rr_dir}/observed" bs=1 skip="${rr_post_size}" 2>/dev/null >> "${rr_dir}/restore-image" || return 0
+    else
+        dd if="${rr_dir}/postimage" of="${rr_dir}/check" bs=1 count="${rr_size}" 2>/dev/null || return 0
+        cmp -s "${rr_dir}/check" "${rr_dir}/observed" || return 0
+        cp "${rr_dir}/preimage" "${rr_dir}/restore-image" || return 0
+    fi
+    rr_identity=$(stat -L "${identity_option}" '%d:%i' "${rr_file}") || return 0
+    rr_expected_identity=$(cat "${rr_dir}/identity") || return 0
+    [ "${rr_identity}" = "${rr_expected_identity}" ] && cmp -s "${rr_file}" "${rr_dir}/observed" || return 0
+    : > "${rr_dir}/restore-attempt" || return 0
+    (trap '' INT TERM HUP; exec cat "${rr_dir}/restore-image") > "${rr_file}" || return 0
+    cmp -s "${rr_file}" "${rr_dir}/restore-image" || return 0
+    : > "${rr_dir}/restored" || return 0
+    profile_restore_status=0
+    return 0
+}
+restore_profile_rewrites() {
+    rr_index=${rewrite_count}
+    : > "${stage}/rewrite-conflicts"
+    while [ "${rr_index}" -gt 0 ]; do
+        rr_index=$((rr_index - 1))
+        rr_restore_dir=${stage}/rewrite.${rr_index}
+        rr_restore_identity=$(cat "${rr_restore_dir}/identity") || { rewrite_recovery=1; continue; }
+        # Earlier entries may alias an unresolved later write. Do not make
+        # another destructive recovery attempt against that same physical file.
+        if grep -Fxq -- "${rr_restore_identity}" "${stage}/rewrite-conflicts"; then rewrite_recovery=1; continue; fi
+        profile_restore "${rr_restore_dir}"
+        if [ "${profile_restore_status}" != 0 ]; then
+            rewrite_recovery=1
+            printf '%s\n' "${rr_restore_identity}" >> "${stage}/rewrite-conflicts"
+        fi
+    done
+    rewrite_owned=0
 }
 
 rollback() {
@@ -301,13 +414,31 @@ rollback() {
         rollback_failed=1
     fi
     if [ "${rollback_failed}" = 1 ]; then
-        printf 'Recovery files remain at %s; restoration was incomplete.\n' "${stage}" >&2
+        printf 'Recovery files remain at %s; restoration was incomplete. Inspect rewrite.*/file, identity, preimage, postimage and available observed/restore-image files before retrying.\n' "${stage}" >&2
         stage=''
     fi
 }
 cleanup() {
+    cleaning=1; trap '' INT TERM HUP
+    if [ "${uninstall_transition}" = 1 ]; then
+        if [ "${uninstall_state_moved}" = 1 ]; then
+            if [ ! -e "${state}" ] && [ ! -h "${state}" ]; then mv "${stage}/previous-state" "${state}" || rewrite_recovery=1
+            else rewrite_recovery=1; fi
+        fi
+        if [ "${uninstall_binary_moved}" = 1 ]; then
+            if [ ! -e "${binary}" ] && [ ! -h "${binary}" ]; then mv "${stage}/previous-binary" "${binary}" || rewrite_recovery=1
+            else rewrite_recovery=1; fi
+        fi
+    fi
+    if [ "${rewrite_owned}" = 1 ]; then restore_profile_rewrites; fi
     [ "${transition}" = 0 ] || rollback
-    [ -z "${stage}" ] || rm -rf "${stage}"
+    if [ "${rewrite_recovery}" = 1 ] && [ -n "${stage}" ]; then
+        printf 'Transaction recovery evidence remains at %s. Inspect previous-binary/previous-state when present and rewrite.*/file, identity, preimage, postimage, observed and restore-image when available. Review these private files before retrying.\n' "${stage}" >&2
+        stage=''
+    fi
+    if [ -n "${stage}" ] && ! rm -rf "${stage}"; then
+        printf 'Could not remove transaction cleanup files at %s; inspect the retained owned artifacts before retrying.\n' "${stage}" >&2
+    fi
     if [ "${path_locked}" = 1 ]; then rmdir "${path_lock}" || printf 'Could not remove PATH lock: %s\n' "${path_lock}" >&2; fi
     if [ "${locked}" = 1 ]; then rmdir "${lock}" || printf 'Could not remove installer lock: %s\n' "${lock}" >&2; fi
     [ -z "${tmp}" ] || rm -rf "${tmp}"
@@ -545,15 +676,20 @@ rollback_paths() {
         before=${stage}/path-before.${record_index}; added=${stage}/path-added.${record_index}
         before_size=$(wc -c < "${before}" | tr -d ' '); added_size=$(wc -c < "${added}" | tr -d ' ')
         end=$((before_size + added_size))
-        cat "${file}" > "${tmp}/rollback-current" || { rollback_failed=1; continue; }
-        cat "${before}" "${added}" > "${tmp}/rollback-prefix"
-        dd if="${tmp}/rollback-current" of="${tmp}/rollback-check" bs=1 count="${end}" 2>/dev/null || { rollback_failed=1; continue; }
+        cat "${file}" > "${stage}/rollback-current.${record_index}" || { rollback_failed=1; continue; }
+        cat "${before}" "${added}" > "${stage}/rollback-prefix.${record_index}"
+        dd if="${stage}/rollback-current.${record_index}" of="${stage}/rollback-check.${record_index}" bs=1 count="${end}" 2>/dev/null || { rollback_failed=1; continue; }
         # Only this exact byte range can be attributed to our append. Changed
         # prefixes and partial writes require inspection, never whole-file restore.
-        if ! cmp -s "${tmp}/rollback-prefix" "${tmp}/rollback-check"; then rollback_failed=1; continue; fi
-        cat "${before}" > "${tmp}/rollback-updated"
-        dd if="${tmp}/rollback-current" bs=1 skip="${end}" 2>/dev/null >> "${tmp}/rollback-updated" || { rollback_failed=1; continue; }
-        if ! cmp -s "${file}" "${tmp}/rollback-current" || ! cat "${tmp}/rollback-updated" > "${file}"; then rollback_failed=1; continue; fi
+        if ! cmp -s "${stage}/rollback-prefix.${record_index}" "${stage}/rollback-check.${record_index}"; then rollback_failed=1; continue; fi
+        cat "${before}" > "${stage}/rollback-updated.${record_index}"
+        dd if="${stage}/rollback-current.${record_index}" bs=1 skip="${end}" 2>/dev/null >> "${stage}/rollback-updated.${record_index}" || { rollback_failed=1; continue; }
+        profile_rewrite "${file}" "${stage}/rollback-current.${record_index}" "${stage}/rollback-updated.${record_index}"
+        if [ "${profile_rewrite_status}" != 0 ]; then rollback_failed=1; continue; fi
+        # A completed rollback rewrite is the desired final state, not an effect
+        # to undo if another profile requires manual recovery.
+        : > "${rw_dir}/restored"
+        rewrite_owned=0
         if [ "${path_created}" = 1 ] && [ ! -s "${file}" ]; then rm -f "${file}" || rollback_failed=1; fi
     done < "${stage}/applied-paths"
 }
@@ -682,19 +818,15 @@ remove_owned_paths() {
         # rather than restoring a stale prepared image or reintroducing lines.
         if [ ! -e "${file}" ] && [ ! -h "${file}" ]; then continue; fi
         if [ -f "${file}" ] && [ -r "${file}" ]; then :; else die "Could not read startup file: ${file}"; fi
-        cat "${file}" > "${tmp}/path-current.${record_index}" || die "Could not read startup file: ${file}"
-        match_status=0; grep -Fxq -- "${line}" "${tmp}/path-current.${record_index}" || match_status=$?
+        cat "${file}" > "${stage}/path-current.${record_index}" || die "Could not read startup file: ${file}"
+        match_status=0; grep -Fxq -- "${line}" "${stage}/path-current.${record_index}" || match_status=$?
         case "${match_status}" in 0) : ;; 1) continue ;; *) die "Could not read startup file: ${file}" ;; esac
-        filter_status=0; grep -vFx -- "${line}" "${tmp}/path-current.${record_index}" > "${tmp}/path-updated.${record_index}" || filter_status=$?
+        filter_status=0; grep -vFx -- "${line}" "${stage}/path-current.${record_index}" > "${stage}/path-updated.${record_index}" || filter_status=$?
         [ "${filter_status}" -le 1 ] || die "Could not read startup file: ${file}"
-        cmp -s "${file}" "${tmp}/path-current.${record_index}" || die "Startup file changed or became unreadable: ${file}"
-        cat "${tmp}/path-updated.${record_index}" > "${file}" || die "Could not remove owned PATH entry: ${file}"
-        case "${file}" in
-            */fish/conf.d/"${command_name}".fish)
-                if [ "${path_created}" = 1 ] && [ -f "${file}" ] && [ ! -h "${file}" ] && [ ! -s "${file}" ]; then rm -f "${file}"; fi
-                ;;
-            *) : ;;
-        esac
+        cmp -s "${file}" "${stage}/path-current.${record_index}" || die "Startup file changed or became unreadable: ${file}"
+        profile_rewrite "${file}" "${stage}/path-current.${record_index}" "${stage}/path-updated.${record_index}"
+        [ "${profile_rewrite_status}" = 0 ] || die "Could not remove owned PATH entry: ${file}"
+        printf '%s\n' "${path_created}" > "${rw_dir}/created"
         step PATH "removed this installation's exact entry from ${file}"
     done < "${tmp}/path-removals"
 }
@@ -713,10 +845,32 @@ uninstall() {
         [ -e "${entry}" ] || [ -h "${entry}" ] || continue
         case "${entry}" in "${binary}" | "${state}" | "${lock}") ;; *) shared=1 ;; esac
     done
+    stage=$(mktemp -d "${install_dir%/}/.${command_name}-stage.XXXXXX") || die 'Could not create private staging beside the destination.'
     if [ "${modify_path}" = 0 ]; then note PATH 'left unchanged by --no-modify-path; remove owned startup entries manually if needed'
     elif [ "${shared}" = 1 ]; then note PATH 'left unchanged because other files share this directory'
     else remove_owned_paths; fi
-    rm -f "${binary}"; rm -rf "${state}"
+    uninstall_transition=1
+    if [ "${binary_present}" = 1 ]; then activation_move uninstall-binary "Could not stage the owned executable for removal: ${binary}" "${binary}" "${stage}/previous-binary"; fi
+    activation_move uninstall-state "Could not stage installer ownership for removal: ${state}" "${state}" "${stage}/previous-state"
+    # One assignment command is the commit point for files and PATH together.
+    uninstall_transition=0 rewrite_owned=0
+    # Empty installer-created fish fragments are removed only after PATH commits.
+    record_index=0
+    while [ "${record_index}" -lt "${rewrite_count}" ]; do
+        rw_remove=${stage}/rewrite.${record_index}
+        file=$(cat "${rw_remove}/file")
+        path_created=$(cat "${rw_remove}/created")
+        case "${file}" in
+            */fish/conf.d/"${command_name}".fish)
+                if [ "${path_created}" = 1 ] && [ -f "${file}" ] && [ ! -h "${file}" ] && [ ! -s "${file}" ]; then
+                    current_identity=$(stat -L "${identity_option}" '%d:%i' "${file}")
+                    removal_identity=$(cat "${rw_remove}/identity")
+                    if [ "${current_identity}" = "${removal_identity}" ]; then rm -f "${file}"; fi
+                fi ;;
+            *) : ;;
+        esac
+        record_index=$((record_index + 1))
+    done
     remove_created_dir=${created_dir}
     printf '%s has been uninstalled. Your documents and unrelated files were not touched.\n' "${product_name}"
 }
