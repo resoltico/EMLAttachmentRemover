@@ -1,6 +1,8 @@
 # MIME field regressions
 
-Inputs 01–14 and the disposition corpus retain their existing contracts.
+Inputs 01–14 and the disposition corpus cover body retention, attachment
+classification and supported/refused MIME structures; exact golden bytes define
+successful copies.
 
 | Input | Expected result |
 |---|---|

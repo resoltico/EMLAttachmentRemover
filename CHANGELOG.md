@@ -2,14 +2,15 @@
 
 ## [Unreleased]
 
-- Unix uninstall and rollback protect startup files during failed or interrupted rewrites; unsafe restoration retains private complete recovery images and blocks retry pending review.
-- Software and documentation move from MPL-2.0, and original artwork from proprietary terms, to AGPL-3.0-only; third-party terms remain unchanged.
-- Contributions grant future commercial relicensing rights; separate commercial terms are not yet offered. Release archives include licensing notices and matching vendored source.
-- Slint uses its upstream GPL-3.0-only option; other third-party licenses and notices are preserved.
+## [9.0.0] - 2026-11-15
 
-- CLI installers add explicit backed-up receiptless replacement, missing-executable repair, early conflict diagnosis and transactional PATH ownership; changed or unverifiable files stay protected.
-- Installer cancellation restores verified prior files; incomplete restoration retains a recovery plan. PATH cleanup preserves concurrent value-kind edits.
-- Windows uninstall preserves the executable and ownership receipt when removing its owned PATH entry fails, so cleanup can be retried.
+- Software and documentation move from MPL-2.0, and original artwork from proprietary terms, to AGPL-3.0-only; third-party terms remain unchanged.
+- Contributions grant future commercial relicensing rights; separate commercial terms are not yet offered. Slint uses its GPL-3.0-only option.
+- Release archives include project licensing notices and matching vendored Corresponding Source for offline dependency resolution and builds.
+- CLI installers add explicit backed-up receiptless replacement, missing-executable repair and early conflict diagnosis; changed or unverifiable files stay protected.
+- Installer cancellation restores verified prior files. Unsafe startup-file restoration retains private complete recovery images and blocks retry pending review.
+- Transactional PATH cleanup preserves concurrent edits and Windows value kinds; failed Windows PATH removal preserves the executable and receipt for retry.
+- Builds require Rust 1.100; packaging uses zip 9.6.0, and developer tooling uses the 2026-11-15 fuzz compiler and updated CI installer action.
 
 ## [8.0.0] - 2026-11-09
 
