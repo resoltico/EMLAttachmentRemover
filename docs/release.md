@@ -74,7 +74,7 @@ supported architecture. The app requires a macOS build host and a Darwin target.
 The app bundle is ad hoc signed, followed by deep strict signature verification.
 Each distribution command resolves `HEAD` once, embeds that full revision in both
 binaries for its CPU target, and uses its UTC committer time for archives.
-A conflicting `EML_SOURCE_REVISION` is rejected; empty or absent values are omitted
+Conflicting `EML_SOURCE_REVISION` or `SOURCE_DATE_EPOCH` values are rejected; empty or absent values are omitted
 from ordinary Cargo builds. Supplied revisions must contain 40 or 64 ASCII
 hexadecimal characters. ZIP timestamps round down to two-second precision.
 An extracted Corresponding Source archive has no `.git` directory. For binary

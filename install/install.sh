@@ -109,14 +109,20 @@ check_directory() {
         [ "${checked}" != / ] || break
         checked=${checked%/*}; [ -n "${checked}" ] || checked=/
     done
-    [ -d "${checked}" ] && [ -r "${checked}" ] && [ -x "${checked}" ] || die "Install directory or ancestor is nonregular or inaccessible: ${checked}"
+    if [ -d "${checked}" ] && [ -r "${checked}" ] && [ -x "${checked}" ]; then :; else
+        die "Install directory or ancestor is nonregular or inaccessible: ${checked}"
+    fi
     [ -w "${checked}" ] || die "Install directory or ancestor is not writable: ${checked}" 'Nothing was changed. Check directory permissions before retrying.'
 }
 inventory() {
     check_directory "${install_dir}"
-    [ ! -e "${lock}" ] && [ ! -h "${lock}" ] || die "Installation lock exists: ${lock}" 'Nothing was changed. Inspect the owning process before removing a stale lock.'
+    if [ ! -e "${lock}" ] && [ ! -h "${lock}" ]; then :; else
+        die "Installation lock exists: ${lock}" 'Nothing was changed. Inspect the owning process before removing a stale lock.'
+    fi
     if [ "${modify_path}" = 1 ]; then
-        [ ! -e "${HOME}/.cli-installer-path.lock" ] && [ ! -h "${HOME}/.cli-installer-path.lock" ] || die "PATH lock exists: ${HOME}/.cli-installer-path.lock" 'Nothing was changed. Inspect the owning process before removing a stale lock.'
+        if [ ! -e "${HOME}/.cli-installer-path.lock" ] && [ ! -h "${HOME}/.cli-installer-path.lock" ]; then :; else
+            die "PATH lock exists: ${HOME}/.cli-installer-path.lock" 'Nothing was changed. Inspect the owning process before removing a stale lock.'
+        fi
     fi
     inspect_state
 }
@@ -136,8 +142,12 @@ inspect_state() {
     if [ -e "${state}" ] || [ -h "${state}" ]; then
         validate_state; managed=1
     elif [ -e "${binary}" ] || [ -h "${binary}" ]; then
-        [ -f "${binary}" ] && [ ! -h "${binary}" ] || die "Target is not an ordinary file: ${binary}" 'Nothing was changed. Inspect the target; replacement does not bypass this protection.'
-        [ -r "${binary}" ] && [ -x "${binary}" ] || die "Receiptless target is not a readable executable: ${binary}" 'Nothing was changed. Check its permissions or choose another directory.'
+        if [ -f "${binary}" ] && [ ! -h "${binary}" ]; then :; else
+            die "Target is not an ordinary file: ${binary}" 'Nothing was changed. Inspect the target; replacement does not bypass this protection.'
+        fi
+        if [ -r "${binary}" ] && [ -x "${binary}" ]; then :; else
+            die "Receiptless target is not a readable executable: ${binary}" 'Nothing was changed. Check its permissions or choose another directory.'
+        fi
         if [ "${action}" = uninstall ] || [ "${replace_unmanaged}" = 0 ]; then
             quoted_directory=$(shell_quote "${install_dir}")
             die "Existing executable has no installer receipt: ${binary}" "No program or PATH entry was changed. For explicit backed-up replacement, run this reviewed installer with --replace-unmanaged --install-dir ${quoted_directory}." 'Uninstall cannot remove files or PATH entries it does not own.'
@@ -185,8 +195,12 @@ seal_state() {
     cp "${tmp}/state-manifest" "$1/state.sha256"
 }
 validate_state() {
-    [ -d "${state}" ] && [ ! -h "${state}" ] || die "Installer state is not an ordinary directory: ${state}" 'Nothing was changed. Preserve this state for inspection.'
-    [ -r "${state}" ] && [ -x "${state}" ] || die "Installer state is inaccessible: ${state}" 'Nothing was changed. Check read/search permissions before retrying.'
+    if [ -d "${state}" ] && [ ! -h "${state}" ]; then :; else
+        die "Installer state is not an ordinary directory: ${state}" 'Nothing was changed. Preserve this state for inspection.'
+    fi
+    if [ -r "${state}" ] && [ -x "${state}" ]; then :; else
+        die "Installer state is inaccessible: ${state}" 'Nothing was changed. Check read/search permissions before retrying.'
+    fi
     for member in format owner location binary.sha256 version created-dir path-count state.sha256; do require_regular "${state}/${member}"; done
     format=$(cat "${state}/format"); owner=$(cat "${state}/owner"); location=$(cat "${state}/location")
     if [ "${format}" = 1 ] && [ "${owner}" = "${command_name}" ]; then :; else owned_error; fi
@@ -529,7 +543,9 @@ append_owned_paths() {
             (set -C; : > "${file}") || die "Startup file appeared or could not be created: ${file}" 'Installation activation was cancelled; concurrent content was preserved.'
             path_preparation=${file}
         else
-            [ -f "${file}" ] && [ -r "${file}" ] && [ -w "${file}" ] || die "Startup file became nonregular or inaccessible: ${file}"
+            if [ -f "${file}" ] && [ -r "${file}" ] && [ -w "${file}" ]; then :; else
+                die "Startup file became nonregular or inaccessible: ${file}"
+            fi
             match_status=0; grep -Fxq -- "${line}" "${file}" || match_status=$?
             case "${match_status}" in
                 0) die "Startup entry appeared since planning: ${file}" 'Installation activation was cancelled; concurrent content was preserved.' ;;
