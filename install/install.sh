@@ -360,7 +360,7 @@ profile_restore() {
         dd if="${rr_dir}/observed" of="${rr_dir}/check" bs=1 count="${rr_post_size}" 2>/dev/null || return 0
         cmp -s "${rr_dir}/check" "${rr_dir}/postimage" || return 0
         cp "${rr_dir}/preimage" "${rr_dir}/restore-image" || return 0
-        dd if="${rr_dir}/observed" bs=1 skip="${rr_post_size}" 2>/dev/null >> "${rr_dir}/restore-image" || return 0
+        dd if="${rr_dir}/observed" bs=1 skip="${rr_post_size}" conv=notrunc 2>/dev/null >> "${rr_dir}/restore-image" || return 0
     else
         dd if="${rr_dir}/postimage" of="${rr_dir}/check" bs=1 count="${rr_size}" 2>/dev/null || return 0
         cmp -s "${rr_dir}/check" "${rr_dir}/observed" || return 0
@@ -683,7 +683,7 @@ rollback_paths() {
         # prefixes and partial writes require inspection, never whole-file restore.
         if ! cmp -s "${stage}/rollback-prefix.${record_index}" "${stage}/rollback-check.${record_index}"; then rollback_failed=1; continue; fi
         cat "${before}" > "${stage}/rollback-updated.${record_index}"
-        dd if="${stage}/rollback-current.${record_index}" bs=1 skip="${end}" 2>/dev/null >> "${stage}/rollback-updated.${record_index}" || { rollback_failed=1; continue; }
+        dd if="${stage}/rollback-current.${record_index}" bs=1 skip="${end}" conv=notrunc 2>/dev/null >> "${stage}/rollback-updated.${record_index}" || { rollback_failed=1; continue; }
         profile_rewrite "${file}" "${stage}/rollback-current.${record_index}" "${stage}/rollback-updated.${record_index}"
         if [ "${profile_rewrite_status}" != 0 ]; then rollback_failed=1; continue; fi
         # A completed rollback rewrite is the desired final state, not an effect
