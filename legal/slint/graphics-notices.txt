@@ -9,7 +9,7 @@ https://github.com/slint-ui/slint/blob/372cf0ee5577c3dfec309a45e7b778ba4e81b734/
 Branding guidance:
 https://github.com/slint-ui/slint/blob/372cf0ee5577c3dfec309a45e7b778ba4e81b734/logo/README.md
 These badges are embedded unchanged through the upstream AboutSlint widget.
-The Slint Royalty-free license and its attribution requirement also accompany the app.
+Slint is selected under its GPL-3.0-only option; its license text accompanies the app.
 
 Cupertino widget _arrow_forward.svg (submenu arrow)
 Material Icons <https://github.com/material-icons/material-icons/blob/master/LICENSE>

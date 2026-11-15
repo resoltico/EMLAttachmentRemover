@@ -159,11 +159,19 @@ fn about_and_licenses_restore_focus_selection_and_scroll_on_reopen() {
     }
     c.window().invoke_about();
     about.invoke_licenses();
+    assert_eq!(
+        about.get_copyright().as_str(),
+        "Copyright © 2026 Ervins Strauhmanis."
+    );
     let licenses = c.license_window();
     mock_elapsed_time(Duration::from_millis(5));
     assert_eq!(
         licenses.get_licenses().as_str(),
-        include_str!("../../../../LICENSE")
+        format!(
+            "{}\n{}",
+            include_str!("../../../../PROJECT-NOTICE.md"),
+            include_str!("../../../../LICENSE")
+        )
     );
     let input_item = WindowInner::from_pub(licenses.window())
         .focus_item

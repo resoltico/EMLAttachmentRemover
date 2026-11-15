@@ -1,7 +1,7 @@
-# SPDX-License-Identifier: MPL-2.0
+# SPDX-License-Identifier: AGPL-3.0-only
 # Self-contained user-scope CLI release installer. Keep this file ASCII for PS 5.1.
 [CmdletBinding(PositionalBinding = $false)]
-param([string]$Version, [string]$InstallDir, [switch]$NoModifyPath, [switch]$Uninstall, [switch]$Help)
+param([string]$Version, [string]$InstallDir, [switch]$NoModifyPath, [switch]$Uninstall, [switch]$ReplaceUnmanaged, [switch]$Help)
 
 # BEGIN PRODUCT SETTINGS
 $Product = @{
@@ -19,12 +19,12 @@ $Product = @{
     Checksums = 'SHA256SUMS'
     WindowsFolder = 'EMLAttachmentRemover'
     MinimumMacOS = 15
-    LegalFiles = @('LICENSE', 'THIRD-PARTY-NOTICES.txt')
+    LegalFiles = @('LICENSE', 'THIRD-PARTY-NOTICES.txt', 'PROJECT-NOTICE.md', 'LICENSE-COMMERCIAL.md', 'SOURCE.txt')
 }
 # END PRODUCT SETTINGS
 
 function Invoke-CliInstaller {
-    param([string]$Version, [string]$InstallDir, [bool]$ModifyPath, [bool]$Uninstall, [hashtable]$Product)
+    param([string]$Version, [string]$InstallDir, [bool]$ModifyPath, [bool]$Uninstall, [bool]$ReplaceUnmanaged, [hashtable]$Product)
     $ErrorActionPreference = 'Stop'
     $ProgressPreference = 'SilentlyContinue'
     Set-StrictMode -Version 3
@@ -174,7 +174,12 @@ namespace CliInstaller {
         $bin = Get-ItemOrNull $exe
         $state = Get-ItemOrNull $stateDir
         if (-not $state) {
-            if ($bin) { Exit-Installer "Existing $exe is not managed by this installer. Remove it manually or choose a new install directory." }
+            if ($bin) {
+                [void](Assert-Regular $exe)
+                if (-not $ReplaceUnmanaged -or $Uninstall) {
+                    Exit-Installer "No ownership receipt exists for the regular executable at $exe. Nothing was replaced or removed. To preserve it in a recovery backup and install a verified release, rerun this installer with -ReplaceUnmanaged -InstallDir $(ConvertTo-QuotedCommand $InstallDir). Existing PATH entries will not be adopted."
+                }
+            }
             return $null
         }
         if (-not $state.PSIsContainer -or ($state.Attributes -band [IO.FileAttributes]::ReparsePoint)) { Exit-Installer "Unmanaged installer state; left untouched: $stateDir" }
@@ -186,17 +191,20 @@ namespace CliInstaller {
             $seal = [IO.File]::ReadAllText($sealPath)
             if ($seal -cnotmatch '\A[0-9a-f]{64}(?:\r?\n)?\z' -or (Get-Digest $receiptPath) -cne $seal.TrimEnd("`r", "`n")) { throw 'installer receipt changed or its seal is invalid' }
             $r = [IO.File]::ReadAllText($receiptPath) | ConvertFrom-Json
-            if ($r.Directory -isnot [string] -or -not [string]::Equals($r.Directory, $InstallDir, [StringComparison]::OrdinalIgnoreCase)) { throw 'receipt belongs to another install directory' }
+            if ($r.Directory -isnot [string]) { throw 'receipt has no valid install directory' }
+            if (-not [string]::Equals((Get-AbsoluteDirectory $r.Directory), $InstallDir, [StringComparison]::OrdinalIgnoreCase)) { throw "receipt records a different directory: $($r.Directory). If that original ordinary directory still exists, rerun with -InstallDir $(ConvertTo-QuotedCommand $r.Directory); moved receipts and reparse aliases are not adopted" }
             if ($r.Schema -ne 1 -or $r.Command -cne $Product.Command -or $r.DirectoryCreated -isnot [bool] -or $r.PathWasAbsent -isnot [bool]) { throw 'invalid receipt identity or flags' }
             if ([string]$r.Version -cnotmatch ('\A' + $semver + '\z')) { throw 'invalid receipt version' }
             if ($null -ne $r.PathEntry -and ($r.PathEntry -isnot [string] -or -not (Test-SamePath $r.PathEntry $InstallDir))) { throw 'invalid owned PATH entry' }
-            $expected = @($Product.LegalFiles)
-            if (@($r.Legal).Count -ne $expected.Count) { throw 'invalid legal-file list' }
+            # Existing ownership comes from the sealed receipt inventory;
+            # current settings define the complete NEW package requirements.
+            $expected = @()
             if ([string]$r.BinaryHash -notmatch '\A[0-9a-f]{64}\z') { throw 'invalid binary digest' }
             $known = @('receipt.json', 'receipt.sha256')
-            for ($i = 0; $i -lt $expected.Count; $i++) {
-                if ($r.Legal[$i].Name -cne $expected[$i] -or [string]$r.Legal[$i].Hash -notmatch '\A[0-9a-f]{64}\z') { throw 'invalid legal digest' }
-                $known += 'legal\' + $expected[$i]
+            foreach ($legal in @($r.Legal)) {
+                if ($legal.Name -isnot [string] -or @($Product.LegalFiles) -cnotcontains $legal.Name -or $expected -ccontains $legal.Name -or [string]$legal.Hash -cnotmatch '\A[0-9a-f]{64}\z') { throw 'invalid or duplicate owned legal file' }
+                $expected += $legal.Name
+                $known += Join-Path 'legal' $legal.Name
             }
             foreach ($item in Get-ChildItem -LiteralPath $stateDir -Recurse -Force) {
                 if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'reparse point in installer state' }
@@ -204,18 +212,34 @@ namespace CliInstaller {
                 if ($item.PSIsContainer) { if ($expected.Count -eq 0 -or $relative -cne 'legal') { throw 'unowned state directory' } }
                 elseif ($known -cnotcontains $relative) { throw 'unowned file in installer state' }
             }
-            if (Assert-Regular $exe $AllowMissing) { if ((Get-Digest $exe) -cne $r.BinaryHash) { throw 'managed executable has changed' } }
+            if (Assert-Regular $exe $AllowMissing) { if ((Get-Digest $exe) -cne $r.BinaryHash) { throw "managed executable has changed: $exe" } }
             foreach ($legal in @($r.Legal)) {
                 $path = Join-Path (Join-Path $stateDir 'legal') $legal.Name
-                if (Assert-Regular $path $AllowMissing) { if ((Get-Digest $path) -cne $legal.Hash) { throw 'managed legal file has changed' } }
+                if (Assert-Regular $path) { if ((Get-Digest $path) -cne $legal.Hash) { throw "managed legal file has changed: $path" } }
             }
             if ($null -ne $r.Retired) {
                 if ([string]$r.Retired.Name -cnotmatch ('\A\.' + [regex]::Escape($Product.Command) + '-retired-[0-9a-f]{32}\.exe\z') -or [string]$r.Retired.Hash -notmatch '\A[0-9a-f]{64}\z') { throw 'invalid retired-file ownership' }
                 $path = Join-Path $InstallDir $r.Retired.Name
-                if (Assert-Regular $path $true) { if ((Get-Digest $path) -cne $r.Retired.Hash) { throw 'retired executable has changed' } }
+                if (Assert-Regular $path $true) { if ((Get-Digest $path) -cne $r.Retired.Hash) { throw "retired executable has changed: $path" } }
             }
             return @{ Schema = 1; Directory = $r.Directory; Command = $r.Command; Version = $r.Version; BinaryHash = $r.BinaryHash; Legal = @($r.Legal); DirectoryCreated = $r.DirectoryCreated; PathEntry = $r.PathEntry; PathWasAbsent = $r.PathWasAbsent; Retired = $r.Retired }
-        } catch { Exit-Installer "Installer ownership could not be verified; nothing was replaced or removed: $($_.Exception.Message). Use manual cleanup or a new install directory." }
+        } catch { Exit-Installer "Cannot verify installer state at $stateDir`: $($_.Exception.Message). Nothing was replaced or removed. Preserve and inspect this exact state and its files before retrying; -ReplaceUnmanaged cannot bypass managed or corrupt state." }
+    }
+    function Get-InstallationFingerprint {
+        $directory = Get-ItemOrNull $InstallDir
+        if ($directory -and (-not $directory.PSIsContainer -or ($directory.Attributes -band [IO.FileAttributes]::ReparsePoint))) { Exit-Installer "Install directory changed or is no longer an ordinary directory: $InstallDir. Nothing was replaced." }
+        # Include payload presence and each verified state byte; staging and
+        # unrelated directory contents do not become replacement authority.
+        $parts = [Collections.Generic.List[string]]::new()
+        if (Assert-Regular $exe $true) { $parts.Add('binary:' + (Get-Digest $exe)) }
+        else { $parts.Add('binary:absent') }
+        $state = Get-ItemOrNull $stateDir
+        if ($state) {
+            foreach ($file in @(Get-ChildItem -LiteralPath $stateDir -Recurse -Force | Where-Object { -not $_.PSIsContainer } | Sort-Object FullName)) {
+                $parts.Add($file.FullName.Substring($stateDir.Length) + ':' + (Get-Digest $file.FullName))
+            }
+        } else { $parts.Add('state:absent') }
+        return [string]::Join("`n", $parts.ToArray())
     }
     function Invoke-StateRemoval([string]$Directory, [object[]]$Legal) {
         foreach ($file in $Legal) {
@@ -241,6 +265,7 @@ namespace CliInstaller {
         }
     }
 
+    if ($Uninstall -and $ReplaceUnmanaged) { Exit-Installer '-ReplaceUnmanaged is install-only; it cannot authorize uninstall.' }
     if ($PSVersionTable.PSEdition -eq 'Core' -and -not $IsWindows) { Exit-Installer 'This installer is for Windows; use install.sh on macOS or Linux.' }
     if (-not $InstallDir) { $InstallDir = Join-Path $env:LOCALAPPDATA ('Programs\' + $Product.WindowsFolder) }
     $InstallDir = Get-AbsoluteDirectory $InstallDir
@@ -252,17 +277,36 @@ namespace CliInstaller {
     $existingDir = Get-ItemOrNull $InstallDir
     if ($existingDir -and (-not $existingDir.PSIsContainer -or ($existingDir.Attributes -band [IO.FileAttributes]::ReparsePoint))) { Exit-Installer "The install directory is not an ordinary directory: $InstallDir" }
     if ($Uninstall -and -not $existingDir) { Write-Host "$($Product.Name) is not installed there. Nothing was changed."; return }
+    # Inspect known local conflicts without creating a lock or doing network work.
+    if (Get-ItemOrNull $lockPath) { Exit-Installer "Installer lock exists at $lockPath. Nothing was changed. Wait for its owner, or inspect the exact lock after confirming no installer is running." }
+    if ($existingDir) {
+        foreach ($oldStage in @(Get-ChildItem -LiteralPath $InstallDir -Force -Filter ('.' + $Product.Command + '-stage-*'))) {
+            Exit-Installer "Incomplete earlier transaction evidence remains at $($oldStage.FullName). Nothing was changed. Preserve that directory and inspect recovery.txt, previous-state and any reported executable recovery paths before retrying."
+        }
+    }
+    if ($ModifyPath) {
+        $preflightPathMutex = Enter-PathLock
+        $preflightPathMutex.ReleaseMutex(); $preflightPathMutex.Dispose()
+    }
+    $receipt = Read-Receipt $true
+    $preflight = Get-InstallationFingerprint
+    $unmanaged = -not $receipt -and $null -ne (Get-ItemOrNull $exe)
+    if ($unmanaged -and -not [IO.Directory]::GetParent($InstallDir)) { Exit-Installer "Cannot preserve a recovery backup outside the filesystem-root install directory $InstallDir. Nothing was changed. Preserve the unowned executable manually before choosing a non-root directory." }
+    if ($unmanaged) { Write-Step 'Replace' "Only $exe will be replaced after verification; its original bytes will be retained outside $InstallDir. Existing PATH entries and directory ownership will not be adopted." }
     $created = -not $existingDir
     if ($created) { [void][IO.Directory]::CreateDirectory($InstallDir) }
     $lock = $null
     $tmp = $null
     $stage = $null
     $backupState = $null
+    $preserveStage = $false
+    $unmanagedBackup = $null
     $pathMutex = $null
     try {
         try { $lock = [IO.File]::Open($lockPath, [IO.FileMode]::CreateNew, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None) }
         catch { Exit-Installer "Another installer may be using $InstallDir, or its lock remains after interruption. Nothing was changed. Close it or inspect $lockPath before retrying." }
-        $receipt = Read-Receipt $Uninstall
+        $receipt = Read-Receipt $true
+        if ((Get-InstallationFingerprint) -cne $preflight) { Exit-Installer "Installation changed after preflight at $exe or $stateDir. Nothing was replaced or removed; inspect the current files and rerun." }
         if ($Uninstall) {
             if (-not $receipt) { Write-Host "$($Product.Name) is not managed here. Nothing was changed."; return }
             if ($ModifyPath -and $receipt.PathEntry) { $pathMutex = Enter-PathLock }
@@ -355,14 +399,16 @@ namespace CliInstaller {
         if ($Version -and $newVersion -cne $Version) { Exit-Installer "The downloaded program reports version $newVersion, not $Version. Nothing was installed." }
         Write-Step 'Tested' "$($Product.Command) $newVersion runs on this system"
         # Downloads/probing can take time; validate the state used for mutation.
-        $receipt = Read-Receipt $false
+        $receipt = Read-Receipt $true
+        if ((Get-InstallationFingerprint) -cne $preflight) { Exit-Installer "Installation changed after preflight at $exe or $stateDir. Nothing was replaced or removed; inspect the current files and rerun." }
         Invoke-RetiredRemoval $receipt
         $newReceipt = @{ Schema = 1; Directory = $InstallDir; Command = $Product.Command; Version = $newVersion; BinaryHash = Get-Digest $candidate; Legal = @(); DirectoryCreated = $created; PathEntry = $null; PathWasAbsent = $false; Retired = $null }
         if ($receipt) { $newReceipt.DirectoryCreated = $receipt.DirectoryCreated; $newReceipt.PathEntry = $receipt.PathEntry; $newReceipt.PathWasAbsent = $receipt.PathWasAbsent }
         foreach ($name in @($Product.LegalFiles)) { $newReceipt.Legal += @{ Name = $name; Hash = Get-Digest (Join-Path (Join-Path $nextState 'legal') $name) } }
         $addedPath = $false
         $retired = $null
-        if ($receipt) {
+        $hadBinary = $null -ne (Get-ItemOrNull $exe)
+        if ($receipt -and $hadBinary) {
             $retired = Join-Path $InstallDir ('.' + $Product.Command + '-retired-' + [guid]::NewGuid().ToString('N') + '.exe')
             # Record ownership before activating. If deletion later fails, the
             # running old image is already owned; no in-place receipt rewrite.
@@ -385,14 +431,25 @@ namespace CliInstaller {
                     $addedPath = $true
                 }
             }
+            $receipt = Read-Receipt $true
+            if ((Get-InstallationFingerprint) -cne $preflight) { Exit-Installer "Installation changed after preflight at $exe or $stateDir. Nothing was replaced or removed; inspect the current files and rerun." }
             Write-Receipt $nextState $newReceipt
             if ($receipt) {
-                [IO.File]::Move($exe, $retired)
-                $movedOldBinary = $true
+                if ($hadBinary) {
+                    [IO.File]::Move($exe, $retired)
+                    $movedOldBinary = $true
+                }
                 $previousState = Join-Path $stage 'previous-state'
                 [IO.Directory]::Move($stateDir, $previousState)
                 $backupState = $previousState
                 $movedOldState = $true
+            }
+            if ($unmanaged) {
+                # Move is exclusive: an existing destination is never overwritten.
+                # A sibling outside the bin directory does not inhibit PATH cleanup.
+                $backupPath = Join-Path ([IO.Directory]::GetParent($InstallDir).FullName) ('.' + $Product.Command + '-unmanaged-' + [guid]::NewGuid().ToString('N') + '.exe')
+                [IO.File]::Move($exe, $backupPath)
+                $unmanagedBackup = $backupPath
             }
             [IO.Directory]::Move($nextState, $stateDir)
             $newStateActive = $true
@@ -405,8 +462,15 @@ namespace CliInstaller {
                 if ($newStateActive) { Invoke-StateRemoval $stateDir $newReceipt.Legal }
                 if ($movedOldState) { [IO.Directory]::Move($backupState, $stateDir); $backupState = $null }
                 if ($movedOldBinary) { [IO.File]::Move($retired, $exe) }
+                if ($unmanagedBackup) { [IO.File]::Move($unmanagedBackup, $exe); $unmanagedBackup = $null }
                 if ($addedPath) { Invoke-OwnedPathRemoval $InstallDir $newReceipt.PathWasAbsent }
-            } catch { Exit-Installer "Activation failed: $primary. Rollback also failed: $($_.Exception.Message). Inspect $InstallDir before retrying." }
+            } catch {
+                $preserveStage = $true
+                $recoveryDetail = "Activation failed: $primary. Rollback also failed: $($_.Exception.Message). Prior executable recovery: $retired $unmanagedBackup. Prior state recovery: $backupState. PATH cleanup may be incomplete: $addedPath (exact entry: $InstallDir). Transaction evidence: $stage. Inspect these exact paths before retrying; restoration is incomplete."
+                try { [IO.File]::WriteAllText((Join-Path $stage 'recovery.txt'), $recoveryDetail, $utf8) }
+                catch { Write-Step 'Note' "Could not write recovery.txt; preserve transaction evidence at $stage." }
+                Exit-Installer $recoveryDetail
+            }
             Exit-Installer "Activation failed; the prior installation was restored: $primary"
         }
         if ($retired) {
@@ -417,6 +481,7 @@ namespace CliInstaller {
             try { Invoke-StateRemoval $backupState $receipt.Legal; $backupState = $null }
             catch { Exit-Installer "The new version is active, but previous installer state could not be removed at $backupState`: $($_.Exception.Message)" }
         }
+        if ($unmanagedBackup) { Write-Step 'Recovery' "Original unmanaged executable retained at $unmanagedBackup. Uninstall will not remove it. To recover it, first uninstall the new managed executable, then move this exact backup to $exe." }
         if ($ModifyPath) {
             $onSessionPath = @($env:Path.Split([char]';') | Where-Object { $_ -and (Test-SamePath $_ $InstallDir) }).Count -gt 0
             if (-not $onSessionPath) { $env:Path = $InstallDir + ';' + $env:Path }
@@ -430,7 +495,7 @@ namespace CliInstaller {
     } finally {
         if ($pathMutex) { $pathMutex.ReleaseMutex(); $pathMutex.Dispose() }
         if ($backupState) { Write-Step 'Note' "Previous state remains at $backupState; it was not discarded."; $stage = $null }
-        if ($stage -and (Test-Path -LiteralPath $stage)) { Remove-Item -LiteralPath $stage -Recurse -Force }
+        if ($stage -and -not $preserveStage -and (Test-Path -LiteralPath $stage)) { Remove-Item -LiteralPath $stage -Recurse -Force }
         if ($tmp -and (Test-Path -LiteralPath $tmp)) { Remove-Item -LiteralPath $tmp -Recurse -Force }
         if ($lock) { $lock.Dispose(); Remove-Item -LiteralPath $lockPath -Force }
         if ($created -and $InstallDir -cne $pathRoot -and (Test-Path -LiteralPath $InstallDir) -and @(Get-ChildItem -LiteralPath $InstallDir -Force).Count -eq 0) { Remove-Item -LiteralPath $InstallDir -Force }
@@ -444,16 +509,16 @@ if (-not $PSBoundParameters.ContainsKey('Version')) { $Version = [Environment]::
 if (-not $PSBoundParameters.ContainsKey('InstallDir')) { $InstallDir = [Environment]::GetEnvironmentVariable($Product.Environment + '_INSTALL_DIR') }
 if ($Help) {
     Write-Host "Install, update or uninstall $($Product.Name) for the current Windows user."
-    Write-Host '-Version X.Y.Z  -InstallDir DIR  -NoModifyPath  -Uninstall  -Help'
+    Write-Host '-Version X.Y.Z  -InstallDir DIR  -NoModifyPath  -Uninstall  -ReplaceUnmanaged  -Help'
     $names = @('VERSION', 'INSTALL_DIR', 'NO_MODIFY_PATH=1', 'UNINSTALL=1', 'DOWNLOAD_BASE') | ForEach-Object { $Product.Environment + '_' + $_ }
     Write-Host ('Environment: ' + ($names -join ', '))
     return
 }
 try {
-    Invoke-CliInstaller -Version $Version -InstallDir $InstallDir -Product $Product -ModifyPath (-not ($NoModifyPath -or [Environment]::GetEnvironmentVariable($Product.Environment + '_NO_MODIFY_PATH') -eq '1')) -Uninstall ($Uninstall -or [Environment]::GetEnvironmentVariable($Product.Environment + '_UNINSTALL') -eq '1')
+    Invoke-CliInstaller -Version $Version -InstallDir $InstallDir -Product $Product -ReplaceUnmanaged ([bool]$ReplaceUnmanaged) -ModifyPath (-not ($NoModifyPath -or [Environment]::GetEnvironmentVariable($Product.Environment + '_NO_MODIFY_PATH') -eq '1')) -Uninstall ($Uninstall -or [Environment]::GetEnvironmentVariable($Product.Environment + '_UNINSTALL') -eq '1')
 } catch {
     Write-Host ("Installer failed: " + $_.Exception.Message)
     Write-Host "Help: $($Product.Repository)/blob/main/docs/INSTALL.md"
-    if ($MyInvocation.MyCommand.Path) { exit 1 }
+    if ($MyInvocation.MyCommand -is [Management.Automation.ExternalScriptInfo]) { exit 1 }
     throw 'CLI installation did not complete.'
 }

@@ -1,5 +1,5 @@
 #!/bin/sh
-# SPDX-License-Identifier: MPL-2.0
+# SPDX-License-Identifier: AGPL-3.0-only
 # Self-contained user installer. Shared engine; only this literal block differs.
 # BEGIN PRODUCT SETTINGS
 product_name='EML Attachment Remover'
@@ -15,14 +15,14 @@ x64_token='x86_64'
 arm64_token='aarch64'
 checksum_name='SHA256SUMS'
 minimum_macos=15
-legal_files='LICENSE THIRD-PARTY-NOTICES.txt'
+legal_files='LICENSE THIRD-PARTY-NOTICES.txt PROJECT-NOTICE.md LICENSE-COMMERCIAL.md SOURCE.txt'
 # END PRODUCT SETTINGS
 
 set -eu
 umask 077
 docs_url=${repo_url}/blob/main/docs/INSTALL.md
 marker="# added by the ${product_name} installer"
-tmp='' stage='' locked=0 transition=0 binary_switched=0 state_moved=0 state_switched=0 path_locked=0
+tmp='' stage='' locked=0 transition=0 binary_switched=0 state_moved=0 state_switched=0 path_locked=0 recovery='' path_preparation=''
 
 # Names here come only from this script and its literal settings, never user data.
 setting() { eval "printf '%s' \"\${${env_prefix}_$1-}\""; }
@@ -34,8 +34,9 @@ die() { printf '\n  Error: %s\n' "$1" >&2; shift; for message in "$@"; do printf
 usage() {
     cat <<EOF
 Install, update or uninstall ${product_name} for the current user.
-Usage: install.sh [--version X.Y.Z] [--install-dir DIR] [--no-modify-path] [--uninstall]
+Usage: install.sh [--version X.Y.Z] [--install-dir DIR] [--no-modify-path] [--replace-unmanaged] [--uninstall]
 Defaults: \$XDG_BIN_HOME or ~/.local/bin; no administrator access required.
+--replace-unmanaged explicitly backs up and replaces only a receiptless regular executable.
 --no-modify-path leaves shell startup files untouched, including on uninstall.
 Environment: ${env_prefix}_VERSION, ${env_prefix}_INSTALL_DIR,
 ${env_prefix}_NO_MODIFY_PATH=1, ${env_prefix}_DOWNLOAD_BASE (HTTPS mirror or local directory).
@@ -62,7 +63,7 @@ parse_args() {
     version=$(setting VERSION); install_dir=$(setting INSTALL_DIR)
     version_requested=0
     [ -z "${version}" ] || version_requested=1
-    download_base=$(setting DOWNLOAD_BASE); modify_path=1; action=install
+    download_base=$(setting DOWNLOAD_BASE); modify_path=1; action=install; replace_unmanaged=0
     no_modify=$(setting NO_MODIFY_PATH)
     [ "${no_modify}" != 1 ] || modify_path=0
     while [ "$#" -gt 0 ]; do
@@ -72,12 +73,14 @@ parse_args() {
             --install-dir) if [ "$#" -ge 2 ] && [ -n "$2" ]; then :; else die '--install-dir needs a nonempty directory.'; fi; install_dir=$2; shift ;;
             --install-dir=*) install_dir=${1#*=}; [ -n "${install_dir}" ] || die '--install-dir needs a nonempty directory.' ;;
             --no-modify-path) modify_path=0 ;;
+            --replace-unmanaged) replace_unmanaged=1 ;;
             --uninstall) action=uninstall ;;
             -h | --help) usage; exit 0 ;;
             *) die "Unknown option: $1" 'Run with --help for options.' ;;
         esac
         shift
     done
+    if [ "${action}" = uninstall ] && [ "${replace_unmanaged}" = 1 ]; then die '--replace-unmanaged is install-only.'; fi
     version=${version#v}
     if [ "${version_requested}" = 1 ]; then stable_version "${version}"; fi
     [ -n "${HOME:-}" ] || die 'HOME is not set.'
@@ -91,19 +94,78 @@ parse_args() {
 }
 
 sha256_of() {
-    if command -v sha256sum >/dev/null 2>&1; then digest_output=$(sha256sum < "$1") || die 'Could not read or hash the selected file.'
-    elif command -v shasum >/dev/null 2>&1; then digest_output=$(shasum -a 256 < "$1") || die 'Could not read or hash the selected file.'
-    elif command -v openssl >/dev/null 2>&1; then digest_output=$(openssl dgst -sha256 < "$1") || die 'Could not read or hash the selected file.'
+    if command -v sha256sum >/dev/null 2>&1; then digest_output=$(sha256sum < "$1") || die "Could not read or hash: $1"
+    elif command -v shasum >/dev/null 2>&1; then digest_output=$(shasum -a 256 < "$1") || die "Could not read or hash: $1"
+    elif command -v openssl >/dev/null 2>&1; then digest_output=$(openssl dgst -sha256 < "$1") || die "Could not read or hash: $1"
     else die 'A SHA-256 tool (sha256sum, shasum or openssl) is required.'; fi
-    printf '%s\n' "${digest_output}" | awk '{ if (length($1)==64) print tolower($1); else print tolower($NF) }'
+    printf '%s\n' "${digest_output}" | awk '{ if (length($1)==64) print tolower($1); else print tolower($NF) }' || return 1
 }
-require_regular() { if [ -f "$1" ] && [ ! -h "$1" ]; then :; else owned_error; fi; }
-owned_error() { die "Existing files in ${install_dir} have missing, changed or invalid installer ownership; nothing was replaced or removed." 'Review and remove the old/manual installation yourself, or use a new directory.'; }
+require_regular() { if [ -f "$1" ] && [ ! -h "$1" ] && [ -r "$1" ]; then :; else die "Installer-owned file is missing, nonregular or unreadable: $1" 'No program was replaced or removed. Inspect this exact file; do not delete the shared directory.'; fi; }
+owned_error() { die "Cannot verify installer receipt: ${state}" 'Receipt contents, manifest or owned artifacts are incomplete or changed. No program was replaced or removed.' 'Preserve this state for inspection, or choose another install directory.'; }
+# Inspect each existing ancestor: permission denial must never masquerade as absence.
+check_directory() {
+    checked=$1
+    while [ ! -e "${checked}" ] && [ ! -h "${checked}" ]; do
+        [ "${checked}" != / ] || break
+        checked=${checked%/*}; [ -n "${checked}" ] || checked=/
+    done
+    [ -d "${checked}" ] && [ -r "${checked}" ] && [ -x "${checked}" ] || die "Install directory or ancestor is nonregular or inaccessible: ${checked}"
+    [ -w "${checked}" ] || die "Install directory or ancestor is not writable: ${checked}" 'Nothing was changed. Check directory permissions before retrying.'
+}
+inventory() {
+    check_directory "${install_dir}"
+    [ ! -e "${lock}" ] && [ ! -h "${lock}" ] || die "Installation lock exists: ${lock}" 'Nothing was changed. Inspect the owning process before removing a stale lock.'
+    if [ "${modify_path}" = 1 ]; then
+        [ ! -e "${HOME}/.cli-installer-path.lock" ] && [ ! -h "${HOME}/.cli-installer-path.lock" ] || die "PATH lock exists: ${HOME}/.cli-installer-path.lock" 'Nothing was changed. Inspect the owning process before removing a stale lock.'
+    fi
+    inspect_state
+}
+inspect_state() {
+    managed=0; binary_present=0; old_version=''; record_count=0; created_dir=0; unmanaged=0
+    for retained in "${install_dir%/}/.${command_name}-stage."*; do
+        [ "${retained}" != "${stage}" ] || continue
+        if [ -n "${stage}" ] && [ -d "${stage}" ] && [ -d "${retained}" ]; then
+            retained_identity=$(stat -L "${identity_option}" '%d:%i' "${retained}") || die "Could not identify staging path: ${retained}"
+            stage_identity=$(stat -L "${identity_option}" '%d:%i' "${stage}") || die "Could not identify active staging: ${stage}"
+            [ "${retained_identity}" != "${stage_identity}" ] || continue
+        fi
+        if [ -e "${retained}" ] || [ -h "${retained}" ]; then
+            die "Incomplete prior transaction requires inspection: ${retained}" 'Nothing was changed. Preserve previous-binary/previous-state and inspect the recovery files before retrying.'
+        fi
+    done
+    if [ -e "${state}" ] || [ -h "${state}" ]; then
+        validate_state; managed=1
+    elif [ -e "${binary}" ] || [ -h "${binary}" ]; then
+        [ -f "${binary}" ] && [ ! -h "${binary}" ] || die "Target is not an ordinary file: ${binary}" 'Nothing was changed. Inspect the target; replacement does not bypass this protection.'
+        [ -r "${binary}" ] && [ -x "${binary}" ] || die "Receiptless target is not a readable executable: ${binary}" 'Nothing was changed. Check its permissions or choose another directory.'
+        if [ "${action}" = uninstall ] || [ "${replace_unmanaged}" = 0 ]; then
+            quoted_directory=$(shell_quote "${install_dir}")
+            die "Existing executable has no installer receipt: ${binary}" "No program or PATH entry was changed. For explicit backed-up replacement, run this reviewed installer with --replace-unmanaged --install-dir ${quoted_directory}." 'Uninstall cannot remove files or PATH entries it does not own.'
+        fi
+        unmanaged=1; binary_present=1
+    fi
+    fingerprint="${managed}:${unmanaged}:${binary_present}"
+    if [ "${binary_present}" = 1 ]; then
+        inventory_hash=$(sha256_of "${binary}")
+        inventory_identity=$(stat -L "${identity_option}" '%d:%i' "${binary}") || die "Could not identify target: ${binary}"
+        fingerprint="${fingerprint}:${inventory_hash}:${inventory_identity}"
+    fi
+    if [ "${managed}" = 1 ]; then
+        inventory_state=$(sha256_of "${state}/state.sha256")
+        fingerprint="${fingerprint}:${inventory_state}"
+    fi
+    if [ -d "${install_dir}" ]; then
+        inventory_directory=$(cd "${install_dir}" && pwd -P) || die "Could not resolve install directory: ${install_dir}"
+        inventory_identity=$(stat -L "${identity_option}" '%d:%i' "${install_dir}/.") || die "Could not identify install directory: ${install_dir}"
+        if [ "${unmanaged}" = 1 ] && [ "${inventory_directory}" = / ]; then die 'Cannot preserve an unmanaged recovery backup outside a filesystem-root install directory.' 'Nothing was changed. Preserve the executable manually and choose a non-root directory.'; fi
+        fingerprint="${fingerprint}:${inventory_directory}:${inventory_identity}"
+    fi
+}
 
 # Receipt files are data, never shell code. Its manifest covers every owned file.
 state_files() {
     printf '%s\n' format owner location binary.sha256 version created-dir path-count
-    for legal in ${legal_files}; do printf 'legal/%s\n' "${legal}"; done
+    for legal in ${manifest_legal_files}; do printf 'legal/%s\n' "${legal}"; done
     record_index=0
     while [ "${record_index}" -lt "${record_count}" ]; do
         printf 'paths/%s.file\npaths/%s.line\npaths/%s.created\n' "${record_index}" "${record_index}" "${record_index}"
@@ -118,18 +180,37 @@ manifest_for() {
     done < "${tmp}/state-files"
 }
 seal_state() {
+    manifest_legal_files=${legal_files}
     manifest_for "$1" > "${tmp}/state-manifest"
     cp "${tmp}/state-manifest" "$1/state.sha256"
 }
 validate_state() {
-    if [ -d "${state}" ] && [ ! -h "${state}" ]; then :; else owned_error; fi
+    [ -d "${state}" ] && [ ! -h "${state}" ] || die "Installer state is not an ordinary directory: ${state}" 'Nothing was changed. Preserve this state for inspection.'
+    [ -r "${state}" ] && [ -x "${state}" ] || die "Installer state is inaccessible: ${state}" 'Nothing was changed. Check read/search permissions before retrying.'
     for member in format owner location binary.sha256 version created-dir path-count state.sha256; do require_regular "${state}/${member}"; done
     format=$(cat "${state}/format"); owner=$(cat "${state}/owner"); location=$(cat "${state}/location")
-    if [ "${format}" = 1 ] && [ "${owner}" = "${command_name}" ] && [ "${location}" = "${install_dir}" ]; then :; else owned_error; fi
+    if [ "${format}" = 1 ] && [ "${owner}" = "${command_name}" ]; then :; else owned_error; fi
+    case "${location}" in /*) : ;; *) owned_error ;; esac
+    require_line_path "${location}"
+    if [ "${location}" != "${install_dir}" ]; then
+        requested_physical=$(cd "${install_dir}" && pwd -P) || owned_error
+        quoted_location=$(shell_quote "${location}")
+        recorded_physical=$(cd "${location}" && pwd -P) || die "Receipt location is missing or inaccessible: ${location}" "Retry with the recorded directory after inspection: --install-dir ${quoted_location}"
+        [ "${requested_physical}" = "${recorded_physical}" ] || die "Receipt location differs from requested directory: ${location}" "No program was changed. Use the recorded directory: --install-dir ${quoted_location}"
+    fi
     created_dir=$(cat "${state}/created-dir"); case "${created_dir}" in 0 | 1) ;; *) owned_error ;; esac
     record_count=$(cat "${state}/path-count")
     printf '%s\n' "${record_count}" | grep -Eq '^(0|[1-9][0-9]*)$' || owned_error
     [ "${record_count}" -le 100 ] || owned_error
+    # A receipt owns its verified inventory, not files newly required by a
+    # subsequent package. Preserve settings order for the sealed manifest.
+    manifest_legal_files=''
+    for legal in ${legal_files}; do
+        if [ -e "${state}/legal/${legal}" ] || [ -h "${state}/legal/${legal}" ]; then
+            require_regular "${state}/legal/${legal}"
+            manifest_legal_files="${manifest_legal_files} ${legal}"
+        fi
+    done
     state_files > "${tmp}/expected-files"
     printf '%s\n' state.sha256 >> "${tmp}/expected-files"
     LC_ALL=C sort "${tmp}/expected-files" > "${tmp}/expected-sorted"
@@ -149,22 +230,38 @@ validate_state() {
         case "${path_created}" in 0 | 1) : ;; *) owned_error ;; esac
         record_index=$((record_index + 1))
     done
-    require_regular "${binary}"
+    binary_present=0
+    if [ -e "${binary}" ] || [ -h "${binary}" ]; then
+        require_regular "${binary}"
+        binary_present=1
+    fi
     expected_binary=$(cat "${state}/binary.sha256")
-    actual_binary=$(sha256_of "${binary}")
-    [ "${actual_binary}" = "${expected_binary}" ] || owned_error
+    printf '%s\n' "${expected_binary}" | grep -Eq '^[0-9a-f]{64}$' || owned_error
+    if [ "${binary_present}" = 1 ]; then
+        actual_binary=$(sha256_of "${binary}")
+        [ "${actual_binary}" = "${expected_binary}" ] || die "Managed executable was modified: ${binary}" "Receipt: ${state}. Nothing was changed. Preserve your changes or choose another directory; --replace-unmanaged does not apply."
+    fi
     old_version=$(cat "${state}/version")
 }
 
 rollback() {
     rollback_failed=0
-    if [ "${state_switched}" = 1 ] && [ -d "${state}" ]; then mv "${state}" "${stage}/failed-state" || rollback_failed=1; fi
+    if [ "${state_switched}" = 1 ] && [ -d "${state}" ]; then
+        if mv "${state}" "${stage}/failed-state"; then new_state=${stage}/failed-state; else rollback_failed=1; new_state=${state}; fi
+    fi
+    rollback_paths
     if [ "${binary_switched}" = 1 ]; then
-        if [ "${managed}" = 1 ]; then mv -f "${stage}/previous-binary" "${binary}" || rollback_failed=1
+        if [ "${binary_present}" = 1 ]; then
+            if [ "${unmanaged}" = 1 ]; then previous_binary=${recovery}/${command_name}; else previous_binary=${stage}/previous-binary; fi
+            cp -p "${previous_binary}" "${binary}" || rollback_failed=1
         else rm -f "${binary}" || rollback_failed=1; fi
     fi
     if [ "${state_moved}" = 1 ]; then mv "${stage}/previous-state" "${state}" || rollback_failed=1; fi
     transition=0
+    if [ -n "${path_preparation}" ]; then
+        printf 'Startup preparation could not be completed; inspect %s and the retained transaction evidence.\n' "${path_preparation}" >&2
+        rollback_failed=1
+    fi
     if [ "${rollback_failed}" = 1 ]; then
         printf 'Recovery files remain at %s; restoration was incomplete.\n' "${stage}" >&2
         stage=''
@@ -188,10 +285,14 @@ acquire() {
     mkdir "${lock}" 2>/dev/null || die "Installation is already locked, or the lock path exists: ${lock}" 'No retries are performed; inspect any stale lock before removing it manually.'
     locked=1
     [ "${created_dir}" = 0 ] || remove_created_dir=1
-    managed=0; old_version=''; record_count=0
-    if [ -e "${binary}" ] || [ -h "${binary}" ] || [ -e "${state}" ] || [ -h "${state}" ]; then
-        validate_state
-        managed=1
+    acquired_created=${created_dir}
+    inspect_state
+    # A new directory is an expected result of this transaction, not a preflight conflict.
+    if [ "${acquired_created}" = 0 ]; then
+        [ "${fingerprint}" = "${preflight}" ] || die "Installation changed since preflight: ${binary}" 'Nothing was replaced. Inspect the current target and retry.'
+    else
+        [ "${managed}:${unmanaged}:${binary_present}" = '0:0:0' ] || die "Installation appeared since preflight: ${binary}" 'Nothing was replaced. Inspect and retry.'
+        created_dir=1
     fi
 }
 
@@ -241,24 +342,29 @@ fetch() {
         *) die 'The release mirror must be HTTPS or an absolute local directory.' ;;
     esac
 }
+candidate_error() {
+    for stream in out err; do
+        if [ -s "${tmp}/version.${stream}" ]; then
+            printf 'Candidate %s (first 4096 bytes):\n' "${stream}" >&2
+            head -c 4096 "${tmp}/version.${stream}" >&2; printf '\n' >&2
+        fi
+    done
+    die "$1"
+}
 reported_version() {
     if "$1" --version > "${tmp}/version.out" 2> "${tmp}/version.err"; then :
     else
-        if [ -s "${tmp}/version.err" ]; then
-            printf 'Program diagnostic:\n' >&2
-            head -c 4096 "${tmp}/version.err" >&2
-            printf '\n' >&2
-        fi
-        die 'The verified program could not run. Nothing was installed.'
+        execution_status=$?
+        candidate_error "The verified program could not run (exit ${execution_status}). Nothing was installed."
     fi
     identity_lines=$(awk 'END {print NR}' "${tmp}/version.out")
-    [ "${identity_lines}" = 1 ] || die 'The program returned an invalid version identity.'
+    [ "${identity_lines}" = 1 ] || candidate_error 'The verified program returned an invalid version identity. Nothing was installed.'
     identity=$(cat "${tmp}/version.out")
     carriage_return=$(printf '\r')
-    case "${identity}" in *"${carriage_return}"*) die 'The program returned an invalid version identity.' ;; *) : ;; esac
+    case "${identity}" in *"${carriage_return}"*) candidate_error 'The verified program returned an invalid version identity. Nothing was installed.' ;; *) : ;; esac
     numeric='(0|[1-9][0-9]*)'; pre='(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)'
     semver="${numeric}\.${numeric}\.${numeric}(-${pre}(\.${pre})*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?"
-    printf '%s\n' "${identity}" | grep -Eq "^${command_name} ${semver}( \([^()]+\))?$" || die 'The program returned an invalid version identity.'
+    printf '%s\n' "${identity}" | grep -Eq "^${command_name} ${semver}( \([^()]+\))?$" || candidate_error 'The verified program returned an invalid version identity. Nothing was installed.'
     identity=${identity#"${command_name} "}; printf '%s\n' "${identity%% *}"
 }
 download_and_verify() {
@@ -363,7 +469,14 @@ plan_path() {
         while [ "${record_index}" -lt "${record_count}" ]; do
             previous_file=$(cat "${new_state}/paths/${record_index}.file")
             previous_line=$(cat "${new_state}/paths/${record_index}.line")
-            if [ "${previous_file}" = "${file}" ] && [ "${previous_line}" = "${line}" ]; then known=1; fi
+            if [ "${previous_line}" = "${line}" ]; then
+                if [ "${previous_file}" = "${file}" ]; then known=1
+                elif [ -f "${previous_file}" ] && [ -f "${file}" ]; then
+                    previous_identity=$(stat -L "${identity_option}" '%d:%i' "${previous_file}")
+                    planned_identity=$(stat -L "${identity_option}" '%d:%i' "${file}")
+                    if [ "${previous_identity}" = "${planned_identity}" ]; then known=1; fi
+                fi
+            fi
             record_index=$((record_index + 1))
         done
         if [ "${known}" = 1 ]; then
@@ -381,33 +494,73 @@ plan_path() {
         fi
     done < "${tmp}/startup-files"
 }
-append_owned_paths() {
+rollback_paths() {
+    [ -f "${stage}/applied-paths" ] || return 0
     while IFS= read -r record_index; do
-        file=$(cat "${state}/paths/${record_index}.file"); line=$(cat "${state}/paths/${record_index}.line")
-        path_created=$(cat "${state}/paths/${record_index}.created")
+        file=$(cat "${new_state}/paths/${record_index}.file")
+        path_created=$(cat "${new_state}/paths/${record_index}.created")
+        if [ ! -e "${file}" ] && [ ! -h "${file}" ]; then continue; fi
+        if [ ! -f "${file}" ] || [ ! -r "${file}" ] || [ ! -w "${file}" ]; then rollback_failed=1; continue; fi
+        current_identity=$(stat -L "${identity_option}" '%d:%i' "${file}") || { rollback_failed=1; continue; }
+        expected_identity=$(cat "${stage}/path-identity.${record_index}") || { rollback_failed=1; continue; }
+        if [ "${current_identity}" != "${expected_identity}" ]; then rollback_failed=1; continue; fi
+        before=${stage}/path-before.${record_index}; added=${stage}/path-added.${record_index}
+        before_size=$(wc -c < "${before}" | tr -d ' '); added_size=$(wc -c < "${added}" | tr -d ' ')
+        end=$((before_size + added_size))
+        cat "${file}" > "${tmp}/rollback-current" || { rollback_failed=1; continue; }
+        cat "${before}" "${added}" > "${tmp}/rollback-prefix"
+        dd if="${tmp}/rollback-current" of="${tmp}/rollback-check" bs=1 count="${end}" 2>/dev/null || { rollback_failed=1; continue; }
+        # Only this exact byte range can be attributed to our append. Changed
+        # prefixes and partial writes require inspection, never whole-file restore.
+        if ! cmp -s "${tmp}/rollback-prefix" "${tmp}/rollback-check"; then rollback_failed=1; continue; fi
+        cat "${before}" > "${tmp}/rollback-updated"
+        dd if="${tmp}/rollback-current" bs=1 skip="${end}" 2>/dev/null >> "${tmp}/rollback-updated" || { rollback_failed=1; continue; }
+        if ! cmp -s "${file}" "${tmp}/rollback-current" || ! cat "${tmp}/rollback-updated" > "${file}"; then rollback_failed=1; continue; fi
+        if [ "${path_created}" = 1 ] && [ ! -s "${file}" ]; then rm -f "${file}" || rollback_failed=1; fi
+    done < "${stage}/applied-paths"
+}
+append_owned_paths() {
+    : > "${stage}/applied-paths"
+    while IFS= read -r record_index; do
+        file=$(cat "${new_state}/paths/${record_index}.file"); line=$(cat "${new_state}/paths/${record_index}.line")
+        path_created=$(cat "${new_state}/paths/${record_index}.created")
         if [ "${path_created}" = 1 ]; then
-            # Exclusive creation makes the receipt's creation claim true at
-            # the write boundary, rather than adopting a file created later.
-            (set -C; printf '%s\n' "${line}" > "${file}") || die "Program installed, but startup creation failed: ${file}"
-            path_ready=1; step PATH "created an owned startup entry in ${file}"
-            continue
+            # A failed exclusive create never claims a concurrent user's file.
+            (set -C; : > "${file}") || die "Startup file appeared or could not be created: ${file}" 'Installation activation was cancelled; concurrent content was preserved.'
+            path_preparation=${file}
+        else
+            [ -f "${file}" ] && [ -r "${file}" ] && [ -w "${file}" ] || die "Startup file became nonregular or inaccessible: ${file}"
+            match_status=0; grep -Fxq -- "${line}" "${file}" || match_status=$?
+            case "${match_status}" in
+                0) die "Startup entry appeared since planning: ${file}" 'Installation activation was cancelled; concurrent content was preserved.' ;;
+                1) : ;;
+                *) die "Could not recheck startup file before PATH append: ${file}" 'Installation activation was cancelled; existing content was preserved.' ;;
+            esac
         fi
+        stat -L "${identity_option}" '%d:%i' "${file}" > "${stage}/path-identity.${record_index}"
+        cat "${file}" > "${stage}/path-before.${record_index}" || die "Could not snapshot startup entry boundary: ${file}"
         last_byte_lines=1
         if [ -s "${file}" ]; then last_byte_lines=$(tail -c 1 "${file}" | wc -l | tr -d ' '); fi
-        if [ "${last_byte_lines}" = 0 ]; then
-            printf '\n' >> "${file}" || die "Program installed, but could not update PATH in ${file}."
-        fi
-        printf '%s\n' "${line}" >> "${file}" || die "Program installed, but could not update PATH in ${file}."
+        : > "${stage}/path-added.${record_index}"
+        if [ "${last_byte_lines}" = 0 ]; then printf '\n' >> "${stage}/path-added.${record_index}"; fi
+        printf '%s\n' "${line}" >> "${stage}/path-added.${record_index}"
+        printf '%s\n' "${record_index}" >> "${stage}/applied-paths"
+        path_preparation=''
+        cmp -s "${file}" "${stage}/path-before.${record_index}" || die "Startup file changed before PATH append: ${file}"
+        cat "${stage}/path-added.${record_index}" >> "${file}" || die "Could not update PATH in ${file}; inspect retained transaction evidence."
         path_ready=1; step PATH "added an owned startup entry in ${file}"
     done < "${stage}/path-actions"
 }
 install() {
     acquire
+    locked_inventory=${fingerprint}
+    # Preserve the recorded spelling used by existing exact PATH records.
+    if [ "${managed}" = 1 ]; then install_dir=${location}; fi
     acquire_path_lock
     stage=$(mktemp -d "${install_dir%/}/.${command_name}-stage.XXXXXX") || die 'Could not create private staging beside the destination.'
     new_state=${stage}/new-state; mkdir -p "${new_state}/legal" "${new_state}/paths"
     if [ "${managed}" = 1 ]; then
-        cp -p "${binary}" "${stage}/previous-binary"
+        if [ "${binary_present}" = 1 ]; then cp -p "${binary}" "${stage}/previous-binary"; fi
         record_index=0
         while [ "${record_index}" -lt "${record_count}" ]; do
             cp "${state}/paths/${record_index}.file" "${new_state}/paths/${record_index}.file"
@@ -415,6 +568,12 @@ install() {
             cp "${state}/paths/${record_index}.created" "${new_state}/paths/${record_index}.created"
             record_index=$((record_index + 1))
         done
+    fi
+    if [ "${unmanaged}" = 1 ]; then
+        note Replacing "Only ${binary} will be replaced; existing PATH entries remain unowned."
+        recovery=$(mktemp -d "${inventory_directory%/*}/.${command_name}-recovery.XXXXXX") || die 'Could not exclusively create a recovery directory outside the install directory.'
+        cp -p "${binary}" "${recovery}/${command_name}" || die "Could not preserve the unmanaged executable: ${binary}"
+        note Recovery "Original executable retained at ${recovery}/${command_name}; uninstall will not delete it."
     fi
     cp "${candidate}" "${stage}/new-binary"; chmod 755 "${stage}/new-binary"
     for legal in ${legal_files}; do cp "${tmp}/extract/${legal}" "${new_state}/legal/${legal}"; done
@@ -424,13 +583,17 @@ install() {
     printf '%s\n' "${created_dir}" > "${new_state}/created-dir"
     plan_path
     printf '%s\n' "${record_count}" > "${new_state}/path-count"; seal_state "${new_state}"
+    (
+        inspect_state
+        [ "${fingerprint}" = "${locked_inventory}" ] || die "Installation changed before activation: ${binary}" 'Nothing was replaced. Inspect the current target and retry.'
+    )
     transition=1
-    if [ "${managed}" = 1 ]; then state_moved=1; mv "${state}" "${stage}/previous-state" || die 'Could not stage the previous installer state.'; fi
-    binary_switched=1; mv -f "${stage}/new-binary" "${binary}" || die 'Could not activate the program.'
-    state_switched=1; mv "${new_state}" "${state}" || die 'Could not activate installer ownership.'
+    append_owned_paths
+    if [ "${managed}" = 1 ]; then mv "${state}" "${stage}/previous-state" || die 'Could not stage the previous installer state.'; state_moved=1; fi
+    mv -f "${stage}/new-binary" "${binary}" || die 'Could not activate the program.'; binary_switched=1
+    mv "${new_state}" "${state}" || die 'Could not activate installer ownership.'; state_switched=1
     transition=0
     remove_created_dir=0
-    append_owned_paths
     if [ -n "${old_version}" ] && [ "${old_version}" = "${new_version}" ]; then step Installed "${binary} (reinstalled ${new_version})"
     elif [ -n "${old_version}" ]; then step Installed "${binary} (updated from ${old_version})"
     else step Installed "${binary}"; fi
@@ -496,10 +659,15 @@ remove_owned_paths() {
     done < "${tmp}/path-removals"
 }
 uninstall() {
+    inventory; preflight=${fingerprint}
     if [ ! -d "${install_dir}" ]; then printf '%s is not installed in %s. Nothing was changed.\n' "${product_name}" "${install_dir}"; return; fi
     acquire
     acquire_path_lock
     if [ "${managed}" = 0 ]; then printf '%s is not installed in %s. Nothing was changed.\n' "${product_name}" "${install_dir}"; return; fi
+    install_dir=${location}
+    binary=${install_dir%/}/${command_name}
+    state=${install_dir%/}/.${command_name}-install
+    lock=${install_dir%/}/.${command_name}-install.lock
     shared=0
     for entry in "${install_dir}"/* "${install_dir}"/.[!.]* "${install_dir}"/..?*; do
         [ -e "${entry}" ] || [ -h "${entry}" ] || continue
@@ -515,6 +683,8 @@ uninstall() {
 
 main() {
     validate_settings
+    identity_kernel=$(uname -s)
+    case "${identity_kernel}" in Darwin) identity_option=-f ;; *) identity_option=-c ;; esac
     parse_args "$@"
     tmp=$(mktemp -d "${TMPDIR:-/tmp}/${command_name}-install.XXXXXX") || die 'Could not create a temporary directory.'
     trap cleanup EXIT
@@ -523,6 +693,8 @@ main() {
     if [ "${action}" = uninstall ]; then uninstall; return; fi
     printf '\n%s installer\n\n' "${product_name}"
     detect_platform; step System "${system}"
+    inventory; preflight=${fingerprint}
+    if [ "${unmanaged}" = 1 ]; then note Replacing "Explicit replacement selected for ${binary}; the original will be retained outside the install directory."; fi
     download_and_verify
     install
 }

@@ -236,9 +236,19 @@ jobs:
             ~/.cargo/git
             target
           key: ${{ steps.cache.outputs.cache-primary-key }}
+  source:
+    name: Verify Corresponding Source archive
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Archive and independently verify Corresponding Source
+        run: cargo xtask source --verify --out "$RUNNER_TEMP/source-dist"
   ci-ok:
     if: always()
-    needs: [lint, test, app, install]
+    needs: [lint, test, app, install, source]
     runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:

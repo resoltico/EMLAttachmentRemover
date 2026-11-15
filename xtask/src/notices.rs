@@ -3,21 +3,6 @@ use std::{fs, io::Write, path::Path, process::Command};
 
 pub(crate) fn write(app: bool, target: &str, out: &Path) -> Result<()> {
     tool("cargo-about", "cargo_about")?;
-    // The GUI's shipped normal/build graph uses the royalty-free Slint license.
-    // cargo-about cannot supply that LicenseRef text; the upstream supplement is mandatory.
-    let supplement = if app {
-        let text = fs::read("legal/slint/LicenseRef-Slint-Royalty-free-2.0.md")
-            .map_err(|error| format!("Required Slint license supplement legal/slint/LicenseRef-Slint-Royalty-free-2.0.md: {error}"))?;
-        if !text
-            .windows(b"Slint Royalty-free".len())
-            .any(|s| s == b"Slint Royalty-free")
-        {
-            return Err("Slint license supplement is empty or invalid".into());
-        }
-        Some(text)
-    } else {
-        None
-    };
     let package = if app { "eml-gui" } else { "eml-cli" };
     let mut command = Command::new("cargo");
     command
@@ -49,9 +34,6 @@ pub(crate) fn write(app: bool, target: &str, out: &Path) -> Result<()> {
         return Err("cargo-about produced no notices".into());
     }
     let mut texts = vec![result.stdout];
-    if let Some(text) = supplement {
-        texts.push(text);
-    }
     if app {
         // These upstream attribution files are absent from the registry packages
         // or cargo-about's selected text. Keep their complete terms with the app.

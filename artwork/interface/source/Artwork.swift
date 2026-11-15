@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Ervins Strauhmanis.
-// SPDX-License-Identifier: LicenseRef-Proprietary-Artwork
-// Original geometric artwork. See ../GEOMETRY.md and the proprietary terms in the root LICENSE.
+// SPDX-License-Identifier: AGPL-3.0-only
+// Original geometric artwork. See ../GEOMETRY.md and AGPL-3.0-only terms in the root LICENSE.
 import AppKit
 
 /// Status artwork: one unchanging envelope with a same-size status badge in its corner.

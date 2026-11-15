@@ -1,8 +1,8 @@
 # Split-paperclip construction
 
 The SVG layers in `EML.icon/Assets` are the editable production source. The
-coordinate construction below documents their geometry under the proprietary
-terms in the root LICENSE. It is reference artwork source, not a supported build
+coordinate construction below documents their geometry under AGPL-3.0-only
+in the root LICENSE. It is reference artwork source, not a supported build
 command or test. The application and its tooling require no Python environment;
 exact regeneration with NumPy/Shapely is not guaranteed.
 

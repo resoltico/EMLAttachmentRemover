@@ -40,7 +40,7 @@ The Icon Composer package and its SVG layers define the editable design.
 
 `../crates/eml-gui/ui/eml-icon.png` embeds the unchanged 1024-pixel PNG payload
 (`ic10`) from `app-icon/EML.icns` for the Slint window/About icon. It is covered
-by the same root LICENSE artwork terms.
+by the same root AGPL-3.0-only license.
 
 ## Interface reference drawings
 
@@ -56,9 +56,9 @@ variants. The SVGs define the coordinates, strokes and palettes.
 
 ## License
 
-The root [LICENSE](../LICENSE) identifies the artwork covered by proprietary
-terms and the software and documentation covered by MPL-2.0. Preserve those
-terms when redistributing. This guide does not grant additional artwork rights.
+Original artwork, software and documentation use AGPL-3.0-only under the root
+[LICENSE](../LICENSE). Preserve copyright, license and source notices when
+redistributing; [PROJECT-NOTICE.md](../PROJECT-NOTICE.md) explains the source terms.
 
 ## Provenance and fonts
 
@@ -67,7 +67,7 @@ coordinates and copyright headers alone do not establish independent creation or
 worldwide rights clearance. Keep the original design/reference records with the
 creator when establishing provenance. The live Slint paths in
 `crates/eml-gui/ui/controls.slint` are software source under the root license's
-software terms; they are distinct from the proprietary reference drawings above.
+AGPL-3.0-only terms, as are the reference drawings above.
 
 The native app's Slint build embeds image resources, without declaring custom
 font files or registering embedded fonts. Its pinned software renderer queries
@@ -76,5 +76,5 @@ glyph outlines as icon artwork or redistributing a font file. Slint can also loa
 fonts supplied by its runtime environment. Font use remains subject to the
 applicable OS/font licence; do not copy Apple font files into a distribution or
 assume a font permitted on one platform is licensed for another. The reference
-preview helper uses `NSFont.systemFont` for its labels. Required Slint branding
+preview helper uses `NSFont.systemFont` for its labels. Slint branding
 and toolkit graphics have their own [third-party terms](../legal/README.md).

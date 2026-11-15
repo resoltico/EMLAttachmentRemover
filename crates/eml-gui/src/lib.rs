@@ -133,15 +133,15 @@ impl DesktopController {
         licenses.set_notice(wording::controls().license_notice);
         about.set_product_name(eml_core::product::DISPLAY_NAME.into());
         about.set_version(eml_core::product::ABOUT_VERSION.as_str().into());
-        about.set_copyright(
-            include_str!("../../../LICENSE")
-                .lines()
-                .nth(1)
-                .unwrap_or_default()
-                .replace("(c)", "©")
-                .into(),
+        about.set_copyright(wording::copyright().into());
+        licenses.set_licenses(
+            format!(
+                "{}\n{}",
+                include_str!("../../../PROJECT-NOTICE.md"),
+                include_str!("../../../LICENSE")
+            )
+            .into(),
         );
-        licenses.set_licenses(include_str!("../../../LICENSE").into());
         let destination = preferences.destination().map(Path::to_owned);
         let mut batch = Batch::default();
         batch.destination = destination;

@@ -107,31 +107,72 @@ for ownership receipts and managed data. It verifies managed file hashes before
 update or removal and refuses existing unowned or changed files. A matching
 filename, version output or PATH entry does not establish ownership.
 
-For any installation without a valid receipt, remove the executable yourself or
-select a fresh directory. Keep any files you need and review PATH settings before
-removing them by hand. Do not copy a receipt from another directory or edit hashes
-to bypass a refusal.
-A non-directory target or non-regular managed entry is also left alone.
+The checkout installer adds the following recovery behavior; it is not present
+in the published 8.0.0 installers. Use a reviewed installer and payload from the
+same qualified build, rather than passing new options to an older saved script.
+
+- Local ownership and lock conflicts are diagnosed before downloading or running
+  a candidate. The target is rechecked under lock immediately before mutation.
+- A receiptless ordinary executable, with private state absent, is refused by
+  default. Install-only `--replace-unmanaged` / `-ReplaceUnmanaged` explicitly
+  authorizes that one replacement. No version-string adoption or stdin prompt is used.
+- The original executable is kept in a unique recovery location in the install
+  directory's parent. The exact path is printed; later uninstall does not delete
+  it or mistake it for an active tool requiring shared-directory PATH retention.
+  Pre-existing directories and PATH entries remain unowned.
+- An intact receipt whose executable alone is missing can be repaired by
+  reinstalling, or cleaned up with uninstall. Every remaining owned file must
+  verify. Changed files, corrupt/incomplete state, nonregular targets and access
+  failures remain precise conservative refusals; the replacement flag cannot bypass them.
+- Unix accepts aliases only when requested and recorded directories still
+  resolve to the same physical directory, preserving exact recorded PATH text.
+  Windows normalizes ordinary spellings but refuses reparse-point directories.
+  Moved receipts are not adopted; use the recorded-path command in the diagnostic.
+
+After obtaining a qualified installer containing these changes:
+
+```sh
+sh ./install-emlattachmentremover.sh --install-dir "$HOME/.local/bin" --replace-unmanaged
+```
+
+```powershell
+powershell -NoProfile -ExecutionPolicy ByPass -File .\install-emlattachmentremover.ps1 -InstallDir "$env:LOCALAPPDATA\Programs\EMLAttachmentRemover" -ReplaceUnmanaged
+if ($LASTEXITCODE -ne 0) { throw "Installer failed ($LASTEXITCODE)." }
+```
+
+Activation failure attempts to restore the original executable, receipt and prior
+absence. Keep reported recovery paths if restoration is incomplete; inspect them
+before retrying rather than deleting valuable evidence. Unix PATH receipts record
+only completed writes. Transaction rollback removes only its verified additions,
+preserving later user content; partial writes or intervening edits retain named
+staging evidence instead of claiming complete restoration. Deliberate later edits
+or removals of owned startup entries are preserved.
+
+To manage an installation manually, preserve valuable executable/state files,
+inspect exact diagnostics and choose a fresh directory if needed. Never remove an
+entire shared bin directory, copy a receipt from another directory or edit hashes
+to bypass a refusal. The published installer continues refusing receiptless files;
+its version output is not ownership proof.
 
 Pre-existing directories may be shared with other tools. They are never removed
 merely because they became empty. Unrelated files are preserved.
 
 ## Uninstall
 
-Use the same reviewed installer, saved as `install.sh` / `install.ps1`, to remove
+Use the same reviewed installer, saved as `install-emlattachmentremover.sh` / `install-emlattachmentremover.ps1`, to remove
 an unchanged installation and only the PATH entries it owns:
 
 ```sh
-sh ./install.sh --uninstall
+sh ./install-emlattachmentremover.sh --uninstall
 ```
 
 ```powershell
-powershell -ExecutionPolicy ByPass -File .\install.ps1 -Uninstall
+powershell -ExecutionPolicy ByPass -File .\install-emlattachmentremover.ps1 -Uninstall
 ```
 
 Pass the same custom install directory used for installation, for example
-`sh ./install.sh --uninstall --install-dir '/absolute/my tools'` or
-`powershell -ExecutionPolicy ByPass -File .\install.ps1 -Uninstall -InstallDir 'C:\My Tools'`.
+`sh ./install-emlattachmentremover.sh --uninstall --install-dir '/absolute/my tools'` or
+`powershell -ExecutionPolicy ByPass -File .\install-emlattachmentremover.ps1 -Uninstall -InstallDir 'C:\My Tools'`.
 Removal does not
 need a download of the program. An offline saved copy of the installer can be
 run with the same uninstall option.
@@ -165,6 +206,7 @@ Your emails, copies, reports and desktop app preferences are not installer-manag
 | `--version X.Y.Z` | `-Version X.Y.Z` | `EMLATTACHMENTREMOVER_VERSION` | Choose a stable release; one leading `v` is allowed. |
 | `--install-dir DIR` | `-InstallDir DIR` | `EMLATTACHMENTREMOVER_INSTALL_DIR` | Choose an absolute directory. |
 | `--no-modify-path` | `-NoModifyPath` | `EMLATTACHMENTREMOVER_NO_MODIFY_PATH=1` | Do not change PATH or shell startup files. |
+| `--replace-unmanaged` | `-ReplaceUnmanaged` | | Checkout only: back up and replace a receiptless ordinary executable; install only. |
 | `--uninstall` | `-Uninstall` | `EMLATTACHMENTREMOVER_UNINSTALL=1` (Windows) | Remove unchanged owned files. |
 | `--help` | `-Help` | | Show usage. |
 

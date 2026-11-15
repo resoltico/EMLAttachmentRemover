@@ -80,7 +80,7 @@ pub(crate) fn build(cli: bool, app: bool, target: Option<String>, out: &Path) ->
         let stage = scratch.path().join("cli");
         fs::create_dir(&stage)?;
         fs::copy(input(&executable), stage.join(&executable))?;
-        fs::copy("LICENSE", stage.join("LICENSE"))?;
+        copy_project_notices(&stage, &revision)?;
         notices::write(false, &target, &stage.join("THIRD-PARTY-NOTICES.txt"))?;
         let format = if extension.is_empty() {
             "tar.gz"
@@ -108,7 +108,7 @@ pub(crate) fn build(cli: bool, app: bool, target: Option<String>, out: &Path) ->
             "artwork/app-icon/EML.icns",
             contents.join("Resources/EML.icns"),
         )?;
-        fs::copy("LICENSE", contents.join("Resources/LICENSE"))?;
+        copy_project_notices(&contents.join("Resources"), &revision)?;
         notices::write(
             true,
             &target,
@@ -127,6 +127,16 @@ pub(crate) fn build(cli: bool, app: bool, target: Option<String>, out: &Path) ->
             &stamp,
         )?;
     }
+    Ok(())
+}
+fn copy_project_notices(directory: &Path, revision: &str) -> Result<()> {
+    for file in ["LICENSE", "PROJECT-NOTICE.md", "LICENSE-COMMERCIAL.md"] {
+        fs::copy(file, directory.join(file))?;
+    }
+    fs::write(
+        directory.join("SOURCE.txt"),
+        crate::source::notice(revision)?,
+    )?;
     Ok(())
 }
 fn distribution_target(host: &str, app: bool, target: Option<String>) -> Result<String> {

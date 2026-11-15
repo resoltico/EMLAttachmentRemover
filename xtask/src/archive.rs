@@ -1,9 +1,8 @@
-use crate::{Result, capture};
+use crate::Result;
 use std::{
     fs,
     io::{Read, Write},
     path::{Path, PathBuf},
-    process::Command,
 };
 
 pub(crate) struct Timestamp {
@@ -12,26 +11,18 @@ pub(crate) struct Timestamp {
 }
 impl Timestamp {
     pub(crate) fn for_revision(revision: &str) -> Result<Self> {
-        let epoch =
-            capture(Command::new("git").args(["show", "-s", "--format=%ct", revision]))?.parse()?;
-        let date = capture(Command::new("git").env("TZ", "UTC").args([
-            "show",
-            "-s",
-            "--date=format-local:%Y %m %d %H %M %S",
-            "--format=%cd",
-            revision,
-        ]))?;
-        let parts = date
-            .split_whitespace()
-            .map(str::parse::<u16>)
-            .collect::<std::result::Result<Vec<_>, _>>()?;
+        use chrono::{Datelike, Timelike};
+
+        let epoch = crate::source::epoch(revision)?;
+        let date = chrono::DateTime::from_timestamp(epoch.try_into()?, 0)
+            .ok_or("Source timestamp is outside the supported UTC date range")?;
         let zip = zip::DateTime::from_date_and_time(
-            parts[0],
-            parts[1].try_into()?,
-            parts[2].try_into()?,
-            parts[3].try_into()?,
-            parts[4].try_into()?,
-            (parts[5] / 2 * 2).try_into()?,
+            date.year().try_into()?,
+            date.month().try_into()?,
+            date.day().try_into()?,
+            date.hour().try_into()?,
+            date.minute().try_into()?,
+            (date.second() / 2 * 2).try_into()?,
         )?;
         Ok(Self { epoch, zip })
     }

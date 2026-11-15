@@ -163,7 +163,7 @@ jobs:
   checksums:
     needs: [cli, macos, floor-smoke]
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -181,13 +181,15 @@ jobs:
         with:
           name: macos-dist-x86_64-apple-darwin
           path: target/dist
+      - name: Capture matching Corresponding Source with locked dependencies
+        run: cargo xtask source --out target/dist
       - name: Hash the complete release archive set
         run: |
           (
             cd target/dist
             archives=( *.tar.gz *.zip )
-            # Six CLI archives (Linux/Windows/macOS, both CPUs) and two Mac apps.
-            [[ "${#archives[@]}" -eq 8 ]] || { echo "Expected eight release archives" >&2; exit 1; }
+            # Six CLI archives, two Mac apps and matching vendored source.
+            [[ "${#archives[@]}" -eq 9 ]] || { echo "Expected nine release archives" >&2; exit 1; }
             cp "$GITHUB_WORKSPACE/install/install.sh" "$GITHUB_WORKSPACE/install/install.ps1" .
             sha256sum -- "${archives[@]}" install.sh install.ps1 > SHA256SUMS
           )
@@ -198,6 +200,7 @@ jobs:
             target/dist/SHA256SUMS
             target/dist/install.sh
             target/dist/install.ps1
+            target/dist/emlattachmentremover-source-*.tar.gz
           if-no-files-found: error
   install:
     name: Qualify installer (${{ matrix.runner }})

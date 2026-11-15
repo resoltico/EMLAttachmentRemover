@@ -18,13 +18,19 @@ the native executable and keep installation separate from the Mac desktop app.
 On macOS or Linux:
 
 ```sh
-curl -fsSL https://github.com/resoltico/EMLAttachmentRemover/releases/latest/download/install.sh | sh
+curl --proto '=https' --proto-redir '=https' -fL -o ./install-emlattachmentremover.sh https://github.com/resoltico/EMLAttachmentRemover/releases/latest/download/install.sh &&
+  sh ./install-emlattachmentremover.sh
 ```
 
 On Windows in PowerShell:
 
 ```powershell
-powershell -ExecutionPolicy ByPass -c "irm https://github.com/resoltico/EMLAttachmentRemover/releases/latest/download/install.ps1 | iex"
+& {
+    $ErrorActionPreference = 'Stop'
+    Invoke-WebRequest -UseBasicParsing -Uri https://github.com/resoltico/EMLAttachmentRemover/releases/latest/download/install.ps1 -OutFile .\install-emlattachmentremover.ps1 -ErrorAction Stop
+    powershell -NoProfile -ExecutionPolicy ByPass -File .\install-emlattachmentremover.ps1
+    if ($LASTEXITCODE -ne 0) { throw "Installer failed ($LASTEXITCODE)." }
+}
 ```
 
 The installers verify the selected release, test the binary and record ownership
@@ -170,8 +176,9 @@ through Slint's testing backend; Windows supports core and the CLI.
 
 See [CONTRIBUTING](CONTRIBUTING.md) for the shortest build and check commands,
 [architecture](docs/architecture.md) for crate boundaries, and the
-[release guide](docs/release.md) for packaging and release checks. MPL-2.0-covered
-source is available in this repository; redistributors must preserve notices and corresponding source
-availability. Slint's desktop license and AboutSlint requirements also apply;
+[release guide](docs/release.md) for packaging and release checks. Original software, documentation and artwork use `AGPL-3.0-only`; see
+[LICENSE](LICENSE) and [PROJECT-NOTICE.md](PROJECT-NOTICE.md) for licensing, source
+availability and contribution terms. Separate commercial terms are not currently
+offered; see [commercial licensing status](LICENSE-COMMERCIAL.md). Slint uses its GPL-3.0-only option; third-party terms remain applicable;
 see [legal materials](legal/README.md). Editable artwork, construction references
 and platform exports are documented in the [artwork guide](artwork/README.md).
