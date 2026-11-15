@@ -35,5 +35,5 @@ background. File hashes and palette calculations alone do not establish visual
 quality or application accessibility. The Slint interface uses its own palette
 and accessible text and widget roles.
 
-The root [LICENSE](../../LICENSE) specifies the proprietary terms for these
+The root [LICENSE](../../LICENSE) specifies AGPL-3.0-only terms for these
 SVGs, drawing-generation material, geometry guide and generated images.

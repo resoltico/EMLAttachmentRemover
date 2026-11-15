@@ -10,6 +10,7 @@ publish.workspace = true
 eml-core = { path = "../crates/eml-core" }
 clap.workspace = true
 serde_json.workspace = true
+chrono = { version = "=0.4.45", default-features = false, features = ["std"] }
 toml = "1.2.1"
 tempfile.workspace = true
 tar = { version = "0.4.46", default-features = false }

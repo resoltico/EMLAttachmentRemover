@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Software and documentation move from MPL-2.0, and original artwork from proprietary terms, to AGPL-3.0-only; third-party terms remain unchanged.
+- Contributions grant future commercial relicensing rights; separate commercial terms are not yet offered. Release archives include licensing notices and matching vendored source.
+- Slint uses its upstream GPL-3.0-only option; other third-party licenses and notices are preserved.
+
+- CLI installers add explicit backed-up receiptless replacement, missing-executable repair, early conflict diagnosis and transactional PATH ownership; changed or unverifiable files stay protected.
 - Windows uninstall preserves the executable and ownership receipt when removing its owned PATH entry fails, so cleanup can be retried.
 
 ## [8.0.0] - 2026-11-09

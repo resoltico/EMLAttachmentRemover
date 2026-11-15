@@ -1,5 +1,11 @@
 # Contributing
 
+Before submitting, read the [contribution terms](PROJECT-NOTICE.md#contribution-terms).
+Confirm your agreement using the checkbox in the pull request template.
+You retain copyright while granting the public AGPL license and the additional
+relicensing rights described there. The owner reviews and merges changes;
+passing checks do not authorize merging, tagging or publishing.
+
 Read [AGENTS.md](AGENTS.md), [AGENTS_EXTRA.md](AGENTS_EXTRA.md) and
 [project rules](docs/project-rules.md). Source behavior, public contracts and tests
 must agree. Keep product code separate from transport and platform presentation.
@@ -265,3 +271,20 @@ unviable mutants do not. Every shard uploads `mutants.out` for review. Campaign
 cost and surviving mutants must be assessed from the actual scheduled results.
 Keep oracles independent and add tests for concrete behavior rather than campaign
 or evidence frameworks.
+
+## Corresponding Source
+
+Before redistribution, create the matching source archive alongside the binary
+archives with `cargo xtask source --out target/dist`. This captures tracked working
+files and vendors the locked root and fuzz dependency graphs. Untracked source is
+refused; review and add intended files to Git first. Keep inputs stable throughout
+packaging. The Release workflow includes this archive in its checksums and attested
+artifact set; creating archives locally does not authorize publication.
+
+Use `cargo xtask source --verify --out /absolute/fresh/source-output` to verify
+root/fuzz resolution and a CLI build offline with an empty Cargo cache. The same
+check runs in `cargo xtask ci`; its missing-vendor control must fail. The archive's
+`.cargo/config.toml` directs Cargo to `vendor/`; Rust and general-purpose build
+tools still need to be installed. Keep source inputs stable: index, tracked-file
+and new-untracked changes during vendoring refuse publication of the archive. See
+[PROJECT-NOTICE.md](PROJECT-NOTICE.md) for redistribution and network-source terms.

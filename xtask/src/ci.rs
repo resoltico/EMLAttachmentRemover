@@ -42,6 +42,9 @@ pub(crate) fn run(rust_only: bool) -> Result<()> {
     )?;
     if !rust_only && cfg!(unix) {
         crate::installers::check()?;
+        let source = tempfile::tempdir()?;
+        crate::source::archive(source.path())?;
+        crate::source::verify(source.path())?;
     }
     if !rust_only && cfg!(target_os = "macos") {
         let out = tempfile::tempdir()?;

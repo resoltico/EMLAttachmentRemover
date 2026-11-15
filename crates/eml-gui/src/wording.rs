@@ -324,3 +324,12 @@ pub(super) fn failure_details(error: &eml_core::OperationFailure) -> String {
         fields::DETAIL
     )
 }
+
+/// The project notice owns the copyright statement; the UI only selects it.
+pub(super) fn copyright() -> String {
+    include_str!("../../../PROJECT-NOTICE.md")
+        .lines()
+        .find(|line| line.starts_with("Copyright"))
+        .expect("Project notice must include the owner copyright")
+        .to_owned()
+}

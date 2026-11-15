@@ -153,3 +153,77 @@ fn tool_pins_come_from_the_invoking_workspace_and_reject_multiline_values() {
     );
     assert!(!run().status.success());
 }
+
+#[test]
+fn source_capture_rejects_inputs_changed_during_vendoring() {
+    for mutation in ["none", "bytes", "index", "untracked", "new-tracked"] {
+        let root = repository();
+        let root = root.path();
+        put(root, "Cargo.toml", "[workspace]\nresolver=\"3\"\n");
+        put(root, ".cargo/config.toml", "");
+        put(root, "data.txt", "original source\n");
+        git(root, &["add", "."]);
+        git(root, &["commit", "-qm", "source fixture"]);
+        let tools = tempfile::tempdir().unwrap();
+        let cargo = tools.path().join("cargo");
+        fs::write(
+            &cargo,
+            r#"#!/bin/sh
+set -eu
+case "$1" in
+  locate-project) printf '%s/Cargo.toml\n' "$SOURCE_FIXTURE" ;;
+  vendor)
+    case "$SOURCE_MUTATION" in
+      bytes) printf 'changed\n' >> "$SOURCE_FIXTURE/data.txt" ;;
+      index) git -C "$SOURCE_FIXTURE" update-index --chmod=+x data.txt ;;
+      untracked) printf 'late input\n' > "$SOURCE_FIXTURE/late.txt" ;;
+      new-tracked)
+        printf 'late input\n' > "$SOURCE_FIXTURE/late.txt"
+        git -C "$SOURCE_FIXTURE" add late.txt
+        ;;
+      none) : ;;
+      *) exit 72 ;;
+    esac
+    ;;
+  *) exit 73 ;;
+esac
+"#,
+        )
+        .unwrap();
+        fs::set_permissions(&cargo, fs::Permissions::from_mode(0o700)).unwrap();
+        let output = tempfile::tempdir().unwrap();
+        let result = Command::new(env!("CARGO_BIN_EXE_xtask"))
+            .args(["source", "--out"])
+            .arg(output.path())
+            .current_dir(root)
+            .env("SOURCE_FIXTURE", root)
+            .env("SOURCE_MUTATION", mutation)
+            .env_remove("EML_SOURCE_REVISION")
+            .env_remove("SOURCE_DATE_EPOCH")
+            .env(
+                "PATH",
+                format!(
+                    "{}:{}",
+                    tools.path().display(),
+                    std::env::var("PATH").unwrap()
+                ),
+            )
+            .output()
+            .unwrap();
+        let archives = fs::read_dir(output.path()).unwrap().count();
+        assert_eq!(
+            result.status.success(),
+            mutation == "none",
+            "{mutation}: {}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert_eq!(archives, usize::from(mutation == "none"), "{mutation}");
+        if mutation != "none" {
+            assert!(
+                String::from_utf8_lossy(&result.stderr).contains("changed while vendoring"),
+                "{mutation}: {}",
+                String::from_utf8_lossy(&result.stderr)
+            );
+        }
+    }
+}

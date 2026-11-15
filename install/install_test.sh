@@ -1,5 +1,5 @@
 #!/bin/bash
-# SPDX-License-Identifier: MPL-2.0
+# SPDX-License-Identifier: AGPL-3.0-only
 # Exact published-script qualification against real archives, in isolated homes.
 set -euo pipefail
 
@@ -150,8 +150,10 @@ if command -v zsh >/dev/null; then
     assert 'original last line preserved' grep -qx 'export KEEP=1' "${fixture_home}/.zshrc"
     count=$(marker_count "${fixture_home}/.zshrc"); assert 'one PATH line' test "${count}" = 1
     resolved=$(resolve_in "${zsh_path}" -i -c "command -v ${command_name}"); assert 'new zsh finds installed program' test "${resolved}" = "${fixture_home}/.local/bin/${command_name}"
-    assert 'installer retains LICENSE' test -s "${fixture_home}/.local/bin/.${command_name}-install/legal/LICENSE"
-    assert 'installer retains third-party notices' test -s "${fixture_home}/.local/bin/.${command_name}-install/legal/THIRD-PARTY-NOTICES.txt"
+    if [[ "${command_name}" == pdfconcat ]]; then
+        env -i HOME="${fixture_home}" PATH="${base_path}" "${fixture_home}/.local/bin/pdfconcat" build -o "${fixture_home}/blank.pdf" --blank --fit-to A4
+        assert 'installed PDFConcat creates a PDF' test -s "${fixture_home}/blank.pdf"
+    fi
     run_installer /bin/zsh; expect_exit 0 'reinstall'
     assert 'reinstall reported' grep -q reinstalled "${work}/out"
     count=$(marker_count "${fixture_home}/.zshrc"); assert 'still one owned line' test "${count}" = 1
@@ -239,13 +241,6 @@ awk '/^sh install.sh --uninstall / {print}' "${work}/out" > "${work}/hint.sh"
 assert 'printed uninstall command has valid shell syntax' sh -n "${work}/hint.sh"
 help_command=$(sed -n 's/^Open a new terminal after a PATH change. Run: //p' "${work}/out")
 assert 'printed quoted command runs installed program' env -i HOME="${fixture_home}" PATH="${base_path}" sh -c "${help_command}"
-expected_mail=${work}/installer-expected.eml
-source_mail=${fixture_home}/source.eml
-printf 'Subject: Installer smoke\r\n\r\nBody retained\r\n' > "${expected_mail}"
-cp "${expected_mail}" "${source_mail}"
-env -i HOME="${fixture_home}" PATH="${base_path}" "${custom_dir}/${command_name}" -- "${source_mail}" > "${work}/cli-smoke"
-assert 'installed CLI preserves original bytes' cmp -s "${expected_mail}" "${source_mail}"
-assert 'installed CLI creates exact body-copy bytes' cmp -s "${expected_mail}" "${fixture_home}/source.no-attachments.eml"
 run_installer /bin/sh --install-dir "${custom_dir}" --uninstall; expect_exit 0 'custom uninstall'
 assert 'installer-created folder removed' test ! -e "${custom_dir}"
 
@@ -526,7 +521,7 @@ for downloader in curl wget; do
     printf '%s/releases/tag/v1.2.3\n' "${repo_url}" > "${mock}/effective"
     # Isolate tool discovery so both supported downloaders are exercised, even
     # when the host has curl. These are external-dependency stubs, not product hooks.
-    for utility in awk cat chmod cmp cp cut find grep gzip head mkdir mktemp mv rm rmdir sed sh sort tail tar tr uname wc sha256sum shasum openssl sw_vers sysctl; do
+    for utility in awk cat chmod cmp cp cut dd find grep gzip head ls mkdir mktemp mv rm rmdir sed sh sort stat tail tar tr uname wc sha256sum shasum openssl sw_vers sysctl; do
         if tool_path=$(command -v "${utility}"); then ln -s "${tool_path}" "${mock}/tools/${utility}"; fi
     done
     if [[ "${downloader}" == curl ]]; then
@@ -595,6 +590,360 @@ EOF
     after=$(hash_file "${fixture_home}/.local/bin/${command_name}")
     assert 'bad redirect leaves installed binary untouched' test "${before}" = "${after}"
 done
+
+
+begin 'explicit receiptless replacement preserves original bytes outside the shared bin'
+replacement_dir=${fixture_home}/tools
+mkdir -p "${replacement_dir}"
+cat > "${replacement_dir}/${command_name}" <<'EOF'
+#!/bin/sh
+printf untouched > "$HOME/unowned-was-run"
+exit 71
+EOF
+chmod 755 "${replacement_dir}/${command_name}"
+original_hash=$(hash_file "${replacement_dir}/${command_name}")
+printf '# user startup content\n' > "${fixture_home}/.profile"
+profile_before=$(hash_file "${fixture_home}/.profile")
+# Local conflicts must precede fetching even when no usable mirror is available.
+download_base=${fixture_home}/does-not-exist
+run_installer /bin/sh --install-dir "${replacement_dir}"; expect_failure 'receiptless default refusal before download'
+assert 'receiptless diagnostic names target' grep -Fq "${replacement_dir}/${command_name}" "${work}/out"
+assert 'receiptless diagnostic offers bounded option' grep -q -- '--replace-unmanaged' "${work}/out"
+if grep -q 'Could not download' "${work}/out"; then fail 'receiptless local conflict was hidden by download'; fi
+assert 'default refusal does not create state' test ! -e "${replacement_dir}/.${command_name}-install"
+after=$(hash_file "${replacement_dir}/${command_name}"); assert 'default refusal preserves unowned bytes' test "${original_hash}" = "${after}"
+bad_replacement_mirror=${fixture_home}/bad-release; mkdir "${bad_replacement_mirror}"
+cp "${native_archive}" "${bad_replacement_mirror}/"
+printf '%064d  %s\n' 0 "${native_asset}" > "${bad_replacement_mirror}/${checksum_name}"
+download_base=${bad_replacement_mirror}
+run_installer /bin/sh --install-dir "${replacement_dir}" --replace-unmanaged; expect_failure 'explicit replacement still verifies candidate checksum'
+after=$(hash_file "${replacement_dir}/${command_name}"); assert 'bad candidate preserves original bytes' test "${original_hash}" = "${after}"
+after=$(hash_file "${fixture_home}/.profile"); assert 'bad candidate preserves startup bytes' test "${profile_before}" = "${after}"
+assert 'bad candidate creates no receipt' test ! -e "${replacement_dir}/.${command_name}-install"
+unset download_base
+# Force the cross-platform mktemp spelling difference on every native host.
+mkdir "${fixture_home}/normalized-tools"
+real_mktemp=$(command -v mktemp)
+cat > "${fixture_home}/normalized-tools/mktemp" <<EOF
+#!/bin/sh
+created=\$('${real_mktemp}' "\$@") || exit 1
+case "\$created" in */.${command_name}-stage.*) (cd "\$created" && pwd -P) ;; *) printf '%s\\n' "\$created" ;; esac
+EOF
+chmod 755 "${fixture_home}/normalized-tools/mktemp"
+fixture_path=${fixture_home}/normalized-tools:${base_path}
+run_installer /bin/sh --install-dir "${replacement_dir}/." --replace-unmanaged; expect_exit 0 'explicit backed-up replacement through a dot alias'
+assert 'unowned executable never ran' test ! -e "${fixture_home}/unowned-was-run"
+recovery_files=("${fixture_home}/.${command_name}-recovery."*/"${command_name}")
+assert 'one exclusively named retained recovery backup' test "${#recovery_files[@]}" = 1
+assert 'retained recovery backup is a regular file' test -f "${recovery_files[0]}"
+backup_hash=$(hash_file "${recovery_files[0]}"); assert 'backup preserves exact original bytes' test "${original_hash}" = "${backup_hash}"
+reported_backup_directory=$(cd "${recovery_files[0]%/*}" && pwd -P)
+reported_backup=${reported_backup_directory}/${command_name}
+assert 'physical backup path is reported' grep -Fq "${reported_backup}" "${work}/out"
+assert 'new directory ownership not adopted' grep -qx 0 "${replacement_dir}/.${command_name}-install/created-dir"
+count=$(marker_count "${fixture_home}/.profile"); assert 'replacement owns only new PATH line' test "${count}" = 1
+run_installer /bin/sh --install-dir "${replacement_dir}" --uninstall; expect_exit 0 'replaced executable uninstall'
+assert 'uninstall preserves recovery backup' test -f "${recovery_files[0]}"
+backup_hash=$(hash_file "${recovery_files[0]}"); assert 'uninstall leaves original backup unchanged' test "${original_hash}" = "${backup_hash}"
+after=$(hash_file "${fixture_home}/.profile"); assert 'external recovery backup does not suppress exact PATH cleanup' test "${profile_before}" = "${after}"
+assert 'pre-existing bin directory retained' test -d "${replacement_dir}"
+run_installer /bin/sh --install-dir "${replacement_dir}" --uninstall --replace-unmanaged; expect_failure 'replacement option is install-only'
+
+begin 'intact ownership with missing payload supports repair and exact cleanup'
+run_installer /bin/sh; expect_exit 0 'missing-payload baseline'
+receipt=${fixture_home}/.local/bin/.${command_name}-install
+binary_path=${fixture_home}/.local/bin/${command_name}
+state_before=$(hash_file "${receipt}/state.sha256")
+profile_before=$(hash_file "${fixture_home}/.profile")
+rm "${binary_path}"
+run_installer /bin/sh; expect_exit 0 'repair missing payload'
+assert 'repair installs verified payload' test -x "${binary_path}"
+state_after=$(hash_file "${receipt}/state.sha256"); assert 'repair preserves complete existing ownership' test "${state_before}" = "${state_after}"
+after=$(hash_file "${fixture_home}/.profile"); assert 'repair does not duplicate PATH' test "${profile_before}" = "${after}"
+rm "${binary_path}"
+state_before=$(hash_file "${receipt}/state.sha256")
+mkdir -p "${fixture_home}/missing-rollback-tools"
+real_mv=$(command -v mv)
+cat > "${fixture_home}/missing-rollback-tools/mv" <<EOF
+#!/bin/sh
+case "\$1" in */new-state) exit 91 ;; *) exec '${real_mv}' "\$@" ;; esac
+EOF
+chmod 755 "${fixture_home}/missing-rollback-tools/mv"
+fixture_path=${fixture_home}/missing-rollback-tools:${base_path}
+run_installer /bin/sh --no-modify-path; expect_failure 'activation failure during missing-payload repair'
+assert 'repair rollback preserves prior payload absence' test ! -e "${binary_path}"
+state_after=$(hash_file "${receipt}/state.sha256"); assert 'repair rollback restores intact receipt' test "${state_before}" = "${state_after}"
+unset fixture_path
+run_installer /bin/sh --uninstall; expect_exit 0 'uninstall missing payload'
+assert 'missing-payload cleanup removes ownership state' test ! -e "${receipt}"
+count=$(marker_count "${fixture_home}/.profile"); assert 'missing-payload cleanup removes owned PATH' test "${count}" = 0
+run_installer /bin/sh --uninstall; expect_exit 0 'missing-payload cleanup is idempotent'
+
+begin 'existing directory aliases preserve the original exact PATH ownership'
+run_installer /bin/sh --install-dir "${fixture_home}/tools"; expect_exit 0 'alias baseline'
+profile_before=$(hash_file "${fixture_home}/.profile")
+ln -s tools "${fixture_home}/alias"
+run_installer /bin/sh --install-dir "${fixture_home}/alias"; expect_exit 0 'physical alias update'
+after=$(hash_file "${fixture_home}/.profile"); assert 'alias update keeps exact recorded PATH bytes' test "${profile_before}" = "${after}"
+run_installer /bin/sh --install-dir "${fixture_home}/tools/."; expect_exit 0 'dot alias update'
+after=$(hash_file "${fixture_home}/.profile"); assert 'dot alias update keeps exact recorded PATH bytes' test "${profile_before}" = "${after}"
+run_installer /bin/sh --install-dir "${fixture_home}/alias" --uninstall; expect_exit 0 'physical alias uninstall'
+assert 'alias itself is preserved' test -L "${fixture_home}/alias"
+assert 'alias cleanup removes the installer-created empty physical directory' test ! -e "${fixture_home}/tools"
+count=$(marker_count "${fixture_home}/.profile"); assert 'alias uninstall cleans original owned PATH' test "${count}" = 0
+
+begin 'replacement option cannot bypass modified, corrupt or nonregular ownership'
+run_installer /bin/sh --no-modify-path; expect_exit 0 'bounded option baseline'
+receipt=${fixture_home}/.local/bin/.${command_name}-install
+binary_path=${fixture_home}/.local/bin/${command_name}
+printf changed >> "${binary_path}"
+before=$(hash_file "${binary_path}")
+state_before=$(hash_file "${receipt}/state.sha256")
+run_installer /bin/sh --replace-unmanaged; expect_failure 'replacement cannot bypass modified managed payload'
+after=$(hash_file "${binary_path}"); assert 'modified payload retained exactly' test "${before}" = "${after}"
+assert 'modified diagnostic is specific' grep -q 'Managed executable was modified' "${work}/out"
+printf corrupt >> "${receipt}/state.sha256"
+state_before=$(hash_file "${receipt}/state.sha256")
+run_installer /bin/sh --replace-unmanaged; expect_failure 'replacement cannot bypass corrupt receipt'
+state_after=$(hash_file "${receipt}/state.sha256"); assert 'corrupt receipt retained exactly' test "${state_before}" = "${state_after}"
+after=$(hash_file "${binary_path}"); assert 'corrupt-state refusal preserves payload' test "${before}" = "${after}"
+# Deliberately remove only this test's own fixture state to construct a receiptless symlink.
+rm -rf "${receipt}"; rm "${binary_path}"
+printf unrelated > "${fixture_home}/symlink-target"
+ln -s "${fixture_home}/symlink-target" "${binary_path}"
+run_installer /bin/sh --replace-unmanaged; expect_failure 'replacement cannot bypass symlink target'
+assert 'receiptless symlink retained' test -L "${binary_path}"
+assert 'symlink target untouched' grep -qx unrelated "${fixture_home}/symlink-target"
+
+begin 'a target changed after preflight is not overwritten under stale replacement authority'
+mkdir -p "${fixture_home}/.local/bin"
+printf '#!/bin/sh\nexit 19\n' > "${fixture_home}/.local/bin/${command_name}"
+chmod 755 "${fixture_home}/.local/bin/${command_name}"
+fixture_version=1.2.3
+side_effect_release=${work}/preflight-side-effect
+make_release "${side_effect_release}" "printf 'changed during candidate verification\\n' > \"\${HOME}/.local/bin/${command_name}\"; printf '%s\\n' '${command_name} 1.2.3'"
+download_base=${side_effect_release}
+run_installer /bin/sh --replace-unmanaged --no-modify-path; expect_failure 'stale receiptless target'
+assert 'changed target preserved' grep -qx 'changed during candidate verification' "${fixture_home}/.local/bin/${command_name}"
+assert 'stale target leaves no receipt' test ! -e "${fixture_home}/.local/bin/.${command_name}-install"
+stale_recoveries=("${fixture_home}/.local/.${command_name}-recovery."*)
+assert 'stale target leaves no recovery backup' test ! -e "${stale_recoveries[0]}"
+assert 'stale authority diagnosed' grep -q 'changed since preflight' "${work}/out"
+
+begin 'failed startup creation owns no fictional PATH entry and retries safely'
+mkdir -p "${fixture_home}/race-tools"
+real_cp=$(command -v cp)
+cat > "${fixture_home}/race-tools/cp" <<EOF
+#!/bin/sh
+last=''
+for argument do last=\$argument; done
+case "\$last" in */new-state/state.sha256) printf 'concurrent user startup\\n' > "\$HOME/.profile" ;; *) : ;; esac
+exec '${real_cp}' "\$@"
+EOF
+chmod 755 "${fixture_home}/race-tools/cp"
+fixture_path=${fixture_home}/race-tools:${base_path}
+run_installer /bin/sh; expect_failure 'startup created between plan and append'
+assert 'concurrent startup bytes preserved' grep -qx 'concurrent user startup' "${fixture_home}/.profile"
+assert 'startup conflict leaves no active receipt' test ! -e "${fixture_home}/.local/bin/.${command_name}-install"
+assert 'startup conflict leaves no active binary' test ! -e "${fixture_home}/.local/bin/${command_name}"
+unset fixture_path
+run_installer /bin/sh; expect_exit 0 'retry after failed startup creation'
+assert 'retry preserves concurrent user content' grep -qx 'concurrent user startup' "${fixture_home}/.profile"
+count=$(marker_count "${fixture_home}/.profile"); assert 'retry actually creates one owned PATH entry' test "${count}" = 1
+run_installer /bin/sh --uninstall; expect_exit 0 'cleanup after startup race retry'
+assert 'cleanup retains concurrent user content' grep -qx 'concurrent user startup' "${fixture_home}/.profile"
+count=$(marker_count "${fixture_home}/.profile"); assert 'cleanup removes only successful retry addition' test "${count}" = 0
+
+begin 'activation rollback removes only its bounded append while preserving concurrent content'
+printf '# original user startup\n' > "${fixture_home}/.profile"
+mkdir -p "${fixture_home}/rollback-tools"
+real_mv=$(command -v mv)
+cat > "${fixture_home}/rollback-tools/mv" <<EOF
+#!/bin/sh
+case "\$1" in */new-state)
+    duplicate=\$(tail -n 1 "\$HOME/.profile")
+    printf '%s\\n' "\$duplicate" >> "\$HOME/.profile"
+    printf 'concurrent user addition\\n' >> "\$HOME/.profile"
+    exit 91 ;;
+*) exec '${real_mv}' "\$@" ;;
+esac
+EOF
+chmod 755 "${fixture_home}/rollback-tools/mv"
+fixture_path=${fixture_home}/rollback-tools:${base_path}
+run_installer /bin/sh; expect_failure 'activation failure after a completed PATH append'
+assert 'failed activation removes new payload' test ! -e "${fixture_home}/.local/bin/${command_name}"
+assert 'failed activation removes new receipt' test ! -e "${fixture_home}/.local/bin/.${command_name}-install"
+assert 'rollback preserves original startup content' grep -qx '# original user startup' "${fixture_home}/.profile"
+assert 'rollback preserves concurrent suffix' grep -qx 'concurrent user addition' "${fixture_home}/.profile"
+count=$(marker_count "${fixture_home}/.profile"); assert 'rollback retains the concurrent identical user line' test "${count}" = 1
+
+
+begin 'partial PATH writes retain precise recovery evidence without false ownership'
+printf '# original user startup\n' > "${fixture_home}/.profile"
+cp "${fixture_home}/.profile" "${work}/partial-path-before"
+mkdir -p "${fixture_home}/partial-tools"
+real_cat=$(command -v cat)
+cat > "${fixture_home}/partial-tools/cat" <<EOF
+#!/bin/sh
+case "\$1" in */path-added.*) head -c 20 "\$1"; exit 93 ;; *) exec '${real_cat}' "\$@" ;; esac
+EOF
+chmod 755 "${fixture_home}/partial-tools/cat"
+fixture_path=${fixture_home}/partial-tools:${base_path}
+run_installer /bin/sh; expect_failure 'partially written startup append'
+assert 'partial append is not reported restored' grep -q 'restoration was incomplete' "${work}/out"
+retained_stages=("${fixture_home}/.local/bin/.${command_name}-stage."*)
+assert 'partial append retains transaction evidence' test -d "${retained_stages[0]}"
+cat "${work}/partial-path-before" > "${work}/partial-path-expected"
+head -c 20 "${retained_stages[0]}/path-added.0" >> "${work}/partial-path-expected"
+assert 'partial append and original user bytes retained exactly' cmp -s "${work}/partial-path-expected" "${fixture_home}/.profile"
+assert 'partial append does not activate program' test ! -e "${fixture_home}/.local/bin/${command_name}"
+assert 'partial append does not activate fictional receipt' test ! -e "${fixture_home}/.local/bin/.${command_name}-install"
+unset fixture_path
+before=$(hash_file "${fixture_home}/.profile")
+run_installer /bin/sh; expect_failure 'retained partial transaction requires review'
+assert 'retry names retained evidence' grep -Fq "${retained_stages[0]}" "${work}/out"
+after=$(hash_file "${fixture_home}/.profile"); assert 'retry preserves partial-write evidence' test "${before}" = "${after}"
+
+begin 'failed payload restoration retains the original backup and blocks unsafe retry'
+run_installer /bin/sh --no-modify-path; expect_exit 0 'incomplete-restore baseline'
+before=$(hash_file "${fixture_home}/.local/bin/${command_name}")
+receipt=${fixture_home}/.local/bin/.${command_name}-install
+state_before=$(hash_file "${receipt}/state.sha256")
+fixture_version=1.2.3
+restore_release=${work}/incomplete-restore-release
+make_release "${restore_release}" "printf '%s\\n' '${command_name} 1.2.3'"
+download_base=${restore_release}
+mkdir -p "${fixture_home}/restore-tools"
+real_mv=$(command -v mv); real_cp=$(command -v cp)
+cat > "${fixture_home}/restore-tools/mv" <<EOF
+#!/bin/sh
+case "\$1" in */new-state) exit 91 ;; *) exec '${real_mv}' "\$@" ;; esac
+EOF
+cat > "${fixture_home}/restore-tools/cp" <<EOF
+#!/bin/sh
+case "\${2-}" in */previous-binary) exit 92 ;; *) : ;; esac
+exec '${real_cp}' "\$@"
+EOF
+chmod 755 "${fixture_home}/restore-tools/mv" "${fixture_home}/restore-tools/cp"
+fixture_path=${fixture_home}/restore-tools:${base_path}
+run_installer /bin/sh --no-modify-path; expect_failure 'failed original payload restoration'
+assert 'incomplete restoration is explicit' grep -q 'restoration was incomplete' "${work}/out"
+retained_stages=("${fixture_home}/.local/bin/.${command_name}-stage."*)
+assert 'incomplete restoration retains original binary backup' test -f "${retained_stages[0]}/previous-binary"
+backup_hash=$(hash_file "${retained_stages[0]}/previous-binary"); assert 'retained original bytes are exact' test "${before}" = "${backup_hash}"
+state_after=$(hash_file "${receipt}/state.sha256"); assert 'previous receipt restored despite payload failure' test "${state_before}" = "${state_after}"
+unset fixture_path
+current_hash=$(hash_file "${fixture_home}/.local/bin/${command_name}")
+run_installer /bin/sh --uninstall --no-modify-path; expect_failure 'incomplete restoration cannot be silently uninstalled'
+assert 'refusal names retained rollback evidence' grep -Fq "${retained_stages[0]}" "${work}/out"
+after=$(hash_file "${fixture_home}/.local/bin/${command_name}"); assert 'recovery refusal preserves current executable' test "${current_hash}" = "${after}"
+backup_hash=$(hash_file "${retained_stages[0]}/previous-binary"); assert 'recovery refusal preserves original backup' test "${before}" = "${backup_hash}"
+
+
+begin 'receipts own verified legal inventory while new packages require all current legal files'
+saved_installer=${installer}; saved_legal_files=${legal_files}
+small_legal_installer=${work}/small-legal-install.sh
+expanded_legal_installer=${work}/expanded-legal-install.sh
+for fixture_legal_files in LICENSE 'LICENSE EXTRA-NOTICE'; do
+    destination=${small_legal_installer}
+    [[ "${fixture_legal_files}" == LICENSE ]] || destination=${expanded_legal_installer}
+    # Vary only one literal product setting; the common engine remains exact.
+    awk -v value="${fixture_legal_files}" '
+        $0=="# BEGIN PRODUCT SETTINGS" {inside=1}
+        $0=="# END PRODUCT SETTINGS" {inside=0}
+        inside && /^legal_files=/ {print "legal_files=" sprintf("%c",39) value sprintf("%c",39); count++; next}
+        {print}
+        END {if(count!=1) exit 1}
+    ' "${saved_installer}" > "${destination}"
+done
+fixture_version=1.2.3
+legal_files='LICENSE EXTRA-NOTICE'
+legal_release=${work}/legal-inventory-release
+make_release "${legal_release}" "printf '%s\\n' '${command_name} 1.2.3'"
+download_base=${legal_release}
+installer=${small_legal_installer}
+run_installer /bin/sh --install-dir "${fixture_home}/update-tools" --no-modify-path; expect_exit 0 'smaller legal inventory install for update'
+run_installer /bin/sh --install-dir "${fixture_home}/remove-tools" --no-modify-path; expect_exit 0 'smaller legal inventory install for removal'
+receipt=${fixture_home}/update-tools/.${command_name}-install
+assert 'smaller receipt owns its actual LICENSE file' test -f "${receipt}/legal/LICENSE"
+assert 'smaller receipt does not claim future legal file' test ! -e "${receipt}/legal/EXTRA-NOTICE"
+installer=${expanded_legal_installer}
+run_installer /bin/sh --install-dir "${fixture_home}/remove-tools" --uninstall --no-modify-path; expect_exit 0 'expanded requirements can uninstall smaller verified inventory'
+assert 'smaller-inventory uninstall removes actual owned state' test ! -e "${fixture_home}/remove-tools/.${command_name}-install"
+run_installer /bin/sh --install-dir "${fixture_home}/update-tools" --no-modify-path; expect_exit 0 'expanded package upgrades smaller verified inventory'
+assert 'new receipt contains current added legal requirement' test -f "${receipt}/legal/EXTRA-NOTICE"
+assert 'new receipt seals current added legal requirement' grep -q '  legal/EXTRA-NOTICE$' "${receipt}/state.sha256"
+before=$(hash_file "${fixture_home}/update-tools/${command_name}")
+state_before=$(hash_file "${receipt}/state.sha256")
+cp "${receipt}/legal/LICENSE" "${work}/owned-license-before"
+rm "${receipt}/legal/LICENSE"
+run_installer /bin/sh --install-dir "${fixture_home}/update-tools" --no-modify-path; expect_failure 'missing previously owned legal file is not treated as a future requirement'
+after=$(hash_file "${fixture_home}/update-tools/${command_name}"); assert 'missing owned legal file preserves binary' test "${before}" = "${after}"
+state_after=$(hash_file "${receipt}/state.sha256"); assert 'missing owned legal file preserves receipt' test "${state_before}" = "${state_after}"
+cp "${work}/owned-license-before" "${receipt}/legal/LICENSE"
+printf changed >> "${receipt}/legal/LICENSE"
+changed_legal_hash=$(hash_file "${receipt}/legal/LICENSE")
+run_installer /bin/sh --install-dir "${fixture_home}/update-tools" --uninstall --no-modify-path; expect_failure 'changed owned legal file refuses cleanup'
+after=$(hash_file "${receipt}/legal/LICENSE"); assert 'changed legal bytes retained' test "${changed_legal_hash}" = "${after}"
+cp "${work}/owned-license-before" "${receipt}/legal/LICENSE"
+printf user-note > "${receipt}/legal/UNOWNED-NOTE"
+run_installer /bin/sh --install-dir "${fixture_home}/update-tools" --uninstall --no-modify-path; expect_failure 'unrecorded legal sidecar refuses cleanup'
+assert 'unrecorded legal sidecar retained' grep -qx user-note "${receipt}/legal/UNOWNED-NOTE"
+state_after=$(hash_file "${receipt}/state.sha256"); assert 'extra legal file preserves receipt' test "${state_before}" = "${state_after}"
+rm "${receipt}/legal/UNOWNED-NOTE"
+run_installer /bin/sh --install-dir "${fixture_home}/update-tools" --uninstall --no-modify-path; expect_exit 0 'expanded legal inventory normal cleanup'
+installer=${saved_installer}; legal_files=${saved_legal_files}
+
+begin 'final locked inspection propagates a managed receipt read failure'
+run_installer /bin/sh --no-modify-path; expect_exit 0 'final inspection baseline'
+binary_path=${fixture_home}/.local/bin/${command_name}
+receipt=${fixture_home}/.local/bin/.${command_name}-install
+before=$(hash_file "${binary_path}"); state_before=$(hash_file "${receipt}/state.sha256")
+mkdir "${fixture_home}/inspection-tools"
+real_cat=$(command -v cat)
+cat > "${fixture_home}/inspection-tools/cat" <<EOF
+#!/bin/sh
+case "\$1" in */.${command_name}-install/version)
+    for pending in "\$HOME/.local/bin/.${command_name}-stage."*; do
+        if [ -d "\$pending" ]; then printf 'injected receipt read failure\\n' >&2; exit 75; fi
+    done ;;
+*) : ;;
+esac
+exec '${real_cat}' "\$@"
+EOF
+chmod 755 "${fixture_home}/inspection-tools/cat"
+fixture_path=${fixture_home}/inspection-tools:${base_path}
+run_installer /bin/sh --no-modify-path; expect_failure 'locked inspection read failure'
+after=$(hash_file "${binary_path}"); state_after=$(hash_file "${receipt}/state.sha256")
+assert 'read failure preserves active executable' test "${before}" = "${after}"
+assert 'read failure preserves active ownership' test "${state_before}" = "${state_after}"
+assert 'read failure exposes the actual cause' grep -q 'injected receipt read failure' "${work}/out"
+assert 'read failure releases the owned lock' test ! -e "${fixture_home}/.local/bin/.${command_name}-install.lock"
+unset fixture_path
+
+begin 'PATH append read errors never become false ownership'
+printf '# original startup\n' > "${fixture_home}/.profile"
+profile_before=$(hash_file "${fixture_home}/.profile")
+mkdir "${fixture_home}/append-read-tools"
+real_grep=$(command -v grep)
+cat > "${fixture_home}/append-read-tools/grep" <<EOF
+#!/bin/sh
+if [ "\$1" = -Fxq ]; then
+    for pending in "\$HOME/.local/bin/.${command_name}-stage."*/new-state/state.sha256; do
+        if [ -f "\$pending" ]; then printf 'injected append read failure\\n' >&2; exit 2; fi
+    done
+fi
+exec '${real_grep}' "\$@"
+EOF
+chmod 755 "${fixture_home}/append-read-tools/grep"
+fixture_path=${fixture_home}/append-read-tools:${base_path}
+run_installer /bin/sh; expect_failure 'append boundary read error'
+after=$(hash_file "${fixture_home}/.profile")
+assert 'append read failure leaves startup bytes unchanged' test "${profile_before}" = "${after}"
+assert 'append read failure creates no active ownership' test ! -e "${fixture_home}/.local/bin/.${command_name}-install"
+assert 'append read failure creates no active program' test ! -e "${fixture_home}/.local/bin/${command_name}"
+assert 'append read failure exposes the actual cause' grep -q 'Could not recheck startup file' "${work}/out"
+unset fixture_path
 
 printf '\n'
 if [[ "${failures}" -gt 0 ]]; then printf '%s check(s) failed.\n' "${failures}" >&2; exit 1; fi

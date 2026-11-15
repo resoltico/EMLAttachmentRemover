@@ -33,6 +33,13 @@ enum Task {
         #[arg(long, default_value = "target/dist")]
         out: PathBuf,
     },
+    /// Archive working sources and locked root/fuzz dependencies for redistribution.
+    Source {
+        #[arg(long, default_value = "target/dist")]
+        out: PathBuf,
+        #[arg(long)]
+        verify: bool,
+    },
     /// Generate notices for the selected shipped graph and one actual target.
     Notices {
         #[arg(long)]
@@ -67,6 +74,13 @@ fn execute() -> Result<()> {
             target,
             out,
         } => dist::build(cli, app, target, &out),
+        Task::Source { out, verify } => {
+            source::archive(&out)?;
+            if verify {
+                source::verify(&out)?;
+            }
+            Ok(())
+        }
         Task::Notices { app, target, out } => notices::write(app, &target, &out),
         Task::Ci { rust_only } => ci::run(rust_only),
         Task::Lint => lint::run(),

@@ -57,10 +57,10 @@ Commands resolve the invoking workspace with Cargo at runtime, including when
 called from a member directory. A shared target cache must not select the
 worktree in which an earlier `xtask` executable happened to be compiled.
 
-Use a fresh output folder. The CLI archive is flat: executable, LICENSE and
-THIRD-PARTY-NOTICES.txt. The app ZIP contains `EML Attachment Remover.app`, with
-GUI executable `Contents/MacOS/EMLAttachmentRemover` and icon/notices/LICENSE in
-Resources. It contains no CLI; Terminal users install the separate CLI archive.
+Use a fresh output folder. The CLI archive is flat: executable, LICENSE,
+PROJECT-NOTICE.md, LICENSE-COMMERCIAL.md, SOURCE.txt and THIRD-PARTY-NOTICES.txt. The app ZIP contains `EML Attachment Remover.app`, with
+GUI executable `Contents/MacOS/EMLAttachmentRemover` and the icon, notices and
+project licensing/source files in Resources. It contains no CLI; Terminal users install the separate CLI archive.
 The GUI Cargo target is `emlattachmentremover-gui`; the bundle identifier is
 `io.github.resoltico.emlattachmentremover`. The bundle declares email and folder
 document types as Viewer/Alternate, with no Services or Assets.car. The icon is the committed complete ICNS; re-exporting its editable
@@ -77,6 +77,14 @@ binaries for its CPU target, and uses its UTC committer time for archives.
 A conflicting `EML_SOURCE_REVISION` is rejected; empty or absent values are omitted
 from ordinary Cargo builds. Supplied revisions must contain 40 or 64 ASCII
 hexadecimal characters. ZIP timestamps round down to two-second precision.
+An extracted Corresponding Source archive has no `.git` directory. For binary
+packaging from that tree, set `EML_SOURCE_REVISION` and `SOURCE_DATE_EPOCH` to the
+exact values printed in its `SOURCE.txt`, then run the same `cargo xtask dist`
+command with installed native/tool prerequisites. This uses explicit metadata,
+not an unrelated ancestor checkout. Regenerating a tracked source archive itself
+requires a Git checkout. Offline source checks establish dependency resolution
+and compilation, not bit-for-bit binary reproducibility.
+
 Commit reviewed inputs before distributing: packages built from a dirty checkout
 carry the base revision and are development evidence, not exact source snapshots.
 
@@ -194,7 +202,7 @@ Before the owner tags or publishes:
    GitHub artifact attestations can be checked with
    `gh attestation verify <archive> --repo resoltico/EMLAttachmentRemover`.
 5. Test first launch of the downloaded ad hoc app using the
-   [README opening steps](../README.md#manual-downloads). Preserve corresponding MPL source
+   [README opening steps](../README.md#manual-downloads). Preserve corresponding AGPL source
    availability and notices when redistributing.
 
 The scheduled Weekly workflow runs full fuzz and mutation campaigns once a week,
