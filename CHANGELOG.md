@@ -7,6 +7,7 @@
 - Slint uses its upstream GPL-3.0-only option; other third-party licenses and notices are preserved.
 
 - CLI installers add explicit backed-up receiptless replacement, missing-executable repair, early conflict diagnosis and transactional PATH ownership; changed or unverifiable files stay protected.
+- Installer cancellation restores verified prior files; incomplete restoration retains a recovery plan. PATH cleanup preserves concurrent value-kind edits.
 - Windows uninstall preserves the executable and ownership receipt when removing its owned PATH entry fails, so cleanup can be retried.
 
 ## [8.0.0] - 2026-11-09

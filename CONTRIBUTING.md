@@ -213,6 +213,13 @@ Unix installer interruption tests require Python 3.8+ for isolated, owned proces
 groups. Python is a development-harness prerequisite, not a dependency of the
 installed CLI or standalone installer.
 
+Portable PowerShell cancellation probes use real isolated files and in-memory
+PATH records at actual effect boundaries. They do not establish native Windows
+registry, ACL or executable-sharing behavior. Native Windows cancellation workers
+use the real registry; native registry, ACL and executable-sharing cases run under
+PowerShell 5.1 and 7. Process termination that cannot run
+`finally` is outside those cancellation assertions.
+
 Use only isolated HOME/config/install paths for tests. Native Windows registry
 PATH tests run only in CI and restore the original raw value, kind and existence.
 The real archive checks must cover each of the six shipped CLI targets on its

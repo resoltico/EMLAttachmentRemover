@@ -154,6 +154,14 @@ entire shared bin directory, copy a receipt from another directory or edit hashe
 to bypass a refusal. The published installer continues refusing receiptless files;
 its version output is not ownership proof.
 
+PowerShell pipeline cancellation uses the same restoration path as ordinary
+activation failures. Recovery checks actual file slots and verified receipt and
+payload hashes. A retained `recovery.txt` records planned paths, not proof that
+every planned write completed; inspect the named files before manual recovery.
+After the new executable and receipt are validated, installation is committed;
+later retired-file cleanup can be retried without undoing that valid installation.
+An abrupt process kill or power loss cannot run script cleanup.
+
 Pre-existing directories may be shared with other tools. They are never removed
 merely because they became empty. Unrelated files are preserved.
 
