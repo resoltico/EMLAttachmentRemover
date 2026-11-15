@@ -1040,6 +1040,248 @@ print("All", len(records), "isolated parent/group signal boundaries restored pri
 PY
 then :; else fail 'signal boundary transaction restored prior installation'; fi
 
+begin 'startup rewrites preserve complete user bytes across failures and handled signals'
+if python3 - "${installer}" "${fixture_home}" "${signal_old}" "${command_name}" "${env_prefix}" "${base_path}" <<'PY'
+import hashlib, json, os, pathlib, shutil, signal, stat, subprocess, sys
+installer, folder, release, command, prefix, base_path = sys.argv[1:]
+root = pathlib.Path(folder)
+original = b"# ORIGINAL USER CONFIGURATION\nexport KEEP_TOKEN=preserved\n# CRITICAL USER SUFFIX\n"
+suffix = b"# CONCURRENT USER SUFFIX\nexport NEW_KEEP=2\n"
+cases = [("uninstall", "separate", mode) for mode in
+         ("short", "parent-INT", "parent-TERM", "group-INT", "group-TERM", "restore-failure", "concurrent", "post-append", "pre-append")]
+cases += [("uninstall", layout, "short") for layout in ("aliases", "second")]
+cases += [("uninstall-move", "separate", mode) for mode in
+          ("move-failure", "parent-INT", "parent-TERM", "group-INT", "group-TERM")]
+cases.append(("uninstall-cleanup", "separate", "cleanup-failure"))
+cases += [("rollback", "separate", mode) for mode in ("short", "restore-failure", "group-TERM")]
+records, errors = [], []
+for number, (operation, layout, mode) in enumerate(cases):
+    label = "/".join((operation, layout, mode))
+    home = root / str(number)
+    home.mkdir()
+    target, temporary = home / "bin", home / "tmp"
+    temporary.mkdir()
+    bashrc, profile = home / ".bashrc", home / ".profile"
+    if layout == "aliases":
+        dotfiles = home / "dotfiles"
+        dotfiles.mkdir()
+        physical = dotfiles / "rc"
+        physical.write_bytes(original)
+        bashrc.symlink_to("dotfiles/rc")
+        os.link(physical, profile)
+    else:
+        bashrc.write_bytes(original)
+        profile.write_bytes(original + b"# SECOND PROFILE\n")
+    for file in (bashrc, profile):
+        file.chmod(0o640)
+    identities = {str(p): (p.stat().st_dev, p.stat().st_ino, stat.S_IMODE(p.stat().st_mode))
+                  for p in (bashrc, profile)}
+    env = {"HOME": str(home), "PATH": base_path, "TMPDIR": str(temporary),
+           "SHELL": "/bin/bash", prefix + "_DOWNLOAD_BASE": release}
+    args = ["sh", installer, "--install-dir", str(target), "--version", "1.2.3"]
+    def invoke(arguments, environment):
+        child = subprocess.Popen(arguments, env=environment, stdout=subprocess.PIPE,
+                                 stderr=subprocess.STDOUT, start_new_session=True)
+        try:
+            output = child.communicate(timeout=30)[0].decode(errors="replace")
+        except subprocess.TimeoutExpired:
+            os.killpg(child.pid, signal.SIGKILL)
+            child.communicate()
+            raise
+        return child.returncode, output
+    def owned_snapshot():
+        return {str(p.relative_to(target)): hashlib.sha256(p.read_bytes()).hexdigest()
+                for p in target.rglob("*") if p.is_file()
+                and not any(part.startswith("." + command + "-stage.") for part in p.parts)}
+    try:
+        if operation.startswith("uninstall"):
+            code, output = invoke(args, env)
+            assert code == 0, output
+        before = {str(p): p.read_bytes() for p in (bashrc, profile)}
+        owned_before = owned_snapshot() if target.exists() else {}
+        tools = home / "tools"
+        tools.mkdir()
+        (tools / "cat").write_text('''#!/bin/sh
+case "$1" in
+    */path-updated.* | */rollback-updated | */rollback-updated.*)
+        count=0
+        [ ! -f "$HOME/write-count" ] || count=$(/bin/cat "$HOME/write-count")
+        count=$((count + 1)); printf '%s\\n' "$count" > "$HOME/write-count"
+        if [ "$count" = "$REWRITE_TEST_AT" ]; then
+            printf 'reached\\n' > "$HOME/write-reached"
+            case "$REWRITE_TEST_MODE" in
+                pre-append) /bin/cat "${1%/*}/rewrite.0/preimage" ;;
+                post-append) /bin/cat "$1" ;;
+                *) head -c 8 "$1" ;;
+            esac
+            case "$REWRITE_TEST_MODE" in
+                concurrent | post-append | pre-append) printf '# CONCURRENT USER SUFFIX\\nexport NEW_KEEP=2\\n'; exit 91 ;;
+                short | restore-failure) exit 91 ;;
+                *) recipient=$PPID; case "$REWRITE_TEST_MODE" in group-*) recipient=-$recipient ;; esac
+                   kill -s "${REWRITE_TEST_MODE#*-}" -- "$recipient"; exit 91 ;;
+            esac
+        fi ;;
+    */rewrite.*/restore-image)
+        if [ "$REWRITE_TEST_MODE" = restore-failure ]; then
+            printf 'reached\\n' > "$HOME/restore-reached"; head -c 3 "$1"; exit 92
+        fi ;;
+esac
+exec /bin/cat "$@"
+''')
+        (tools / "cat").chmod(0o755)
+        if operation == "rollback":
+            (tools / "mv").write_text('''#!/bin/sh
+case "$1" in */new-state)
+    printf '# CONCURRENT USER SUFFIX\\nexport NEW_KEEP=2\\n' >> "$HOME/.bashrc"
+    exit 93 ;;
+esac
+exec /bin/mv "$@"
+''')
+            (tools / "mv").chmod(0o755)
+        elif operation == "uninstall-move":
+            (tools / "mv").write_text('''#!/bin/sh
+case "$1:$2" in */.*-install:*/previous-state)
+    printf 'reached\\n' > "$HOME/write-reached"
+    [ "$REWRITE_TEST_MODE" != move-failure ] || exit 94
+    /bin/mv "$@" || exit $?
+    recipient=$PPID; case "$REWRITE_TEST_MODE" in group-*) recipient=-$recipient ;; esac
+    kill -s "${REWRITE_TEST_MODE#*-}" -- "$recipient"
+    exit 0 ;;
+esac
+exec /bin/mv "$@"
+''')
+            (tools / "mv").chmod(0o755)
+        if operation == "uninstall-cleanup":
+            (tools / "rm").write_text('''#!/bin/sh
+case "$1:$2" in -rf:*/.*-stage.*)
+    printf 'reached\\n' > "$HOME/write-reached"; exit 95 ;;
+esac
+exec /bin/rm "$@"
+''')
+            (tools / "rm").chmod(0o755)
+        faulty = dict(env, PATH=str(tools) + ":" + base_path,
+                      REWRITE_TEST_MODE=mode, REWRITE_TEST_AT="999" if operation in ("uninstall-move", "uninstall-cleanup") else ("2" if layout == "second" else "1"))
+        selected = args + (["--uninstall"] if operation.startswith("uninstall") else [])
+        code, output = invoke(selected, faulty)
+        (home / "fault-output.txt").write_text(output)
+        assert (home / "write-reached").exists(), (label, "write boundary was not exercised", output)
+        if operation == "uninstall-cleanup":
+            assert code == 0 and "has been uninstalled" in output, (label, code, output)
+            assert not (target / command).exists(), label
+            assert not (target / ("." + command + "-install")).exists(), label
+            stages = list(target.glob("." + command + "-stage.*"))
+            assert len(stages) == 1 and str(stages[0]) in output, (label, output)
+            stage = stages[0]
+            assert hashlib.sha256((stage / "previous-binary").read_bytes()).hexdigest() == owned_before[command], label
+            assert hashlib.sha256((stage / "previous-state/state.sha256").read_bytes()).hexdigest() == owned_before["." + command + "-install/state.sha256"], label
+            for name, body in before.items():
+                cleaned = b"".join(line for line in body.splitlines(keepends=True)
+                                   if b"# added by the " not in line)
+                assert pathlib.Path(name).read_bytes() == cleaned, label
+            assert not (target / ("." + command + "-install.lock")).exists(), label
+            assert not (home / ".cli-installer-path.lock").exists(), label
+            code, retry_output = invoke(selected, env)
+            assert code != 0 and str(stage) in retry_output, (label, retry_output)
+            shutil.move(str(stage), str(home / "reviewed-recovery"))
+            code, retry_output = invoke(selected, env)
+            assert code == 0 and "Nothing was changed" in retry_output, (label, retry_output)
+            records.append({"operation": operation, "layout": layout, "mode": mode, "exit": code})
+            continue
+        assert code != 0, (label, code, output)
+        if operation == "rollback":
+            assert code == 1, (label, "original activation failure lost during cleanup", code, output)
+        elif "-INT" in mode:
+            assert code == 130, (label, code, output)
+        elif "-TERM" in mode:
+            assert code == 143, (label, code, output)
+        if mode == "restore-failure":
+            assert (home / "restore-reached").exists(), (label, "restoration boundary not exercised", output)
+        assert owned_snapshot() == owned_before, (label, "binary/receipt changed", output)
+        assert not (target / ("." + command + "-install.lock")).exists(), label
+        assert not (home / ".cli-installer-path.lock").exists(), label
+        for file in (bashrc, profile):
+            current = (file.stat().st_dev, file.stat().st_ino, stat.S_IMODE(file.stat().st_mode))
+            assert current == identities[str(file)], (label, "physical identity or mode changed")
+        if layout == "aliases":
+            assert bashrc.is_symlink() and os.path.samefile(bashrc, profile), label
+        stages = list(target.glob("." + command + "-stage.*"))
+        expected = dict(before)
+        if mode in ("post-append", "pre-append"):
+            expected[str(bashrc)] += suffix
+        if operation == "rollback":
+            # The append and concurrent suffix exist before rollback's rewrite.
+            installed = before[str(bashrc)]
+            expected[str(bashrc)] = installed + suffix
+        if stages:
+            assert len(stages) == 1, label
+            stage = stages[0]
+            assert stat.S_IMODE(stage.stat().st_mode) == 0o700, label
+            evidence = [p for p in stage.rglob("*") if p.is_file()]
+            images = [p.read_bytes() for p in evidence]
+            # Exact images independently derive from the fixture and owned line,
+            # never from a damaged live profile or engine reconstruction helper.
+            if operation == "rollback":
+                line_files = list(stage.glob("new-state/paths/*.line"))
+                owned_line = next(p.read_bytes() for p in line_files
+                                  if b"export PATH=" in p.read_bytes())
+                preimage = before[str(bashrc)] + owned_line + suffix
+                postimage = before[str(bashrc)] + suffix
+            else:
+                failing = profile if layout == "second" else bashrc
+                preimage = before[str(failing)]
+                postimage = b"".join(line for line in preimage.splitlines(keepends=True)
+                                     if b"# added by the " not in line)
+            assert preimage in images, (label, "complete exact preimage missing", output)
+            assert postimage in images, (label, "complete exact postimage missing", output)
+            for p in stage.glob("rewrite.*/*"):
+                assert stat.S_IMODE(p.stat().st_mode) & 0o077 == 0, (label, "recovery file not private", str(p))
+            if mode == "concurrent":
+                assert b"# CONCURRENT USER SUFFIX" in (stage / "rewrite.0/observed").read_bytes(), (label, "current user edit missing from recovery")
+            for name, body in expected.items():
+                if name != str(bashrc) or operation != "rollback":
+                    if mode not in ("restore-failure", "concurrent") or name != str(bashrc):
+                        assert pathlib.Path(name).read_bytes() == body, (label, "unrelated profile changed", output)
+            assert str(stage) in output, (label, "recovery path missing from diagnosis", output)
+            damaged = {str(p): p.read_bytes() for p in (bashrc, profile)}
+            code, retry_output = invoke(selected, env)
+            assert code != 0 and str(stage) in retry_output, (label, "unsafe retry accepted", retry_output)
+            assert damaged == {str(p): p.read_bytes() for p in (bashrc, profile)}, label
+            assert owned_snapshot() == owned_before, label
+            # Model explicit review: restore exact independently known fixture
+            # bytes in place, then move evidence outside the installation.
+            if mode == "concurrent":
+                expected[str(bashrc)] += suffix
+            for name, body in expected.items():
+                pathlib.Path(name).write_bytes(body)
+            shutil.move(str(stage), str(home / "reviewed-recovery"))
+        else:
+            assert mode != "restore-failure", (label, "failed restoration discarded evidence", output)
+            assert {str(p): p.read_bytes() for p in (bashrc, profile)} == expected, (label, output)
+        code, output = invoke(selected, env)
+        assert code == 0, (label, "reviewed/safely restored retry failed", output)
+        if operation == "rollback":
+            code, output = invoke(args + ["--uninstall"], env)
+            assert code == 0, (label, output)
+        assert not (target / command).exists(), label
+        assert not (target / ("." + command + "-install")).exists(), label
+        assert not list(target.glob("." + command + "-stage.*")), label
+        assert not (target / ("." + command + "-install.lock")).exists(), label
+        assert not (home / ".cli-installer-path.lock").exists(), label
+        for name, body in expected.items():
+            cleaned = b"".join(line for line in body.splitlines(keepends=True)
+                               if b"# added by the " not in line)
+            assert pathlib.Path(name).read_bytes() == cleaned, (label, "successful retry lost user bytes")
+        records.append({"operation": operation, "layout": layout, "mode": mode, "exit": code})
+    except (AssertionError, OSError, subprocess.SubprocessError) as exc:
+        errors.append(label + ": " + str(exc))
+(root / "rewrite-results.json").write_text(json.dumps({"cases": records, "failures": errors}, indent=2) + "\n")
+for error in errors:
+    print(error, file=sys.stderr)
+assert not errors, str(len(errors)) + " startup rewrite cases failed"
+print("All", len(records), "startup rewrite failure/signal cases preserved bytes, identities and recovery ownership.")
+PY
+then :; else fail 'startup rewrite recovery matrix'; fi
+
 printf '\n'
 if [[ "${failures}" -gt 0 ]]; then printf '%s check(s) failed.\n' "${failures}" >&2; exit 1; fi
 printf 'All installer checks passed.\n'

@@ -104,12 +104,22 @@ cleanup is refused. The installer never adopts or deletes arbitrary `.old` files
 
 The installer uses `.emlattachmentremover-install` beside the executable
 for ownership receipts and managed data. It verifies managed file hashes before
-update or removal and refuses existing unowned or changed files. A matching
-filename, version output or PATH entry does not establish ownership.
+update or removal and refuses unowned files by default and changed managed files.
+A matching filename, version output or PATH entry does not establish ownership.
 
 The checkout installer adds the following recovery behavior; it is not present
 in the published 8.0.0 installers. Use a reviewed installer and payload from the
 same qualified build, rather than passing new options to an older saved script.
+
+Unix uninstall and rollback preserve private recovery images before rewriting
+startup files in place, retaining their symlink and hardlink identities. A failed
+write or handled interruption attempts to restore only attributable changes. If
+restoration is unsafe or fails, retain the reported staging directory and
+privately inspect its `rewrite.N` paths, identities, exact `preimage`/`postimage`
+and available `observed`/`restore-image` files against the current startup file.
+These files may contain private shell configuration. Retry refuses retained
+staging until recovery is reviewed; do not remove evidence or overwrite later
+user edits blindly.
 
 - Local ownership and lock conflicts are diagnosed before downloading or running
   a candidate. The target is rechecked under lock immediately before mutation.

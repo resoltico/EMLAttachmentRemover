@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Unix uninstall and rollback protect startup files during failed or interrupted rewrites; unsafe restoration retains private complete recovery images and blocks retry pending review.
 - Software and documentation move from MPL-2.0, and original artwork from proprietary terms, to AGPL-3.0-only; third-party terms remain unchanged.
 - Contributions grant future commercial relicensing rights; separate commercial terms are not yet offered. Release archives include licensing notices and matching vendored source.
 - Slint uses its upstream GPL-3.0-only option; other third-party licenses and notices are preserved.
