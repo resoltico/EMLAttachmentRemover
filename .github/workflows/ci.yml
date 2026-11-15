@@ -246,6 +246,11 @@ jobs:
           persist-credentials: false
       - name: Archive and independently verify Corresponding Source
         run: cargo xtask source --verify --out "$RUNNER_TEMP/source-dist"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: corresponding-source
+          path: ${{ runner.temp }}/source-dist/emlattachmentremover-source-*.tar.gz
+          if-no-files-found: error
   ci-ok:
     if: always()
     needs: [lint, test, app, install, source]

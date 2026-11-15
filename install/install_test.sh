@@ -945,6 +945,101 @@ assert 'append read failure creates no active program' test ! -e "${fixture_home
 assert 'append read failure exposes the actual cause' grep -q 'Could not recheck startup file' "${work}/out"
 unset fixture_path
 
+begin 'signals at each completed activation rename preserve prior ownership'
+fixture_version=1.2.3
+signal_old=${work}/signal-old
+make_release "${signal_old}" "printf '%s\\n' '${command_name} 1.2.3'"
+fixture_version=1.2.4
+signal_new=${work}/signal-new
+make_release "${signal_new}" "printf '%s\\n' '${command_name} 1.2.4'"
+real_mv=$(command -v mv)
+if python3 - "${installer}" "${fixture_home}" "${signal_old}" "${signal_new}" "${command_name}" "${env_prefix}" "${base_path}" "${real_mv}" <<'PY'
+import hashlib, json, os, pathlib, signal, subprocess, sys
+installer, folder, old, new, command, prefix, base_path, real_mv = sys.argv[1:]
+root = pathlib.Path(folder)
+cases = [("managed", phase, mode, sig) for phase in ("previous-state", "binary", "ownership")
+         for mode, sig in (("parent", "TERM"), ("group", "TERM"), ("group", "INT"))]
+cases += [(kind, phase, "group", "TERM") for kind in ("fresh", "missing", "unmanaged")
+          for phase in ("binary", "ownership")]
+cases.append(("managed", "previous-state", "failure", "none"))
+records = []
+for number, (kind, phase, mode, sig) in enumerate(cases):
+    home = root / str(number)
+    home.mkdir()
+    target = home / "bin"
+    env = {"HOME": str(home), "PATH": base_path, "TMPDIR": str(home), "SHELL": "/bin/sh"}
+    env[prefix + "_DOWNLOAD_BASE"] = old
+    args = ["sh", installer, "--install-dir", str(target), "--no-modify-path"]
+    def invoke(arguments, environment):
+        child = subprocess.Popen(arguments, env=environment, stdout=subprocess.PIPE,
+                                 stderr=subprocess.STDOUT, start_new_session=True)
+        try:
+            output = child.communicate(timeout=30)[0].decode(errors="replace")
+        except subprocess.TimeoutExpired:
+            os.killpg(child.pid, signal.SIGKILL)
+            child.communicate()
+            raise
+        return child.returncode, output
+    if kind in ("managed", "missing"):
+        code, output = invoke(args + ["--version", "1.2.3"], env)
+        assert code == 0, output
+        if kind == "missing":
+            (target / command).unlink()
+    elif kind == "unmanaged":
+        target.mkdir()
+        binary = target / command
+        binary.write_text("#!/bin/sh\nexit 19\n")
+        binary.chmod(0o755)
+    def snapshot():
+        return {str(p.relative_to(target)): hashlib.sha256(p.read_bytes()).hexdigest()
+                for p in target.rglob("*") if p.is_file()}
+    before = snapshot()
+    tools = home / "tools"
+    tools.mkdir()
+    shim = tools / "mv"
+    shim.write_text('''#!/bin/sh
+first=''; last=''
+for argument do
+    case "$argument" in -f) continue ;; esac
+    if [ -z "$first" ]; then first=$argument; fi
+    last=$argument
+done
+matched=0
+case "$INSTALLER_TEST_PHASE:$first:$last" in
+    previous-state:*/.*-install:*/previous-state | binary:*/new-binary:* | ownership:*/new-state:*/.*-install) matched=1 ;;
+esac
+if [ "$matched" = 1 ] && [ "$INSTALLER_TEST_MODE" = failure ]; then exit 91; fi
+"$INSTALLER_TEST_MV" "$@" || exit $?
+if [ "$matched" = 1 ]; then
+    recipient=$PPID
+    [ "$INSTALLER_TEST_MODE" != group ] || recipient=-$recipient
+    kill -s "$INSTALLER_TEST_SIGNAL" -- "$recipient"
+fi
+''')
+    shim.chmod(0o755)
+    env.update({"PATH": str(tools) + ":" + base_path, prefix + "_DOWNLOAD_BASE": new,
+                "INSTALLER_TEST_MV": real_mv, "INSTALLER_TEST_PHASE": phase,
+                "INSTALLER_TEST_MODE": mode, "INSTALLER_TEST_SIGNAL": sig})
+    selected = args + ["--version", "1.2.4"]
+    if kind == "unmanaged":
+        selected += ["--replace-unmanaged"]
+    code, output = invoke(selected, env)
+    after = snapshot()
+    expected = 1 if mode == "failure" else (130 if sig == "INT" else 143)
+    if mode == "failure":
+        assert "mv exited 91" in output and "restoration was incomplete" not in output, output
+    assert code == expected, (kind, phase, mode, sig, code, output)
+    assert before == after, (kind, phase, mode, sig, before, after, output)
+    assert not (target / ("." + command + "-install.lock")).exists()
+    assert not list(target.glob("." + command + "-stage.*")), output
+    if kind == "fresh":
+        assert not target.exists(), output
+    records.append({"kind": kind, "phase": phase, "mode": mode, "signal": sig, "exit": code})
+(root / "signal-results.json").write_text(json.dumps(records, indent=2) + "\n")
+print("All", len(records), "isolated parent/group signal boundaries restored prior files and ownership.")
+PY
+then :; else fail 'signal boundary transaction restored prior installation'; fi
+
 printf '\n'
 if [[ "${failures}" -gt 0 ]]; then printf '%s check(s) failed.\n' "${failures}" >&2; exit 1; fi
 printf 'All installer checks passed.\n'

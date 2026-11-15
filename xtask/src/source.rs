@@ -178,6 +178,8 @@ pub(crate) fn notice(revision: &str) -> Result<String> {
     Ok(format!(
         "EML Attachment Remover {}\nEML_SOURCE_REVISION: {revision}\nSOURCE_DATE_EPOCH: {epoch}\n\
         Corresponding source archive: emlattachmentremover-source-{}.tar.gz\n\
+        CI workflow: download corresponding-source from the same Actions run as these binaries.\n\
+        Release workflow: source is in installer-files and alongside published binary archives.\n\
         Upstream: https://github.com/resoltico/EMLAttachmentRemover\n\
         Original software: AGPL-3.0-only; see LICENSE and PROJECT-NOTICE.md.\n\
         Original artwork is AGPL-3.0-only; third-party terms remain unchanged.\n\

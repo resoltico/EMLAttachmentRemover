@@ -209,6 +209,10 @@ Preserve EML's literal product block, copy both canonical engine bodies and upda
 the pin together. Commit the PDF engine first; a dirty working tree is not what
 the offline check reads.
 
+Unix installer interruption tests require Python 3.8+ for isolated, owned process
+groups. Python is a development-harness prerequisite, not a dependency of the
+installed CLI or standalone installer.
+
 Use only isolated HOME/config/install paths for tests. Native Windows registry
 PATH tests run only in CI and restore the original raw value, kind and existence.
 The real archive checks must cover each of the six shipped CLI targets on its
@@ -279,7 +283,8 @@ archives with `cargo xtask source --out target/dist`. This captures tracked work
 files and vendors the locked root and fuzz dependency graphs. Untracked source is
 refused; review and add intended files to Git first. Keep inputs stable throughout
 packaging. The Release workflow includes this archive in its checksums and attested
-artifact set; creating archives locally does not authorize publication.
+artifact set; CI uploads its matching `corresponding-source` artifact in the same
+workflow run as the binaries. Creating archives locally does not authorize publication.
 
 Use `cargo xtask source --verify --out /absolute/fresh/source-output` to verify
 root/fuzz resolution and a CLI build offline with an empty Cargo cache. The same

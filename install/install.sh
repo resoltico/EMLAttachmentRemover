@@ -258,6 +258,30 @@ validate_state() {
     old_version=$(cat "${state}/version")
 }
 
+# A signal must not arrive between a successful rename and its rollback flag.
+# The child ignores group signals only for this move; the parent remembers
+# interruption, records the completed move, then honors the original exit code.
+activation_move() {
+    activation_phase=$1; activation_error=$2; shift 2
+    case "${activation_phase}" in previous-state | binary | ownership) : ;; *) die 'Invalid activation move.' ;; esac
+    activation_signal=0; activation_status=0
+    trap 'activation_signal=130' INT
+    trap 'activation_signal=143' TERM HUP
+    (trap '' INT TERM HUP; exec mv "$@") || activation_status=$?
+    if [ "${activation_status}" = 0 ]; then
+        case "${activation_phase}" in
+            previous-state) state_moved=1 ;;
+            binary) binary_switched=1 ;;
+            ownership) state_switched=1 ;;
+            *) die 'Invalid activation move.' ;;
+        esac
+    fi
+    trap 'exit 130' INT
+    trap 'exit 143' TERM HUP
+    [ "${activation_signal}" = 0 ] || exit "${activation_signal}"
+    [ "${activation_status}" = 0 ] || die "${activation_error}" "mv exited ${activation_status}."
+}
+
 rollback() {
     rollback_failed=0
     if [ "${state_switched}" = 1 ] && [ -d "${state}" ]; then
@@ -605,9 +629,9 @@ install() {
     )
     transition=1
     append_owned_paths
-    if [ "${managed}" = 1 ]; then mv "${state}" "${stage}/previous-state" || die 'Could not stage the previous installer state.'; state_moved=1; fi
-    mv -f "${stage}/new-binary" "${binary}" || die 'Could not activate the program.'; binary_switched=1
-    mv "${new_state}" "${state}" || die 'Could not activate installer ownership.'; state_switched=1
+    if [ "${managed}" = 1 ]; then activation_move previous-state "Could not stage previous installer state: ${state}" "${state}" "${stage}/previous-state"; fi
+    activation_move binary "Could not activate the program: ${binary}" -f "${stage}/new-binary" "${binary}"
+    activation_move ownership "Could not activate installer ownership: ${state}" "${new_state}" "${state}"
     transition=0
     remove_created_dir=0
     if [ -n "${old_version}" ] && [ "${old_version}" = "${new_version}" ]; then step Installed "${binary} (reinstalled ${new_version})"

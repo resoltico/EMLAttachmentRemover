@@ -22,7 +22,10 @@ system, service or item of business data. Read the license for the actual condit
 ## Source for this build
 
 Release packaging produces `emlattachmentremover-source-<version>.tar.gz` alongside
-executable archives. Obtain the matching source archive from its qualified artifact set or
+executable archives. The CI workflow uploads it as the `corresponding-source` artifact
+in the same [Actions run](https://github.com/resoltico/EMLAttachmentRemover/actions) as the
+binary artifacts; use the matching run, not an unrelated build. The Release workflow retains
+it in the qualified `installer-files` artifact set and alongside binaries in
 [release assets](https://github.com/resoltico/EMLAttachmentRemover/releases). The archive
 captures tracked working files, including build/install scripts and artwork sources, plus
 the root and fuzz workspaces' locked dependencies selected by `cargo vendor`. It refuses

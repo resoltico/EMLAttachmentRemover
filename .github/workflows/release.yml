@@ -182,7 +182,7 @@ jobs:
           name: macos-dist-x86_64-apple-darwin
           path: target/dist
       - name: Capture matching Corresponding Source with locked dependencies
-        run: cargo xtask source --out target/dist
+        run: cargo xtask source --verify --out target/dist
       - name: Hash the complete release archive set
         run: |
           (
