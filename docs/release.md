@@ -109,9 +109,9 @@ graph, with required upstream supplements. See [legal materials](../legal/README
 
 Publish `install/install.sh` and `install/install.ps1` beside the CLI archives.
 Both scripts belong in `SHA256SUMS` and the release attestation, while preserving
-the independent eight-archive completeness check. Do not include a desktop app
+the independent nine-archive completeness check. Do not include a desktop app
 or native document probe in CLI installer selection. The scripts download exact
-CLI filenames for one CPU and retain `LICENSE` / `THIRD-PARTY-NOTICES.txt` under
+CLI filenames for one CPU and retain the package's licensing/source notices under
 an installer-owned sibling directory.
 
 Latest must resolve once to a stable tag, so the archive, version and checksum
@@ -162,11 +162,11 @@ app plist. Product artifact selection explicitly excludes this fixture. Passing
 second request arrives. There are no delivery retries.
 
 A branch `workflow_dispatch` builds, smokes and uploads archives and SHA256SUMS.
-The checksum job requires exactly eight product archives: six CLI archives
-(macOS, Linux and Windows, each for both CPUs) and two macOS app ZIPs. The
+The checksum job requires exactly nine archives: six CLI archives (macOS, Linux
+and Windows, each for both CPUs), two macOS app ZIPs and matching vendored source. The
 architecture-matched document probes are separate test artifacts and are excluded
 from this set. The checksum job also stages both standalone installers, producing
-a ten-entry manifest. All six native installer jobs consume those checksum-bound
+an eleven-entry manifest. All six native installer jobs consume those checksum-bound
 files. After they pass, the tag-only draft job downloads the complete set and
 checks every manifest entry before attestation and drafting.
 Producer archives and CLI extraction folders use runner-temporary directories
