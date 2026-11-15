@@ -9,9 +9,10 @@ $installer = Join-Path $Dist 'install.ps1'
 $work = Join-Path ([IO.Path]::GetTempPath()) ('cli-install-test-' + [guid]::NewGuid().ToString('N'))
 [void][IO.Directory]::CreateDirectory($work)
 $script:failures = 0
-$command = 'pdfconcat'
-$prefix = 'PDFCONCAT'
-$checksumName = 'checksums.txt'
+$command = 'emlattachmentremover'
+$prefix = 'EMLATTACHMENTREMOVER'
+$checksumName = 'SHA256SUMS'
+$testVersion = ''
 $reviewedInstaller = $null
 
 function Check([string]$Why, [bool]$Condition) {
@@ -73,6 +74,7 @@ function Invoke-Installer([string]$Shell, [string[]]$Arguments, [string]$Base = 
     Write-Host ("    invoking {0}: {1}" -f $mode, ($Arguments -join ' '))
     $watch = [Diagnostics.Stopwatch]::StartNew()
     try {
+        [Environment]::SetEnvironmentVariable(($prefix + '_VERSION'), $testVersion)
         [Environment]::SetEnvironmentVariable(($prefix + '_DOWNLOAD_BASE'), $Base)
         if ($fileMode) {
             return (Invoke-NativeCase $Shell (@('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $installer) + $Arguments))
@@ -460,15 +462,15 @@ try {
         return $script:fixtureOutput
     }
     foreach ($case in @(
-        @{ Text = @('pdfconcat 1.2.3 (abc, Go, windows/amd64)'); Code = 0; Version = '1.2.3' },
-        @{ Text = @('pdfconcat 1.2.3-SNAPSHOT-a1+build.2'); Code = 0; Version = '1.2.3-SNAPSHOT-a1+build.2' },
-        @{ Text = @('pdfconcat not-a-version'); Code = 0; Version = $null },
-        @{ Text = @('pdfconcat 1.2.3 extra'); Code = 0; Version = $null },
-        @{ Text = @('pdfconcat 01.2.3'); Code = 0; Version = $null },
-        @{ Text = @('pdfconcat 1.2.3-01'); Code = 0; Version = $null },
-        @{ Text = @('pdfconcat 1.2.3', 'extra line'); Code = 0; Version = $null },
+        @{ Text = @('emlattachmentremover 1.2.3 (abc, Go, windows/amd64)'); Code = 0; Version = '1.2.3' },
+        @{ Text = @('emlattachmentremover 1.2.3-SNAPSHOT-a1+build.2'); Code = 0; Version = '1.2.3-SNAPSHOT-a1+build.2' },
+        @{ Text = @('emlattachmentremover not-a-version'); Code = 0; Version = $null },
+        @{ Text = @('emlattachmentremover 1.2.3 extra'); Code = 0; Version = $null },
+        @{ Text = @('emlattachmentremover 01.2.3'); Code = 0; Version = $null },
+        @{ Text = @('emlattachmentremover 1.2.3-01'); Code = 0; Version = $null },
+        @{ Text = @('emlattachmentremover 1.2.3', 'extra line'); Code = 0; Version = $null },
         @{ Text = @('another 1.2.3'); Code = 0; Version = $null },
-        @{ Text = @('pdfconcat 1.2.3'); Code = 17; Version = $null }
+        @{ Text = @('emlattachmentremover 1.2.3'); Code = 17; Version = $null }
     )) {
         $script:fixtureExit = $case.Code; $script:fixtureOutput = $case.Text; $script:fixtureError = if ($case.Code) { 'native version failure detail' } else { '' }
         $result = $null; $failure = ''
@@ -496,6 +498,11 @@ try {
         if ($script:failures -gt 0) { throw "$($script:failures) helper checks failed." }
         return
     }
+    $versions = @(Get-ChildItem -LiteralPath $Dist -Filter 'emlattachmentremover-*-windows-*.zip' | ForEach-Object {
+        if ($_.Name -cmatch '^emlattachmentremover-([0-9]+\.[0-9]+\.[0-9]+)-windows-(x86_64|aarch64)\.zip$') { $Matches[1] }
+    } | Select-Object -Unique)
+    if ($versions.Count -ne 1) { throw 'Expected one release version in the native Windows archives.' }
+    $testVersion = $versions[0]
     $shells = @('powershell', 'pwsh') | Where-Object { Get-Command $_ -ErrorAction SilentlyContinue }
     if ($env:CI) {
         Check 'CI requires Windows PowerShell and PowerShell Core' (@($shells).Count -eq 2)
@@ -529,13 +536,14 @@ try {
         if (-not (Test-Path -LiteralPath $exe)) { continue }
         Check 'receipt installed' (Test-Path -LiteralPath $receiptFile)
         Check 'receipt integrity seal installed' (Test-Path -LiteralPath $receiptSeal)
-        Check 'installed executable runs' ((& $exe --version) -match '^pdfconcat ')
-        # Preserve product-specific native smoke: Windows resources and an actual PDF.
-        $info = (Get-Item -LiteralPath $exe).VersionInfo
-        Check 'Windows version resources exist' ($info.ProductName -eq 'PDFConcat' -and $info.LegalCopyright -match 'AGPL-3.0-only' -and [bool]$info.FileVersion)
-        $pdf = Join-Path $work "$shellName-blank.pdf"
-        & $exe build -o $pdf --blank --fit-to A4 | Out-Null
-        Check 'installed executable builds a PDF' ($LASTEXITCODE -eq 0 -and (Test-Path -LiteralPath $pdf))
+        Check 'installed executable runs' ((& $exe --version) -match '^emlattachmentremover ')
+        # Exercise EML's native product contract and retain all legal material.
+        $sourceMail = Join-Path $work "$shellName-source.eml"
+        [IO.File]::WriteAllBytes($sourceMail, [Text.Encoding]::ASCII.GetBytes("Subject: Installer smoke`r`n`r`nBody retained`r`n"))
+        & $exe -- $sourceMail | Out-Null
+        $copyMail = Join-Path $work "$shellName-source.no-attachments.eml"
+        Check 'installed CLI creates the exact body copy' ($LASTEXITCODE -eq 0 -and (Test-Path -LiteralPath $copyMail) -and [Convert]::ToBase64String([IO.File]::ReadAllBytes($copyMail)) -ceq [Convert]::ToBase64String([IO.File]::ReadAllBytes($sourceMail)))
+        foreach ($notice in @($Product.LegalFiles)) { Check ('installed legal file retained: ' + $notice) ((Get-Item -LiteralPath (Join-Path (Join-Path $state 'legal') $notice)).Length -gt 0) }
         Check 'installation reported' ((Get-Output) -match 'is installed')
         Check 'custom uninstall path is quoted' ((Get-Output).Contains("-InstallDir '" + $dir.Replace("'", "''") + "'"))
         Check 'reinstall succeeds' ((Invoke-Installer $shell @('-InstallDir', $dir, '-NoModifyPath')) -eq 0)
@@ -555,13 +563,13 @@ try {
         Check 'same named .old is preserved' (-not (Test-Path -LiteralPath "$exe.old"))
 
         Write-Host '--- update a running executable'
-        $start = [Diagnostics.ProcessStartInfo]::new($exe, 'check --plan -')
+        $start = [Diagnostics.ProcessStartInfo]::new($exe, '--request -')
         $start.UseShellExecute = $false
         $start.RedirectStandardInput = $true; $start.RedirectStandardOutput = $true; $start.RedirectStandardError = $true
         $running = [Diagnostics.Process]::Start($start)
         try {
             Check 'update while running succeeds' ((Invoke-Installer $shell @('-InstallDir', $dir, '-NoModifyPath')) -eq 0)
-            Check 'new executable runs' ((& $exe --version) -match '^pdfconcat ')
+            Check 'new executable runs' ((& $exe --version) -match '^emlattachmentremover ')
             $owned = [IO.File]::ReadAllText($receiptFile) | ConvertFrom-Json
             Check 'one retired path is explicitly owned' ($null -ne $owned.Retired -and $owned.Retired.Name -match ('^\.' + $command + '-retired-[0-9a-f]{32}\.exe$'))
             $retiredPath = Join-Path $dir $owned.Retired.Name
@@ -585,7 +593,14 @@ try {
         Check 'bad checksum fails through -File' ((Invoke-Installer $shell @('-InstallDir', $dir, '-NoModifyPath') $tampered -AsFile) -ne 0)
         Check 'checksum cause is shown' ((Get-Output) -match 'does not match its published SHA-256')
         Check 'binary and receipt unchanged' ((Get-FileHash -LiteralPath $exe).Hash -eq $before -and [IO.File]::ReadAllText($receiptFile) -ceq $beforeReceipt -and [IO.File]::ReadAllText($receiptSeal) -ceq $beforeSeal)
-        Check 'version mismatch fails' ((Invoke-Installer $shell @('-InstallDir', $dir, '-NoModifyPath', '-Version', '999.0.0')) -ne 0)
+        $wrongVersion = Join-Path $work "$shellName-wrong-version"
+        [void][IO.Directory]::CreateDirectory($wrongVersion)
+        foreach ($file in Get-ChildItem -LiteralPath $Dist -Filter 'emlattachmentremover-*-windows-*.zip') {
+            $renamed = $file.Name -creplace '^emlattachmentremover-[0-9]+\.[0-9]+\.[0-9]+-', 'emlattachmentremover-999.0.0-'
+            [IO.File]::Copy($file.FullName, (Join-Path $wrongVersion $renamed))
+        }
+        Save-Manifest $wrongVersion
+        Check 'version mismatch fails' ((Invoke-Installer $shell @('-InstallDir', $dir, '-NoModifyPath', '-Version', '999.0.0') $wrongVersion) -ne 0)
         Check 'version mismatch reported' ((Get-Output) -match 'not 999.0.0')
         Write-Host '--- native access-denied ownership preflight'
         $originalAcl = Get-Acl -LiteralPath $exe
@@ -722,7 +737,7 @@ try {
         $saved = @{}
         foreach ($suffix in @('VERSION','INSTALL_DIR','NO_MODIFY_PATH','UNINSTALL','DOWNLOAD_BASE')) { $name = $prefix + '_' + $suffix; $saved[$name] = [Environment]::GetEnvironmentVariable($name) }
         try {
-            [Environment]::SetEnvironmentVariable(($prefix + '_VERSION'), $null)
+            [Environment]::SetEnvironmentVariable(($prefix + '_VERSION'), $testVersion)
             [Environment]::SetEnvironmentVariable(($prefix + '_INSTALL_DIR'), $dir)
             [Environment]::SetEnvironmentVariable(($prefix + '_NO_MODIFY_PATH'), '1')
             [Environment]::SetEnvironmentVariable(($prefix + '_DOWNLOAD_BASE'), $Dist)

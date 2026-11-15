@@ -60,8 +60,9 @@ contains only its named architecture. Choose the native build for your Mac.
 
 Extract into a new folder. On macOS and Linux, run `./emlattachmentremover --help`;
 on Windows, run `.\emlattachmentremover.exe --help` in PowerShell. Add the extracted
-executable to PATH if desired. CLI archives include LICENSE and third-party notices;
-the app carries both under `Contents/Resources`. Release assets include SHA256SUMS
+executable to PATH if desired. Archives include project licensing/source notices
+and third-party notices; the app carries them under `Contents/Resources`.
+Release assets include matching vendored source, SHA256SUMS
 and GitHub artifact attestations. See [release verification](docs/release.md).
 
 The Mac app is ad hoc signed, without Developer ID or notarization. Move it to
