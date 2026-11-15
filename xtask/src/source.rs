@@ -200,12 +200,26 @@ pub(crate) fn verify(out: &std::path::Path) -> Result<()> {
     let unpack = scratch.path().join("source");
     fs::create_dir(&unpack)?;
     tar::Archive::new(flate2::read::GzDecoder::new(fs::File::open(archive)?)).unpack(&unpack)?;
+    let metadata = fs::read_to_string(unpack.join("SOURCE.txt"))?;
+    let revision = metadata
+        .lines()
+        .find_map(|line| line.strip_prefix("EML_SOURCE_REVISION: "))
+        .ok_or("Source archive has no revision metadata")?;
+    build_input::revision(revision)?;
+    let seconds = metadata
+        .lines()
+        .find_map(|line| line.strip_prefix("SOURCE_DATE_EPOCH: "))
+        .ok_or("Source archive has no timestamp metadata")?;
+    parse_epoch(seconds)?;
+    let host = crate::host()?;
     let command = || {
         let mut command = Command::new("cargo");
         command
             .current_dir(&unpack)
             .env("CARGO_HOME", scratch.path().join("cargo-home"))
-            .env("CARGO_TARGET_DIR", scratch.path().join("target"));
+            .env("CARGO_TARGET_DIR", scratch.path().join("target"))
+            .env("EML_SOURCE_REVISION", revision)
+            .env("SOURCE_DATE_EPOCH", seconds);
         command
     };
     capture(command().args(["metadata", "--offline", "--locked", "--format-version", "1"]))?;
@@ -219,12 +233,43 @@ pub(crate) fn verify(out: &std::path::Path) -> Result<()> {
         "1",
     ]))?;
     crate::run(command().args([
-        "check",
+        "build",
         "--offline",
         "--locked",
+        "--target",
+        &host,
         "-p",
         "emlattachmentremover",
+        "-p",
+        "xtask",
     ]))?;
+    let executable = if cfg!(windows) {
+        "emlattachmentremover.exe"
+    } else {
+        "emlattachmentremover"
+    };
+    let actual = capture(
+        Command::new(
+            scratch
+                .path()
+                .join("target")
+                .join(&host)
+                .join("debug")
+                .join(executable),
+        )
+        .arg("--version"),
+    )?;
+    let expected = format!(
+        "{} {} ({revision})",
+        eml_core::product::CLI_NAME,
+        eml_core::product::VERSION
+    );
+    if actual != expected {
+        return Err(format!(
+            "Extracted CLI identity differs: expected {expected:?}, found {actual:?}"
+        )
+        .into());
+    }
     // The same metadata command must reject an archive missing its vendor sources.
     fs::rename(unpack.join("vendor"), unpack.join("vendor-held"))?;
     let rejected = command()
@@ -234,7 +279,7 @@ pub(crate) fn verify(out: &std::path::Path) -> Result<()> {
         return Err("Offline source verification accepted missing vendored sources".into());
     }
     eprintln!(
-        "Offline root/fuzz resolution and CLI build passed; missing-vendor negative control rejected"
+        "Offline root/fuzz resolution, linked CLI/tool builds and CLI identity passed; missing-vendor negative control rejected"
     );
     Ok(())
 }
