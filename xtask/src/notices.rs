@@ -46,7 +46,7 @@ pub(crate) fn write(app: bool, target: &str, out: &Path) -> Result<()> {
             "legal/objc2/LICENSE.md",
             "legal/upstream/lyon/LICENSE-MIT-80f275e90d79.txt",
             "legal/upstream/rspolib/LICENSE-4fe9b5fce8fd.txt",
-            "legal/upstream/taffy/LICENSE-a7083ef3dd41.md",
+            "legal/upstream/taffy/LICENSE-f97daf1a0124.txt",
         ] {
             let text = fs::read(path)
                 .map_err(|error| format!("Required upstream license material {path}: {error}"))?;

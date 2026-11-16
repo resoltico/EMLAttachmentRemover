@@ -25,6 +25,7 @@ function Check([string]$Why, [bool]$Condition) {
     }
 }
 function Get-Output { return [IO.File]::ReadAllText((Join-Path $work 'out.txt')) }
+function Get-RecoveryCommand([string]$Text) { return [regex]::Match($Text, '(?m)^  (& [^\r\n]+)\r?$') }
 function Invoke-NativeCase([string]$Shell, [string[]]$Arguments, [switch]$StreamOutput) {
     # PS 5.1 turns redirected native stderr into NativeCommandError records.
     # Collect them without terminating the harness, then assert the actual exit.
@@ -118,7 +119,7 @@ function Test-ArchiveMemberSelection {
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $asset = $Product.ArchivePrefix
     if ($Product.VersionedArchive) { $asset += '1.2.3' + $Product.Separator }
-    $asset += 'windows' + $Product.Separator + $Product.X64 + '.zip'
+    $asset += $Product.WindowsX64 + '.zip'
     $root = if ($Product.RootedArchive) { $command + '-1.2.3-windows-x86_64/' } else { '' }
     $cases = @('valid', 'duplicate', 'reparse')
     if ($Product.RootedArchive) { $cases += @('wrong-root', 'flat') }
@@ -168,7 +169,7 @@ function Test-UninstallPathFailure {
         $node = $ast.FindAll({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -ceq $name }, $true)[0]
         . ([scriptblock]::Create($node.Extent.Text))
     }
-    $node = $ast.FindAll({ param($n) $n -is [Management.Automation.Language.IfStatementAst] -and $n.Clauses[0].Item1.Extent.Text -ceq '$Uninstall' }, $true)[0]
+    $node = $ast.FindAll({ param($n) $n -is [Management.Automation.Language.IfStatementAst] -and $n.Clauses[0].Item1.Extent.Text -ceq '$Uninstall' -and $n.Clauses[0].Item2.Extent.Text.Contains('Invoke-StateRemoval') }, $true)[0]
     $body = $node.Clauses[0].Item2.Extent.Text
     $uninstallBranch = [scriptblock]::Create($body.Substring(1, $body.Length - 2))
     function Enter-PathLock { return $null }
@@ -651,6 +652,80 @@ $activation=$null;$preserveStage=$false;$pathMutex=$null;$tmp=$null;$lock=$null;
     }
 }
 
+function Test-WindowsArchiveNames {
+    $Product = $Product.Clone()
+    foreach ($name in @('Exit-Installer', 'Get-WindowsArchiveSuffix')) {
+        $node = $ast.FindAll({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -ceq $name }, $true)[0]
+        . ([scriptblock]::Create($node.Extent.Text))
+    }
+    $first = $ast.FindAll({ param($n) $n -is [Management.Automation.Language.AssignmentStatementAst] -and $n.Extent.Text -ceq '$asset = $Product.ArchivePrefix' }, $true)[0]
+    $statements = @($first.Parent.Statements)
+    $index = [array]::IndexOf($statements, $first)
+    $nameBody = ($statements[$index..($index + 2)] | ForEach-Object { $_.Extent.Text }) -join "`n"
+    $compose = [scriptblock]::Create($nameBody + "`nreturn " + '$asset')
+    $archiveSuffix = Get-WindowsArchiveSuffix 'AMD64'
+    Check 'native AMD64 selects its declared Windows archive suffix' ($archiveSuffix -ceq $Product.WindowsX64)
+    $Version = '1.2.3'
+    $Product.ArchivePrefix = 'example_'; $Product.VersionedArchive = $false
+    $Product.WindowsX64 = 'windows_amd64'
+    $archiveSuffix = Get-WindowsArchiveSuffix 'AMD64'
+    Check 'unversioned Windows archive naming uses the declared full suffix' ((& $compose) -ceq 'example_windows_amd64.zip')
+    $Product.ArchivePrefix = 'example-'; $Product.Separator = '-'; $Product.VersionedArchive = $true
+    $Product.WindowsX64 = 'x86_64-pc-windows-msvc'
+    $archiveSuffix = Get-WindowsArchiveSuffix 'AMD64'
+    Check 'versioned Windows archive naming permits architecture-first release triples' ((& $compose) -ceq 'example-1.2.3-x86_64-pc-windows-msvc.zip')
+    $Product.WindowsArm64 = 'aarch64-pc-windows-msvc'
+    Check 'native ARM64 selects its declared full suffix' ((Get-WindowsArchiveSuffix 'ARM64') -ceq 'aarch64-pc-windows-msvc')
+    foreach ($case in @('ARM64', 'X86', 'amd64')) {
+        $Product.WindowsArm64 = ''
+        $failure = ''
+        try { [void](Get-WindowsArchiveSuffix $case) } catch { $failure = $_.Exception.Message }
+        Check ("unsupported Windows processor is refused: $case") ($failure -ceq "No Windows release for the $case processor.")
+    }
+}
+
+function Test-UnmanagedGuidance {
+    foreach ($name in @('ConvertTo-QuotedCommand', 'Get-UnmanagedRefusal')) {
+        $node = $ast.FindAll({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -ceq $name }, $true)[0]
+        . ([scriptblock]::Create($node.Extent.Text))
+    }
+    $Version = '1.2.3'
+    $InstallDir = Join-Path $work "a user's tools"
+    $ModifyPath = $false
+    $Uninstall = $false
+    $fixtureScript = Join-Path $work "reviewed installer's script.ps1"
+    [IO.File]::WriteAllText($fixtureScript, @'
+param([string]$Version, [string]$InstallDir, [switch]$NoModifyPath, [switch]$ReplaceUnmanaged)
+[IO.File]::WriteAllText($env:CLI_INSTALLER_UX_OPTIONS, (@{ Version=$Version; Directory=$InstallDir; NoModify=[bool]$NoModifyPath; Replace=[bool]$ReplaceUnmanaged } | ConvertTo-Json))
+'@)
+    $failure = Get-UnmanagedRefusal (Join-Path $InstallDir ($Product.Command + '.exe')) $fixtureScript
+    Check 'receiptless guidance explains ownership and unchanged files' ($failure.Message.Contains('no record of managing that file') -and $failure.Message.Contains('No program or PATH entry was changed'))
+    Check 'receiptless guidance links directly to its Help section' ($failure.Data['HelpAnchor'] -ceq '#existing-executable-without-an-installer-receipt')
+    $match = Get-RecoveryCommand $failure.Message
+    Check 'saved-script guidance contains a complete recovery command' $match.Success
+    $crlfMatch = Get-RecoveryCommand ($failure.Message.Replace("`n", "`r`n"))
+    Check 'recovery extraction handles Windows line endings without capturing them' ($match.Success -and $crlfMatch.Success -and $crlfMatch.Groups[1].Value -ceq $match.Groups[1].Value)
+    Check 'recovery extraction rejects diagnostics without a command' (-not (Get-RecoveryCommand 'No program or PATH entry was changed.').Success)
+    $savedOptions = $env:CLI_INSTALLER_UX_OPTIONS
+    try {
+        $env:CLI_INSTALLER_UX_OPTIONS = Join-Path $work 'recovery-options.json'
+        if ($match.Success) { & ([scriptblock]::Create($match.Groups[1].Value)) }
+        Check 'copied command launches the saved script successfully' ($match.Success -and $LASTEXITCODE -eq 0 -and (Test-Path -LiteralPath $env:CLI_INSTALLER_UX_OPTIONS))
+        if (Test-Path -LiteralPath $env:CLI_INSTALLER_UX_OPTIONS) {
+            $actual = [IO.File]::ReadAllText($env:CLI_INSTALLER_UX_OPTIONS) | ConvertFrom-Json
+            Check 'copied command preserves release, quoted directory and PATH choice' ($actual.Version -ceq '1.2.3' -and $actual.Directory -ceq $InstallDir -and $actual.NoModify -and $actual.Replace)
+        }
+    } finally { $env:CLI_INSTALLER_UX_OPTIONS = $savedOptions }
+    $failure = Get-UnmanagedRefusal 'existing.exe' ''
+    Check 'scriptblock guidance asks to save the installer without inventing a file path' ($failure.Message.Contains('Save and review this installer as a .ps1 file first') -and $failure.Message -notmatch '(?m)^  & ')
+    $Version = ''; $ModifyPath = $true
+    $failure = Get-UnmanagedRefusal 'existing.exe' $fixtureScript
+    Check 'latest and normal PATH choices do not gain a pin or PATH restriction' ($failure.Message -notmatch ' -Version ' -and $failure.Message -notmatch ' -NoModifyPath')
+    $Uninstall = $true
+    $failure = Get-UnmanagedRefusal 'existing.exe' $fixtureScript
+    Check 'unmanaged uninstall offers removal guidance instead of replacement' ($failure.Message.Contains('Use the method that installed this executable') -and $failure.Message -notmatch 'ReplaceUnmanaged|recovery backup| -File ')
+}
+
 function Save-Manifest([string]$Directory) {
     $lines = @()
     foreach ($file in Get-ChildItem -LiteralPath $Directory -Filter '*.zip') { $lines += (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant() + '  ' + $file.Name }
@@ -739,6 +814,8 @@ try {
         Check ('non-absolute directory refused: ' + $relative) $refused
     }
     Check 'PowerShell command quoting preserves apostrophes' ((ConvertTo-QuotedCommand "C:\user's tools\program.exe") -ceq "'C:\user''s tools\program.exe'")
+    Test-WindowsArchiveNames
+    Test-UnmanagedGuidance
     Test-UninstallPathFailure
     Test-ArchiveMemberSelection
     Test-ActivationRecovery
@@ -954,14 +1031,29 @@ try {
         [IO.File]::WriteAllText("$exe.old", 'unrelated backup')
         Check 'unmanaged executable refuses install' ((Invoke-Installer $shell @('-InstallDir', $dir, '-NoModifyPath')) -ne 0)
         Check 'unmanaged executable refuses uninstall' ((Invoke-Installer $shell @('-InstallDir', $dir, '-Uninstall', '-NoModifyPath')) -ne 0)
+        Check 'unmanaged uninstall does not suggest installation' ((Get-Output).Contains('Use the method that installed this executable') -and -not (Get-Output).Contains('ReplaceUnmanaged'))
         Check 'unrelated files and directory remain' ([IO.File]::ReadAllText($exe) -ceq 'unrelated executable' -and [IO.File]::ReadAllText("$exe.old") -ceq 'unrelated backup')
         $recoveryBefore = @(Get-ChildItem -LiteralPath $work -Filter ('.' + $command + '-unmanaged-*.exe') -Force | ForEach-Object { $_.FullName })
         Check 'ReplaceUnmanaged is refused for uninstall' ((Invoke-Installer $shell @('-InstallDir', $dir, '-Uninstall', '-ReplaceUnmanaged', '-NoModifyPath')) -ne 0 -and [IO.File]::ReadAllText($exe) -ceq 'unrelated executable')
         $emptyMirror = Join-Path $work ($shellName + '-missing-unmanaged-release')
         [void][IO.Directory]::CreateDirectory($emptyMirror)
-        Check 'default unmanaged refusal precedes download' ((Invoke-Installer $shell @('-InstallDir', $dir, '-NoModifyPath') $emptyMirror) -ne 0 -and (Get-Output).Contains('No ownership receipt') -and -not (Get-Output).Contains('Downloaded'))
+        Check 'default unmanaged refusal precedes download' ((Invoke-Installer $shell @('-InstallDir', $dir, '-NoModifyPath') $emptyMirror) -ne 0 -and (Get-Output).Contains('Existing executable has no installer receipt') -and -not (Get-Output).Contains('Downloaded'))
         Check 'bad candidate checksum leaves unmanaged bytes and state untouched' ((Invoke-Installer $shell @('-InstallDir', $dir, '-ReplaceUnmanaged', '-NoModifyPath') $tampered) -ne 0 -and [IO.File]::ReadAllText($exe) -ceq 'unrelated executable' -and -not (Test-Path -LiteralPath $state))
-        Check 'explicit unmanaged replacement succeeds' ((Invoke-Installer $shell @('-InstallDir', $dir, '-ReplaceUnmanaged', '-NoModifyPath')) -eq 0)
+        Check 'saved-file unmanaged refusal supplies a recovery command' ((Invoke-Installer $shell @('-InstallDir', $dir, '-NoModifyPath') -AsFile) -ne 0)
+        $recoveryMatch = Get-RecoveryCommand (Get-Output)
+        Check 'recovery command is present in native refusal' $recoveryMatch.Success
+        $recoveryEnvironment = @{}
+        foreach ($suffix in @('VERSION', 'INSTALL_DIR', 'NO_MODIFY_PATH', 'UNINSTALL', 'DOWNLOAD_BASE')) {
+            $name = $prefix + '_' + $suffix
+            $recoveryEnvironment[$name] = [Environment]::GetEnvironmentVariable($name)
+            [Environment]::SetEnvironmentVariable($name, $null)
+        }
+        try {
+            [Environment]::SetEnvironmentVariable(($prefix + '_DOWNLOAD_BASE'), $Dist)
+            $recoveryExit = if ($recoveryMatch.Success) { Invoke-NativeCase $shell @('-NoProfile', '-Command', $recoveryMatch.Groups[1].Value) } else { -1 }
+            Check 'copied recovery command installs the real release' ($recoveryExit -eq 0 -and (Test-Path -LiteralPath $receiptFile))
+        } finally { foreach ($name in $recoveryEnvironment.Keys) { [Environment]::SetEnvironmentVariable($name, $recoveryEnvironment[$name]) } }
+        if (Test-Path -LiteralPath $receiptFile) { Check 'copied command preserves NoModifyPath' ($null -eq ([IO.File]::ReadAllText($receiptFile) | ConvertFrom-Json).PathEntry) }
         $recovery = @(Get-ChildItem -LiteralPath $work -Filter ('.' + $command + '-unmanaged-*.exe') -Force | Where-Object { $recoveryBefore -notcontains $_.FullName })
         Check 'one recovery backup outside shared bin retains original bytes' ($recovery.Count -eq 1 -and [IO.File]::ReadAllText($recovery[0].FullName) -ceq 'unrelated executable')
         if ($recovery.Count -eq 1) { Check 'backup exact path is reported' ((Get-Output).Contains($recovery[0].FullName)) }

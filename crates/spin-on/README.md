@@ -1,6 +1,6 @@
 # spin_on source maintenance patch
 
-This workspace patch replaces Slint 1.18.1's `spin_on` 0.1.1 dependency.
+This workspace patch supplies Slint's `spin_on` 0.1.1 dependency.
 The published executor uses `pin-utils::pin_mut!`; `pin-utils` is archived and is covered
 by [RUSTSEC-2026-0441](https://rustsec.org/advisories/RUSTSEC-2026-0441.html).
 

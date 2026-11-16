@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [9.0.1] - 2026-11-16
+
+- Desktop builds use Slint 1.19.0 with language edition 1.18 and updated rendering, accessibility and native-menu libraries; CI tool installation uses vendor action v2.90.5.
+- Installer refusals explain replacement or removal, offer quoted recovery commands, and link directly to matching Help; existing-file backups and ownership safeguards remain.
+
 ## [9.0.0] - 2026-11-15
 
 - Software and documentation move from MPL-2.0, and original artwork from proprietary terms, to AGPL-3.0-only; third-party terms remain unchanged.

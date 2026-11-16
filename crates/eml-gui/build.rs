@@ -8,7 +8,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err("The desktop feature requires macOS; native requires desktop".into());
     }
     let out = std::path::PathBuf::from(std::env::var_os("OUT_DIR").ok_or("OUT_DIR missing")?);
-    // Slint 1.18.1: Cupertino has a 2px frame and a 20px hover scrollbar;
+    // Slint 1.19.0: Cupertino has a 2px frame and a 20px hover scrollbar;
     // Fluent has no frame and a 14px overlay scrollbar.
     // Keep layout constraints independent of the size they are calculating.
     std::fs::write(
@@ -20,6 +20,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ),
     )?;
     let configuration = slint_build::CompilerConfiguration::new()
+        .with_edition((1, 18))
         .with_include_paths(vec![out])
         .with_style(if macos {
             "cupertino".into()

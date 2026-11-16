@@ -16,9 +16,9 @@ desktop = ["native", "slint/backend-winit", "slint/raw-window-handle-06", "slint
 [dependencies]
 eml-core = { path = "../eml-core" }
 eml-protocol = { path = "../eml-protocol" }
-slint = { version = "=1.18.1", default-features = false, features = ["std", "compat-1-18", "accessibility"] }
+slint = { version = "=1.19.0", default-features = false, features = ["std", "compat-1-18", "accessibility"] }
 # Embedded AboutSlint SVG and widget icons also need decoding without winit.
-i-slint-core = { version = "=1.18.1", default-features = false, features = ["image-decoders", "svg"] }
+i-slint-core = { version = "=1.19.0", default-features = false, features = ["image-decoders", "svg"] }
 base64.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -34,13 +34,13 @@ objc2 = { version = "0.6.5", optional = true }
 objc2-app-kit = { version = "0.3.2", optional = true, default-features = false, features = ["std", "NSApplication", "NSMenu", "NSMenuItem"] }
 
 [build-dependencies]
-slint-build = { version = "=1.18.1", default-features = false, features = ["compat-1-18"] }
+slint-build = { version = "=1.19.0", default-features = false, features = ["compat-1-18"] }
 
 [dev-dependencies]
 syn = { version = "3.0.10", features = ["full", "visit"] }
 proc-macro2 = "1"
-i-slint-compiler = { version = "=1.18.1", default-features = false }
-i-slint-backend-testing = { version = "=1.18.1", features = ["renderer-software"] }
+i-slint-compiler = { version = "=1.19.0", default-features = false }
+i-slint-backend-testing = { version = "=1.19.0", features = ["renderer-software"] }
 
 [[bin]]
 name = "emlattachmentremover-gui"

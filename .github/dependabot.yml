@@ -15,5 +15,4 @@ updates:
         patterns:
           - slint
           - slint-build
-          - i-slint-core
-          - i-slint-backend-testing
+          - i-slint-*

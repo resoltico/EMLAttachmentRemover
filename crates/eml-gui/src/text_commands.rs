@@ -37,7 +37,7 @@ fn apply(window: &slint::Window, command: Command) -> bool {
             return false;
         };
         match command {
-            Command::Copy => input.copy(&adapter, item),
+            Command::Copy => input.copy(&adapter),
             Command::SelectAll => input.select_all(&adapter, item),
         }
         true

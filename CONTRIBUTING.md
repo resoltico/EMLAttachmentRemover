@@ -58,6 +58,8 @@ Use a fresh output directory on subsequent distributions. The app calls core in
 process and includes no CLI. Its bundle supplies native identity and resources.
 The GUI library and testing backend support macOS and Linux. Windows supports
 core and the CLI only. The native GUI uses Slint's Winit backend on macOS only.
+Slint compilation selects language edition 1.18 explicitly; the exact toolkit
+version is declared in [the GUI manifest](crates/eml-gui/Cargo.toml).
 On Windows, exclude `eml-gui` from workspace commands and use `--target` with your native MSVC triple so host procedural macros
 are built independently of static-CRT target flags. Windows CI copies its freshly
 built xtask executable to the runner's temporary directory
@@ -160,6 +162,14 @@ legal texts. See [legal materials](legal/README.md).
 
 ## CLI installer verification
 
+Published installer Help links identify the full source commit stamped before
+checksums are generated; source installers link to `main`. For local archive
+qualification, `install/prepare-test-release.py DIRECTORY` stages source Help;
+add `--revision FULL_COMMIT` only for archives built from that committed source.
+The release workflow supplies its checked-out commit automatically. Staging
+refuses existing installer/checksum files. Run the packaging and parity tests
+with `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s install -p '*_test.py'`.
+
 The user contract is [install, update and uninstall](docs/INSTALL.md). The installers
 manage user-local CLI files and their own PATH entries, not the desktop app or
 email data. Keep the Unix installer POSIX `sh` and the Windows installer compatible
@@ -167,8 +177,8 @@ with Windows PowerShell 5.1 and PowerShell 7. The PowerShell script stays ASCII.
 
 The common engine bodies are owned by PDFConcat. Only literal product settings
 may differ inside `BEGIN PRODUCT SETTINGS` / `END PRODUCT SETTINGS`. Changes to
-behavior must be synchronized in PDFConcat, EML Attachment Remover and Auditory
-Lab, with both consumers' reviewed upstream pins updated. The published scripts are self-contained; neither installer fetches
+behavior must be synchronized in PDFConcat, EML Attachment Remover, Auditory
+Lab and HTMLCut, with all consumers' reviewed upstream pins updated. The published scripts are self-contained; neither installer fetches
 code or configuration from the other repository at runtime. `install/engine-source.txt`
 contains the full reviewed PDF commit. Check body parity locally against that Git
 object, or fetch its files over HTTPS for development/CI:

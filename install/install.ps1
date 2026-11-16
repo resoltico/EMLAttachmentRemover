@@ -13,9 +13,8 @@ $Product = @{
     Separator = '-'
     VersionedArchive = $true
     RootedArchive = $false
-    MacOS = 'macos'
-    X64 = 'x86_64'
-    Arm64 = 'aarch64'
+    WindowsX64 = 'windows-x86_64'
+    WindowsArm64 = 'windows-aarch64'
     Checksums = 'SHA256SUMS'
     WindowsFolder = 'EMLAttachmentRemover'
     MinimumMacOS = 15
@@ -23,8 +22,13 @@ $Product = @{
 }
 # END PRODUCT SETTINGS
 
+$installerScriptPath = if ($MyInvocation.MyCommand -is [Management.Automation.ExternalScriptInfo]) { $MyInvocation.MyCommand.Path } else { '' }
+$documentationRevision = 'main'
+$docsUrl = "$($Product.Repository)/blob/$documentationRevision/docs/INSTALL.md"
+
 function Invoke-CliInstaller {
-    param([string]$Version, [string]$InstallDir, [bool]$ModifyPath, [bool]$Uninstall, [bool]$ReplaceUnmanaged, [hashtable]$Product)
+    param([string]$Version, [string]$InstallDir, [bool]$ModifyPath, [bool]$Uninstall, [bool]$ReplaceUnmanaged, [hashtable]$Product, [string]$ScriptPath)
+    $recoveryScriptPath = $ScriptPath
     $ErrorActionPreference = 'Stop'
     $ProgressPreference = 'SilentlyContinue'
     Set-StrictMode -Version 3
@@ -35,6 +39,32 @@ function Invoke-CliInstaller {
     function Exit-Installer([string]$Text) { throw [InvalidOperationException]::new($Text) }
     function Write-Step([string]$Label, [string]$Text) { Write-Host ('  {0,-11} {1}' -f $Label, $Text) }
     function ConvertTo-QuotedCommand([string]$Text) { return "'" + $Text.Replace("'", "''") + "'" }
+    function Get-UnmanagedRefusal([string]$Program, [string]$SavedScriptPath) {
+        $text = "Existing executable has no installer receipt: $Program`nThis installer has no record of managing that file. No program or PATH entry was changed."
+        if ($Uninstall) {
+            $text += "`nUse the method that installed this executable to remove it. If its origin is unknown, preserve it and inspect this exact file before removing anything."
+        } else {
+            $options = '-ReplaceUnmanaged -InstallDir ' + (ConvertTo-QuotedCommand $InstallDir)
+            if ($Version) { $options += ' -Version ' + (ConvertTo-QuotedCommand $Version) }
+            if (-not $ModifyPath) { $options += ' -NoModifyPath' }
+            $text += "`nTo preserve the existing executable in a recovery backup and replace it with $($Product.Name), run:"
+            if ($SavedScriptPath) {
+                $shellPath = [Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+                $text += "`n  & " + (ConvertTo-QuotedCommand $shellPath) + ' -NoProfile -ExecutionPolicy ByPass -File ' + (ConvertTo-QuotedCommand $SavedScriptPath) + ' ' + $options
+            } else {
+                $text += "`nSave and review this installer as a .ps1 file first, then run that saved file with these options:`n  " + $options
+            }
+            $text += "`nThe installer prints the backup location. Keep it until you have verified the replacement. To keep this executable, choose another install directory and use the new program's full path."
+        }
+        $failure = [InvalidOperationException]::new($text)
+        $failure.Data['HelpAnchor'] = '#existing-executable-without-an-installer-receipt'
+        return $failure
+    }
+    function Get-WindowsArchiveSuffix([string]$Processor) {
+        $suffix = switch -CaseSensitive ($Processor) { 'AMD64' { $Product.WindowsX64 } 'ARM64' { $Product.WindowsArm64 } default { $null } }
+        if (-not $suffix) { Exit-Installer "No Windows release for the $Processor processor." }
+        return $suffix
+    }
     function Get-Digest([string]$Path) { return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant() }
     function Get-ItemOrNull([string]$Path) {
         try { return Get-Item -LiteralPath $Path -Force }
@@ -183,7 +213,7 @@ namespace CliInstaller {
             if ($bin) {
                 [void](Assert-Regular $exe)
                 if (-not $ReplaceUnmanaged -or $Uninstall) {
-                    Exit-Installer "No ownership receipt exists for the regular executable at $exe. Nothing was replaced or removed. To preserve it in a recovery backup and install a verified release, rerun this installer with -ReplaceUnmanaged -InstallDir $(ConvertTo-QuotedCommand $InstallDir). Existing PATH entries will not be adopted."
+                    throw (Get-UnmanagedRefusal $exe $recoveryScriptPath)
                 }
             }
             return $null
@@ -420,8 +450,7 @@ namespace CliInstaller {
         if ($Version.StartsWith('v')) { $Version = $Version.Substring(1) }
         if ($Version -and $Version -cnotmatch ('\A' + $stable + '\z')) { Exit-Installer "Not a stable release version: $Version" }
         $native = (Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Environment').PROCESSOR_ARCHITECTURE
-        $arch = switch ($native) { 'AMD64' { $Product.X64 } 'ARM64' { $Product.Arm64 } default { $null } }
-        if (-not $arch) { Exit-Installer "No Windows release for the $native processor." }
+        $archiveSuffix = Get-WindowsArchiveSuffix $native
         Write-Step 'System' "Windows - $native"
         $tmp = Join-Path ([IO.Path]::GetTempPath()) ('cli-install-' + [guid]::NewGuid().ToString('N'))
         [void][IO.Directory]::CreateDirectory($tmp)
@@ -446,7 +475,7 @@ namespace CliInstaller {
         }
         $asset = $Product.ArchivePrefix
         if ($Product.VersionedArchive) { $asset += $Version + $Product.Separator }
-        $asset += 'windows' + $Product.Separator + $arch + '.zip'
+        $asset += $archiveSuffix + '.zip'
         $archive = Join-Path $tmp $asset
         $checksums = Join-Path $tmp $Product.Checksums
         Get-ReleaseFile $asset $archive
@@ -598,10 +627,11 @@ if ($Help) {
     return
 }
 try {
-    Invoke-CliInstaller -Version $Version -InstallDir $InstallDir -Product $Product -ReplaceUnmanaged ([bool]$ReplaceUnmanaged) -ModifyPath (-not ($NoModifyPath -or [Environment]::GetEnvironmentVariable($Product.Environment + '_NO_MODIFY_PATH') -eq '1')) -Uninstall ($Uninstall -or [Environment]::GetEnvironmentVariable($Product.Environment + '_UNINSTALL') -eq '1')
+    Invoke-CliInstaller -Version $Version -InstallDir $InstallDir -Product $Product -ScriptPath $installerScriptPath -ReplaceUnmanaged ([bool]$ReplaceUnmanaged) -ModifyPath (-not ($NoModifyPath -or [Environment]::GetEnvironmentVariable($Product.Environment + '_NO_MODIFY_PATH') -eq '1')) -Uninstall ($Uninstall -or [Environment]::GetEnvironmentVariable($Product.Environment + '_UNINSTALL') -eq '1')
 } catch {
     Write-Host ("Installer failed: " + $_.Exception.Message)
-    Write-Host "Help: $($Product.Repository)/blob/main/docs/INSTALL.md"
+    $helpAnchor = $_.Exception.Data['HelpAnchor']
+    Write-Host "Help: $docsUrl$helpAnchor"
     if ($MyInvocation.MyCommand -is [Management.Automation.ExternalScriptInfo]) { exit 1 }
     throw 'CLI installation did not complete.'
 }
