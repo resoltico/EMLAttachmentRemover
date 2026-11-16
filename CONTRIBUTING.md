@@ -120,7 +120,7 @@ receipt projection units retain exhaustive wording/capability coverage. The nati
 document probe uses a separate test binary that is never packaged or released.
 
 The desktop uses one batch with automatic read-only previews. See the
-[desktop guide](README.md#desktop-app) and [review captures](docs/gui-screenshots/README.md).
+[desktop guide](README.md#desktop-app) and [capture process](docs/gui-screenshots/README.md).
 Native Finder/Dock, file panels and appearance are manual checks.
 
 Merge CI restores caches on every producer and saves them only on main. Release
