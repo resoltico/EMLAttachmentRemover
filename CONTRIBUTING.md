@@ -58,8 +58,10 @@ Use a fresh output directory on subsequent distributions. The app calls core in
 process and includes no CLI. Its bundle supplies native identity and resources.
 The GUI library and testing backend support macOS and Linux. Windows supports
 core and the CLI only. The native GUI uses Slint's Winit backend on macOS only.
-Slint compilation selects language edition 1.18 explicitly; the exact toolkit
+Slint compilation selects language edition 1.19 explicitly; the exact toolkit
 version is declared in [the GUI manifest](crates/eml-gui/Cargo.toml).
+The published toolkit requires its `compat-1-18` Cargo feature marker to compile;
+that empty marker does not select the language edition.
 On Windows, exclude `eml-gui` from workspace commands and use `--target` with your native MSVC triple so host procedural macros
 are built independently of static-CRT target flags. Windows CI copies its freshly
 built xtask executable to the runner's temporary directory

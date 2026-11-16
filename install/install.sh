@@ -214,7 +214,7 @@ inspect_state() {
 # Receipt files are data, never shell code. Its manifest covers every owned file.
 state_files() {
     printf '%s\n' format owner location binary.sha256 version created-dir path-count
-    for legal in ${manifest_legal_files}; do printf 'legal/%s\n' "${legal}"; done
+    for legal in ${legal_files}; do printf 'legal/%s\n' "${legal}"; done
     record_index=0
     while [ "${record_index}" -lt "${record_count}" ]; do
         printf 'paths/%s.file\npaths/%s.line\npaths/%s.created\n' "${record_index}" "${record_index}" "${record_index}"
@@ -229,7 +229,6 @@ manifest_for() {
     done < "${tmp}/state-files"
 }
 seal_state() {
-    manifest_legal_files=${legal_files}
     manifest_for "$1" > "${tmp}/state-manifest"
     cp "${tmp}/state-manifest" "$1/state.sha256"
 }
@@ -255,20 +254,13 @@ validate_state() {
     record_count=$(cat "${state}/path-count")
     printf '%s\n' "${record_count}" | grep -Eq '^(0|[1-9][0-9]*)$' || owned_error
     [ "${record_count}" -le 100 ] || owned_error
-    # A receipt owns its verified inventory, not files newly required by a
-    # subsequent package. Preserve settings order for the sealed manifest.
-    manifest_legal_files=''
-    for legal in ${legal_files}; do
-        if [ -e "${state}/legal/${legal}" ] || [ -h "${state}/legal/${legal}" ]; then
-            require_regular "${state}/legal/${legal}"
-            manifest_legal_files="${manifest_legal_files} ${legal}"
-        fi
-    done
+    # Only the current file inventory is supported; receipts are never converted.
     state_files > "${tmp}/expected-files"
     printf '%s\n' state.sha256 >> "${tmp}/expected-files"
     LC_ALL=C sort "${tmp}/expected-files" > "${tmp}/expected-sorted"
     (cd "${state}" && find . -type f | sed 's|^./||' | LC_ALL=C sort) > "${tmp}/actual-files"
-    cmp -s "${tmp}/expected-sorted" "${tmp}/actual-files" || owned_error
+    cmp -s "${tmp}/expected-sorted" "${tmp}/actual-files" || die "Installer receipt file inventory does not match this installer: ${state}" 'Nothing was changed. Use the matching installer to remove that installation, or choose a fresh directory; this installer does not convert receipts.'
+    for legal in ${legal_files}; do require_regular "${state}/legal/${legal}"; done
     # No links, devices or additional (even empty) user directories may be erased.
     (cd "${state}" && find . ! -type f ! -type d) > "${tmp}/nonregular"
     [ ! -s "${tmp}/nonregular" ] || owned_error

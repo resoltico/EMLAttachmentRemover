@@ -349,8 +349,7 @@ function Test-ActivationRecovery([string]$Group = 'configured', [string[]]$Legal
 }
 
 function Test-LegalInventory {
-    # Receipt ownership is the actual sealed set; current settings define NEW
-    # package requirements. Exercise the staged reader and producer statements.
+    # Exercise exact current inventory validation and the staged producer.
     foreach ($name in @('Get-ItemOrNull', 'Assert-Regular', 'Get-Digest', 'Test-SamePath', 'Get-AbsoluteDirectory', 'ConvertTo-QuotedCommand', 'Write-Receipt', 'Read-Receipt', 'Invoke-StateRemoval')) {
         $node = $ast.FindAll({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -ceq $name }, $true)[0]
         . ([scriptblock]::Create($node.Extent.Text))
@@ -370,8 +369,16 @@ function Test-LegalInventory {
     [IO.File]::WriteAllText($licenseFile, 'original owned license')
     $r = @{ Schema = 1; Directory = $InstallDir; Command = $Product.Command; Version = '1.2.3'; BinaryHash = Get-Digest $exe; DirectoryCreated = $false; PathEntry = $null; PathWasAbsent = $false; Legal = @(@{ Name = 'LICENSE'; Hash = Get-Digest $licenseFile }); Retired = $null }
     Write-Receipt $stateDir $r
+    $receiptBefore = Get-Digest (Join-Path $stateDir 'receipt.json')
+    $failure = ''
+    try { [void](Read-Receipt $true) } catch { $failure = $_.Exception.Message }
+    Check 'different file inventory is refused without conversion' ($failure.Contains('receipt file inventory does not match this installer') -and (Get-Digest (Join-Path $stateDir 'receipt.json')) -ceq $receiptBefore -and [IO.File]::ReadAllText($exe) -ceq 'owned executable')
+    $noticeFile = Join-Path $legalDir 'EXTRA-NOTICE'
+    [IO.File]::WriteAllText($noticeFile, 'current required notice')
+    $r.Legal += @{ Name = 'EXTRA-NOTICE'; Hash = Get-Digest $noticeFile }
+    Write-Receipt $stateDir $r
     $verified = Read-Receipt $true
-    Check 'expanded legal requirements accept smaller verified receipt inventory' ($verified.Legal.Count -eq 1 -and $verified.Legal[0].Name -ceq 'LICENSE')
+    Check 'complete current file inventory is accepted' ($verified.Legal.Count -eq 2)
     $missingExpected = Join-Path $InstallDir 'missing-staged-ownership'
     $failure = ''
     try { [void](Read-Receipt $true $missingExpected $exe ('a' * 64)) } catch { $failure = $_.Exception.Message }
@@ -400,7 +407,7 @@ function Test-LegalInventory {
     Write-Receipt $stateDir $r
     $verified = Read-Receipt $true
     Invoke-StateRemoval $stateDir $verified.Legal
-    Check 'expanded settings remove only actual smaller receipt inventory' (-not (Test-Path -LiteralPath $stateDir) -and [IO.File]::ReadAllText($exe) -ceq 'owned executable')
+    Check 'complete current inventory can be removed' (-not (Test-Path -LiteralPath $stateDir) -and [IO.File]::ReadAllText($exe) -ceq 'owned executable')
 
     $nextState = Join-Path $InstallDir 'new-state'
     [void][IO.Directory]::CreateDirectory((Join-Path $nextState 'legal'))
@@ -417,7 +424,7 @@ function Test-LegalInventory {
     Write-Receipt $nextState $newReceipt
     $stateDir = $nextState
     $verified = Read-Receipt $true
-    Check 'new expanded legal inventory is accepted by the actual receipt reader' ($verified.Legal.Count -eq 2)
+    Check 'current producer inventory is accepted by the receipt reader' ($verified.Legal.Count -eq 2)
 }
 
 function Test-PipelineCancellation {

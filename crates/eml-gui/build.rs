@@ -20,7 +20,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ),
     )?;
     let configuration = slint_build::CompilerConfiguration::new()
-        .with_edition((1, 18))
+        .with_edition((1, 19))
         .with_include_paths(vec![out])
         .with_style(if macos {
             "cupertino".into()

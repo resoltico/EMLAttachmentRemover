@@ -932,13 +932,13 @@ after=$(hash_file "${fixture_home}/.local/bin/${command_name}"); assert 'recover
 backup_hash=$(hash_file "${retained_stages[0]}/previous-binary"); assert 'recovery refusal preserves original backup' test "${before}" = "${backup_hash}"
 
 
-begin 'receipts own verified legal inventory while new packages require all current legal files'
+begin 'receipts require the complete current file inventory'
 saved_installer=${installer}; saved_legal_files=${legal_files}
-small_legal_installer=${work}/small-legal-install.sh
-expanded_legal_installer=${work}/expanded-legal-install.sh
+subset_inventory_installer=${work}/subset-inventory-install.sh
+current_inventory_installer=${work}/current-inventory-install.sh
 for fixture_legal_files in LICENSE 'LICENSE EXTRA-NOTICE'; do
-    destination=${small_legal_installer}
-    [[ "${fixture_legal_files}" == LICENSE ]] || destination=${expanded_legal_installer}
+    destination=${subset_inventory_installer}
+    [[ "${fixture_legal_files}" == LICENSE ]] || destination=${current_inventory_installer}
     # Vary only one literal product setting; the common engine remains exact.
     awk -v value="${fixture_legal_files}" '
         $0=="# BEGIN PRODUCT SETTINGS" {inside=1}
@@ -953,23 +953,27 @@ legal_files='LICENSE EXTRA-NOTICE'
 legal_release=${work}/legal-inventory-release
 make_release "${legal_release}" "printf '%s\\n' '${command_name} 1.2.3'"
 download_base=${legal_release}
-installer=${small_legal_installer}
-run_installer /bin/sh --install-dir "${fixture_home}/update-tools" --no-modify-path; expect_exit 0 'smaller legal inventory install for update'
-run_installer /bin/sh --install-dir "${fixture_home}/remove-tools" --no-modify-path; expect_exit 0 'smaller legal inventory install for removal'
+installer=${subset_inventory_installer}
+run_installer /bin/sh --install-dir "${fixture_home}/incomplete-tools" --no-modify-path; expect_exit 0 'construct a sealed different-inventory receipt'
+incomplete_receipt=${fixture_home}/incomplete-tools/.${command_name}-install
+incomplete_binary_before=$(hash_file "${fixture_home}/incomplete-tools/${command_name}")
+incomplete_state_before=$(hash_file "${incomplete_receipt}/state.sha256")
+installer=${current_inventory_installer}
+run_installer /bin/sh --install-dir "${fixture_home}/incomplete-tools" --no-modify-path; expect_failure 'different inventory refuses update'
+run_installer /bin/sh --install-dir "${fixture_home}/incomplete-tools" --uninstall --no-modify-path; expect_failure 'different inventory refuses uninstall'
+run_installer /bin/sh --install-dir "${fixture_home}/incomplete-tools" --replace-unmanaged --no-modify-path; expect_failure 'replacement cannot convert a different inventory'
+after=$(hash_file "${fixture_home}/incomplete-tools/${command_name}"); assert 'different inventory preserves binary' test "${incomplete_binary_before}" = "${after}"
+state_after=$(hash_file "${incomplete_receipt}/state.sha256"); assert 'different inventory preserves receipt' test "${incomplete_state_before}" = "${state_after}"
+assert 'different inventory is not converted' test ! -e "${incomplete_receipt}/legal/EXTRA-NOTICE"
+run_installer /bin/sh --install-dir "${fixture_home}/update-tools" --no-modify-path; expect_exit 0 'complete current inventory installs in a fresh directory'
 receipt=${fixture_home}/update-tools/.${command_name}-install
-assert 'smaller receipt owns its actual LICENSE file' test -f "${receipt}/legal/LICENSE"
-assert 'smaller receipt does not claim future legal file' test ! -e "${receipt}/legal/EXTRA-NOTICE"
-installer=${expanded_legal_installer}
-run_installer /bin/sh --install-dir "${fixture_home}/remove-tools" --uninstall --no-modify-path; expect_exit 0 'expanded requirements can uninstall smaller verified inventory'
-assert 'smaller-inventory uninstall removes actual owned state' test ! -e "${fixture_home}/remove-tools/.${command_name}-install"
-run_installer /bin/sh --install-dir "${fixture_home}/update-tools" --no-modify-path; expect_exit 0 'expanded package upgrades smaller verified inventory'
-assert 'new receipt contains current added legal requirement' test -f "${receipt}/legal/EXTRA-NOTICE"
-assert 'new receipt seals current added legal requirement' grep -q '  legal/EXTRA-NOTICE$' "${receipt}/state.sha256"
+assert 'current receipt contains every required legal file' test -f "${receipt}/legal/EXTRA-NOTICE"
+assert 'current receipt seals every required legal file' grep -q '  legal/EXTRA-NOTICE$' "${receipt}/state.sha256"
 before=$(hash_file "${fixture_home}/update-tools/${command_name}")
 state_before=$(hash_file "${receipt}/state.sha256")
 cp "${receipt}/legal/LICENSE" "${work}/owned-license-before"
 rm "${receipt}/legal/LICENSE"
-run_installer /bin/sh --install-dir "${fixture_home}/update-tools" --no-modify-path; expect_failure 'missing previously owned legal file is not treated as a future requirement'
+run_installer /bin/sh --install-dir "${fixture_home}/update-tools" --no-modify-path; expect_failure 'missing required legal file is refused'
 after=$(hash_file "${fixture_home}/update-tools/${command_name}"); assert 'missing owned legal file preserves binary' test "${before}" = "${after}"
 state_after=$(hash_file "${receipt}/state.sha256"); assert 'missing owned legal file preserves receipt' test "${state_before}" = "${state_after}"
 cp "${work}/owned-license-before" "${receipt}/legal/LICENSE"
@@ -983,7 +987,7 @@ run_installer /bin/sh --install-dir "${fixture_home}/update-tools" --uninstall -
 assert 'unrecorded legal sidecar retained' grep -qx user-note "${receipt}/legal/UNOWNED-NOTE"
 state_after=$(hash_file "${receipt}/state.sha256"); assert 'extra legal file preserves receipt' test "${state_before}" = "${state_after}"
 rm "${receipt}/legal/UNOWNED-NOTE"
-run_installer /bin/sh --install-dir "${fixture_home}/update-tools" --uninstall --no-modify-path; expect_exit 0 'expanded legal inventory normal cleanup'
+run_installer /bin/sh --install-dir "${fixture_home}/update-tools" --uninstall --no-modify-path; expect_exit 0 'complete current inventory normal cleanup'
 installer=${saved_installer}; legal_files=${saved_legal_files}
 
 begin 'final locked inspection propagates a managed receipt read failure'

@@ -85,6 +85,18 @@ impl DesktopController {
             slint::CloseRequestResponse::KeepWindowShown
         });
         let weak = Rc::downgrade(self);
+        self.about.on_about(move || {
+            if let Some(c) = weak.upgrade() {
+                c.show_about();
+            }
+        });
+        let weak = Rc::downgrade(self);
+        self.licenses.on_about(move || {
+            if let Some(c) = weak.upgrade() {
+                c.show_about();
+            }
+        });
+        let weak = Rc::downgrade(self);
         self.about.on_dismiss(move || {
             if let Some(c) = weak.upgrade() {
                 let _ = c.about.hide();

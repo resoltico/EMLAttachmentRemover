@@ -233,8 +233,7 @@ namespace CliInstaller {
             if ($r.Schema -ne 1 -or $r.Command -cne $Product.Command -or $r.DirectoryCreated -isnot [bool] -or $r.PathWasAbsent -isnot [bool]) { throw 'invalid receipt identity or flags' }
             if ([string]$r.Version -cnotmatch ('\A' + $semver + '\z')) { throw 'invalid receipt version' }
             if ($null -ne $r.PathEntry -and ($r.PathEntry -isnot [string] -or -not (Test-SamePath $r.PathEntry $InstallDir))) { throw 'invalid owned PATH entry' }
-            # Existing ownership comes from the sealed receipt inventory;
-            # current settings define the complete NEW package requirements.
+            # Only the current file inventory is supported; receipts are never converted.
             $expected = @()
             if ([string]$r.BinaryHash -notmatch '\A[0-9a-f]{64}\z') { throw 'invalid binary digest' }
             $known = @('receipt.json', 'receipt.sha256')
@@ -243,6 +242,7 @@ namespace CliInstaller {
                 $expected += $legal.Name
                 $known += Join-Path 'legal' $legal.Name
             }
+            if ($expected.Count -ne @($Product.LegalFiles).Count) { throw 'receipt file inventory does not match this installer' }
             foreach ($item in Get-ChildItem -LiteralPath $stateDir -Recurse -Force) {
                 if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'reparse point in installer state' }
                 $relative = $item.FullName.Substring($stateDir.Length + 1)

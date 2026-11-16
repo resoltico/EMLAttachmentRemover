@@ -156,26 +156,27 @@ and current-session PATH unchanged.
 Run the same install command again. The installer resolves latest once to a stable
 `vX.Y.Z` tag, then downloads both archive and `SHA256SUMS` from that release.
 A failed download, checksum or candidate test happens before replacing the active
-program. An update requires the existing binary, legal files and ownership state
-to match their receipt.
+program. An update requires intact ownership state and every remaining managed
+file to match its receipt. The receipt must list exactly the current installer's
+legal-file names; see [ownership requirements](#ownership-and-unmanaged-installations).
 
 Select a release explicitly, for example:
 
 ```sh
-curl --proto '=https' --proto-redir '=https' -fL -o ./install-emlattachmentremover.sh https://github.com/resoltico/EMLAttachmentRemover/releases/download/v9.0.1/install.sh &&
-  sh ./install-emlattachmentremover.sh --version 9.0.1
+curl --proto '=https' --proto-redir '=https' -fL -o ./install-emlattachmentremover.sh https://github.com/resoltico/EMLAttachmentRemover/releases/download/v10.0.0/install.sh &&
+  sh ./install-emlattachmentremover.sh --version 10.0.0
 ```
 
 ```powershell
 & {
     $ErrorActionPreference = 'Stop'
-    Invoke-WebRequest -UseBasicParsing -Uri https://github.com/resoltico/EMLAttachmentRemover/releases/download/v9.0.1/install.ps1 -OutFile .\install-emlattachmentremover.ps1 -ErrorAction Stop
-    powershell -NoProfile -ExecutionPolicy ByPass -File .\install-emlattachmentremover.ps1 -Version 9.0.1
+    Invoke-WebRequest -UseBasicParsing -Uri https://github.com/resoltico/EMLAttachmentRemover/releases/download/v10.0.0/install.ps1 -OutFile .\install-emlattachmentremover.ps1 -ErrorAction Stop
+    powershell -NoProfile -ExecutionPolicy ByPass -File .\install-emlattachmentremover.ps1 -Version 10.0.0
     if ($LASTEXITCODE -ne 0) { throw "Installer failed ($LASTEXITCODE)." }
 }
 ```
 
-These commands pin installer and payload to 9.0.1. Replace both version values
+These commands pin installer and payload to 10.0.0. Replace both version values
 together to select another stable release. Alternatively,
 `EMLATTACHMENTREMOVER_VERSION` supplies the payload version when no option is
 given. That environment pin remains set in the session; clear it to return to latest:
@@ -210,6 +211,12 @@ The installer uses `.emlattachmentremover-install` beside the executable
 for ownership receipts and managed data. It verifies managed file hashes before
 update or removal and refuses unowned files by default and changed managed files.
 A matching filename, version output or PATH entry does not establish ownership.
+
+Update and uninstall require exactly the legal-file names declared by the current
+installer. Receipts with a different inventory are refused without conversion.
+Remove an affected managed copy using the matching installer that created it,
+or install into a fresh directory and use the printed full executable path.
+`--replace-unmanaged` / `-ReplaceUnmanaged` cannot bypass this managed-state refusal.
 
 Use the installer and payload from the same qualified release. The installer
 verifies ownership before replacement and preserves recoverable state on failure.

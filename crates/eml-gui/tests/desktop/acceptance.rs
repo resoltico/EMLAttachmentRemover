@@ -14,8 +14,10 @@ fn labels(ui: &MainWindow) -> Vec<String> {
 }
 
 fn label(ui: &MainWindow, text: &str) -> ElementHandle {
-    ElementHandle::find_by_accessible_label(ui, text)
-        .next()
+    ui.root_element()
+        .query_descendants()
+        .match_accessible_label(text)
+        .find_first()
         .unwrap_or_else(|| panic!("Missing element: {text}; {:?}", labels(ui)))
 }
 
@@ -1681,11 +1683,12 @@ fn t3_deep_folder_keeps_its_end_and_accessible_full_label() {
     let inner = WindowInner::from_pub(window.window());
     let mut suffix_items = Vec::new();
     let _ = ItemRc::new_root(inner.component()).visit_descendants(|item| {
-        let matches = item.downcast::<ComplexText>().is_some_and(|text| {
-            text.as_pin_ref().text.get().as_str() == row.folder_suffix.as_str()
-        }) || item.downcast::<SimpleText>().is_some_and(|text| {
-            text.as_pin_ref().text.get().as_str() == row.folder_suffix.as_str()
-        });
+        let matches = item
+            .downcast::<ComplexText>()
+            .is_some_and(|text| text.as_pin_ref().text().as_str() == row.folder_suffix.as_str())
+            || item.downcast::<SimpleText>().is_some_and(|text| {
+                text.as_pin_ref().text().as_str() == row.folder_suffix.as_str()
+            });
         if matches {
             suffix_items.push(item.clone());
         }
