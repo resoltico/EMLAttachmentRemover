@@ -1679,7 +1679,7 @@ fn t3_deep_folder_keeps_its_end_and_accessible_full_label() {
     let folder_label = label(&c.window(), &row.folder);
     let inner = WindowInner::from_pub(c.window().window());
     let mut suffix_items = Vec::new();
-    ItemRc::new_root(inner.component()).visit_descendants(|item| {
+    let _ = ItemRc::new_root(inner.component()).visit_descendants(|item| {
         let matches = item.downcast::<ComplexText>().is_some_and(|text| {
             text.as_pin_ref().text.get().as_str() == row.folder_suffix.as_str()
         }) || item.downcast::<SimpleText>().is_some_and(|text| {
