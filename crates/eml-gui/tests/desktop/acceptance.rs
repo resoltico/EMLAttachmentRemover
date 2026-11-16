@@ -1677,7 +1677,8 @@ fn t3_deep_folder_keeps_its_end_and_accessible_full_label() {
     );
     let suffix = label(&c.window(), "Inbox");
     let folder_label = label(&c.window(), &row.folder);
-    let inner = WindowInner::from_pub(c.window().window());
+    let window = c.window();
+    let inner = WindowInner::from_pub(window.window());
     let mut suffix_items = Vec::new();
     let _ = ItemRc::new_root(inner.component()).visit_descendants(|item| {
         let matches = item.downcast::<ComplexText>().is_some_and(|text| {
@@ -1711,7 +1712,7 @@ fn t3_deep_folder_keeps_its_end_and_accessible_full_label() {
         "Suffix has a positive shaped width: {required}"
     );
     // The toolkit rounds text metrics and layout edges to physical pixels.
-    let rounding_tolerance = 1.0 / c.window().window().scale_factor();
+    let rounding_tolerance = 1.0 / window.window().scale_factor();
     let fits = || suffix_item.geometry().size.width + rounding_tolerance >= required;
     assert!(
         fits(),
