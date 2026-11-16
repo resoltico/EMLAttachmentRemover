@@ -4,7 +4,7 @@
 
 ## [10.0.0] - 2026-11-16
 
-- **Breaking:** Receipts must list exactly the current legal-file names. Remove affected copies with their matching installer or use a fresh directory; receipts are not converted.
+- Receipts must list exactly the current legal-file names. Remove affected copies with their matching installer or use a fresh directory; receipts are not converted.
 - Desktop builds use Slint 1.19.0 and language edition 1.19 with updated rendering and accessibility libraries; CI tool installation uses vendor action v2.90.5.
 - Desktop About menus use native toolkit roles, and selected emails are revealed through the toolkit list API.
 - Installer refusals explain replacement or removal, offer quoted recovery commands, and link directly to matching Help; existing-file backups and ownership safeguards remain.
