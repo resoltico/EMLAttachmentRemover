@@ -192,7 +192,10 @@ the GUI does not apply a second name sort. Check, create and Continue retain the
 same native input snapshot and destination layout. Selection remains native.
 
 `theme.slint` owns colours, the fixed 13 px body type scale, spacing, radii and tone
-mapping. No text-size input is exposed. The list uses fixed 44 px virtual rows,
+mapping. No text-size input is exposed. The window owns its minimum and preferred
+geometry. `BatchPane` is a bounded viewport; its filled internal layout keeps
+responsive-column and scrollable-content constraints local to the pane.
+The list uses fixed 44 px virtual rows,
 centred cells and separators. The header reserves a 32 px summary line even when
 there is no problems chip. Band backgrounds span the window; content stays in a
 centred column at most 980 px wide. Below 900 px the Size column and naming hint
@@ -200,7 +203,9 @@ are hidden. The visible detail pane has a fixed preferred height of 200 px, capp
 at 30% of the window, keeps its actions beside the email name and scrolls its body
 internally. Selecting another email does not resize the list. At minimum size three list rows remain
 visible, including with long details. Popups anchor to their command controls.
-Buttons, menus and controller boundaries share predicates in `actions.rs`.
+The list reveals selected rows through `ListView.ensure-row-visible()`; the
+toolkit owns viewport and row geometry. Buttons, menus and controller boundaries
+share predicates in `actions.rs`.
 
 Slint uses Cupertino on macOS and Fluent on Linux. Native open/reveal requests run
 off the UI thread, bounded to one per initiating window. Acceptance is advisory,
@@ -213,9 +218,11 @@ their own Unix-byte/base64 encoding at the settings boundary, validated by
 core's path policy. Invalid or unreadable settings use defaults, expose a
 destination note and are replaced on the next successful save.
 
-On macOS, the verified Winit application-delegate class receives About/Quit routing
-and an `application:openURLs:` adapter. Only absent selectors with matching ABI
-encodings are added. File URLs become absolute native paths, queue under a mutex,
+About items declare the toolkit's `about` menu role and invoke the controller's
+About action from every window. On macOS, Slint places those items in the
+application menu. The verified Winit application-delegate class receives native
+Quit admission and an `application:openURLs:` adapter. Only absent selectors
+with matching ABI encodings are added. File URLs become absolute native paths, queue under a mutex,
 and drain in one ingress batch from the controller tick. Non-file URLs are ignored.
 The plist declares email messages and folders as Viewer/Alternate; Services are
 absent. Installation precedes the event loop. Launch-by-document, Dock, Finder,

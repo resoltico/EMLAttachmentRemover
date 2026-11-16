@@ -12,12 +12,12 @@ from pathlib import Path
 FILES = ("install.sh", "install.ps1")
 SHELL_KEYS = {
     "product_name", "command_name", "repo_url", "env_prefix", "archive_prefix",
-    "archive_separator", "archive_versioned", "archive_rooted", "macos_token", "x64_token",
-    "arm64_token", "checksum_name", "minimum_macos", "legal_files",
+    "archive_separator", "archive_versioned", "archive_rooted", "macos_x64", "macos_arm64",
+    "linux_x64", "linux_arm64", "checksum_name", "minimum_macos", "legal_files",
 }
 PS_KEYS = {
     "name", "command", "repository", "environment", "archiveprefix", "separator",
-    "versionedarchive", "rootedarchive", "macos", "x64", "arm64", "checksums", "windowsfolder",
+    "versionedarchive", "rootedarchive", "windowsx64", "windowsarm64", "checksums", "windowsfolder",
     "minimummacos", "legalfiles",
 }
 BEGIN = "# BEGIN PRODUCT SETTINGS"

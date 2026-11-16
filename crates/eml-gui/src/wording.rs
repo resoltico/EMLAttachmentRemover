@@ -119,7 +119,7 @@ pub(super) fn estimate(seconds: Option<u64>) -> String {
 pub(super) fn controls() -> crate::AppWords {
     crate::AppWords {
         showing_problems: eml_core::vocabulary::SHOWING_PROBLEMS.into(),
-        about_prefix: ABOUT_PREFIX.into(),
+        about_title: format!("About {product}", product = eml_core::product::DISPLAY_NAME).into(),
         version_prefix: "Version ".into(),
         select_all: "Select All".into(),
         application_icon: "Application icon".into(),
@@ -170,7 +170,6 @@ pub(super) fn controls() -> crate::AppWords {
         minimize: "Minimize".into(),
         website: "Project Website".into(),
         licenses: "Licenses".into(),
-        about: "About".into(),
         quit_title: "Stop and quit?".into(),
         quit_body: format!("Copies already saved are kept. {ORIGINALS_UNCHANGED}").into(),
         export_body: "A report is still being saved. The app quits when it finishes.".into(),
@@ -291,17 +290,9 @@ pub(crate) const DOCUMENT_DELEGATE_UNSUPPORTED: &str =
 #[cfg(all(feature = "native", target_os = "macos"))]
 pub(crate) const DOCUMENT_INSTALL_FAILED: &str = "Could not install document opening";
 
-#[cfg(all(feature = "native", target_os = "macos"))]
-pub(crate) const NSOBJECT_MISSING: &str = "NSObject is unavailable";
-
-#[cfg(all(feature = "native", target_os = "macos"))]
-pub(crate) const ABOUT_TARGET_FAILED: &str = "Cannot register the application About target";
-
 pub(crate) const SHOW_FINDER: &str = "Show in Finder";
 
 pub(crate) const SHOW_FILE_MANAGER: &str = "Show in File Manager";
-
-pub(crate) const ABOUT_PREFIX: &str = "About ";
 
 #[cfg(feature = "native")]
 pub(super) const EML_FILTER: &str = "EML messages";

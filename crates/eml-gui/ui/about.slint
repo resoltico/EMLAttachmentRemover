@@ -24,12 +24,12 @@ export component AboutWindow inherits Window {
     changed show-notice-details => { root.text-editors-changed(); }
     changed notice-details => { root.text-editors-changed(); }
     callback copy(); callback select-all();
-    title: root.words.about-prefix + root.product-name;
+    title: root.words.about-title;
     icon: @image-url("eml-icon.png");
     default-font-size: Theme.body;
     preferred-width: Theme.about-width;
     preferred-height: Theme.about-height + (root.notice != "" ? Theme.about-notice-height : 0px) + (root.show-notice-details ? Theme.diagnostic-height : 0px);
-    callback website(); callback licenses(); callback dismiss();
+    callback website(); callback licenses(); callback dismiss(); callback about();
     callback focus-website();
     focus-website => { website.focus(); }
     MenuBar {
@@ -37,15 +37,19 @@ export component AboutWindow inherits Window {
             MenuItem { title: root.words.close; shortcut: @keys(Control + W); activated => { root.dismiss(); } }
         }
         Menu { title: root.words.edit;
-        MenuItem { title: root.words.copy; shortcut: @keys(Control + C);
-            enabled: root.text-copy-eligible;
-            activated => { root.copy(); }
+            MenuItem { title: root.words.copy; shortcut: @keys(Control + C);
+                enabled: root.text-copy-eligible;
+                activated => { root.copy(); }
+            }
+            MenuItem { title: root.words.select-all; shortcut: @keys(Control + A);
+                enabled: root.text-copy-eligible;
+                activated => { root.select-all(); }
+            }
         }
-        MenuItem { title: root.words.select-all; shortcut: @keys(Control + A);
-            enabled: root.text-copy-eligible;
-            activated => { root.select-all(); }
+        Menu { title: root.words.help;
+            MenuItem { role: MenuItemRole.about; title: root.words.about-title; activated => { root.about(); } }
         }
-    } }
+    }
     forward-focus: about-focus;
     about-focus := FocusScope {
         key-pressed(event) => { if event.text == Key.Escape { root.dismiss(); return accept; } return reject; }
@@ -89,7 +93,7 @@ export component LicenseWindow inherits Window {
     changed notice-details => { root.text-editors-changed(); }
     callback copy(); callback select-all();
     default-font-size: Theme.body;
-    callback third-party(); callback dismiss();
+    callback third-party(); callback dismiss(); callback about();
     callback focus-start();
     focus-start => {
         license-text.focus();
@@ -101,9 +105,13 @@ export component LicenseWindow inherits Window {
             MenuItem { title: root.words.close; shortcut: @keys(Control + W); activated => { root.dismiss(); } }
         }
         Menu { title: root.words.edit;
-        MenuItem { title: root.words.copy; shortcut: @keys(Control + C); enabled: root.text-copy-eligible; activated => { root.copy(); } }
-        MenuItem { title: root.words.select-all; shortcut: @keys(Control + A); enabled: root.text-copy-eligible; activated => { root.select-all(); } }
-    } }
+            MenuItem { title: root.words.copy; shortcut: @keys(Control + C); enabled: root.text-copy-eligible; activated => { root.copy(); } }
+            MenuItem { title: root.words.select-all; shortcut: @keys(Control + A); enabled: root.text-copy-eligible; activated => { root.select-all(); } }
+        }
+        Menu { title: root.words.help;
+            MenuItem { role: MenuItemRole.about; title: root.words.about-title; activated => { root.about(); } }
+        }
+    }
     forward-focus: license-focus;
     license-focus := FocusScope {
         forward-focus: license-text;

@@ -10,9 +10,10 @@ archive_prefix='emlattachmentremover-'
 archive_separator='-'
 archive_versioned=1
 archive_rooted=0
-macos_token='macos'
-x64_token='x86_64'
-arm64_token='aarch64'
+macos_x64='macos-x86_64'
+macos_arm64='macos-aarch64'
+linux_x64='linux-x86_64'
+linux_arm64='linux-aarch64'
 checksum_name='SHA256SUMS'
 minimum_macos=15
 legal_files='LICENSE THIRD-PARTY-NOTICES.txt PROJECT-NOTICE.md LICENSE-COMMERCIAL.md SOURCE.txt'
@@ -20,7 +21,8 @@ legal_files='LICENSE THIRD-PARTY-NOTICES.txt PROJECT-NOTICE.md LICENSE-COMMERCIA
 
 set -eu
 umask 077
-docs_url=${repo_url}/blob/main/docs/INSTALL.md
+docs_revision='main'
+docs_url=${repo_url}/blob/${docs_revision}/docs/INSTALL.md
 marker="# added by the ${product_name} installer"
 tmp='' stage='' locked=0 transition=0 binary_switched=0 state_moved=0 state_switched=0 path_locked=0 recovery='' path_preparation=''
 rewrite_count=0 rewrite_owned=0 rewrite_recovery=0 cleaning=0
@@ -53,8 +55,11 @@ validate_settings() {
     case "${command_name}" in '' | *[!A-Za-z0-9_-]*) die 'Invalid installer command name.' ;; *) : ;; esac
     case "${archive_versioned}" in 0 | 1) : ;; *) die 'Invalid archive naming setting.' ;; esac
     case "${archive_rooted}" in 0 | 1) : ;; *) die 'Invalid archive layout setting.' ;; esac
-    for token in "${archive_prefix}" "${archive_separator}" "${macos_token}" "${x64_token}" "${arm64_token}" "${checksum_name}"; do
+    for token in "${archive_prefix}" "${archive_separator}" "${checksum_name}"; do
         case "${token}" in '' | *[!A-Za-z0-9_.-]* | . | ..) die 'Invalid installer archive setting.' ;; *) : ;; esac
+    done
+    for suffix in "${macos_x64}" "${macos_arm64}" "${linux_x64}" "${linux_arm64}"; do
+        case "${suffix}" in *[!A-Za-z0-9_.-]* | . | ..) die 'Invalid installer platform suffix.' ;; *) : ;; esac
     done
     for legal in ${legal_files}; do
         case "${legal}" in *[!A-Za-z0-9_.-]* | . | ..) die 'Legal filenames must be simple basenames.' ;; *) : ;; esac
@@ -116,6 +121,39 @@ check_directory() {
     fi
     [ -w "${checked}" ] || die "Install directory or ancestor is not writable: ${checked}" 'Nothing was changed. Check directory permissions before retrying.'
 }
+refuse_unmanaged() {
+    docs_url=${docs_url}#existing-executable-without-an-installer-receipt
+    if [ "${action}" = uninstall ]; then
+        die "Existing executable has no installer receipt: ${binary}" \
+            'This installer has no record that it installed this file, so it cannot remove it.' \
+            'No program or PATH entry was changed. Use the method that installed it to remove it; if its origin is unknown, inspect and preserve it before deciding what to remove.'
+    fi
+    retry_options="--install-dir $(shell_quote "${install_dir}")"
+    if [ "${version_requested}" = 1 ]; then retry_options="${retry_options} --version $(shell_quote "${version}")"; fi
+    if [ "${modify_path}" = 0 ]; then retry_options="${retry_options} --no-modify-path"; fi
+    retry_options="${retry_options} --replace-unmanaged"
+    # With stdin execution, $0 names the shell rather than a saved installer.
+    retry_script=''
+    case "${0##*/}" in sh | dash | bash | ash | ksh | zsh | -*) : ;;
+        *) if [ -f "$0" ] && [ -r "$0" ]; then
+            case "$0" in /*) retry_script=$0 ;; *) retry_script=$(pwd -P)/$0 ;; esac
+        fi ;;
+    esac
+    if [ -n "${retry_script}" ]; then
+        retry_instruction="To replace only this file and keep its original bytes in a recovery backup, run:"
+    else
+        retry_script=./install-${command_name}.sh
+        retry_instruction="This installer cannot locate its saved file. Save this installer as ${retry_script}, then run this example to replace only the named executable and keep its original bytes in a recovery backup:"
+    fi
+    quoted_script=$(shell_quote "${retry_script}")
+    die "Existing executable has no installer receipt: ${binary}" \
+        'This installer has no record that it installed this file, so replacement needs your explicit choice.' \
+        'No program or PATH entry was changed.' \
+        "${retry_instruction}" \
+        "sh ${quoted_script} ${retry_options}" \
+        'The backup location will be printed. Keep it until you have verified the replacement.'
+}
+
 inventory() {
     check_directory "${install_dir}"
     if [ ! -e "${lock}" ] && [ ! -h "${lock}" ]; then :; else
@@ -151,8 +189,7 @@ inspect_state() {
             die "Receiptless target is not a readable executable: ${binary}" 'Nothing was changed. Check its permissions or choose another directory.'
         fi
         if [ "${action}" = uninstall ] || [ "${replace_unmanaged}" = 0 ]; then
-            quoted_directory=$(shell_quote "${install_dir}")
-            die "Existing executable has no installer receipt: ${binary}" "No program or PATH entry was changed. For explicit backed-up replacement, run this reviewed installer with --replace-unmanaged --install-dir ${quoted_directory}." 'Uninstall cannot remove files or PATH entries it does not own.'
+            refuse_unmanaged
         fi
         unmanaged=1; binary_present=1
     fi
@@ -177,7 +214,7 @@ inspect_state() {
 # Receipt files are data, never shell code. Its manifest covers every owned file.
 state_files() {
     printf '%s\n' format owner location binary.sha256 version created-dir path-count
-    for legal in ${manifest_legal_files}; do printf 'legal/%s\n' "${legal}"; done
+    for legal in ${legal_files}; do printf 'legal/%s\n' "${legal}"; done
     record_index=0
     while [ "${record_index}" -lt "${record_count}" ]; do
         printf 'paths/%s.file\npaths/%s.line\npaths/%s.created\n' "${record_index}" "${record_index}" "${record_index}"
@@ -192,7 +229,6 @@ manifest_for() {
     done < "${tmp}/state-files"
 }
 seal_state() {
-    manifest_legal_files=${legal_files}
     manifest_for "$1" > "${tmp}/state-manifest"
     cp "${tmp}/state-manifest" "$1/state.sha256"
 }
@@ -218,20 +254,13 @@ validate_state() {
     record_count=$(cat "${state}/path-count")
     printf '%s\n' "${record_count}" | grep -Eq '^(0|[1-9][0-9]*)$' || owned_error
     [ "${record_count}" -le 100 ] || owned_error
-    # A receipt owns its verified inventory, not files newly required by a
-    # subsequent package. Preserve settings order for the sealed manifest.
-    manifest_legal_files=''
-    for legal in ${legal_files}; do
-        if [ -e "${state}/legal/${legal}" ] || [ -h "${state}/legal/${legal}" ]; then
-            require_regular "${state}/legal/${legal}"
-            manifest_legal_files="${manifest_legal_files} ${legal}"
-        fi
-    done
+    # Only the current file inventory is supported; receipts are never converted.
     state_files > "${tmp}/expected-files"
     printf '%s\n' state.sha256 >> "${tmp}/expected-files"
     LC_ALL=C sort "${tmp}/expected-files" > "${tmp}/expected-sorted"
     (cd "${state}" && find . -type f | sed 's|^./||' | LC_ALL=C sort) > "${tmp}/actual-files"
-    cmp -s "${tmp}/expected-sorted" "${tmp}/actual-files" || owned_error
+    cmp -s "${tmp}/expected-sorted" "${tmp}/actual-files" || die "Installer receipt file inventory does not match this installer: ${state}" 'Nothing was changed. Use the matching installer to remove that installation, or choose a fresh directory; this installer does not convert receipts.'
+    for legal in ${legal_files}; do require_regular "${state}/legal/${legal}"; done
     # No links, devices or additional (even empty) user directories may be erased.
     (cd "${state}" && find . ! -type f ! -type d) > "${tmp}/nonregular"
     [ ! -s "${tmp}/nonregular" ] || owned_error
@@ -476,18 +505,25 @@ detect_platform() {
     kernel=$(uname -s); machine=$(uname -m)
     case "${kernel}" in
         Darwin)
-            os=${macos_token}; macos_version=$(sw_vers -productVersion)
+            macos_version=$(sw_vers -productVersion)
             case "${macos_version%%.*}" in '' | *[!0-9]*) die 'Could not read the macOS version.' ;; *) : ;; esac
             [ "${macos_version%%.*}" -ge "${minimum_macos}" ] || die "${product_name} requires macOS ${minimum_macos} or later."
             arm_hardware=$(sysctl -in hw.optional.arm64)
             [ "${arm_hardware}" != 1 ] || machine=arm64
             system="macOS ${macos_version} · ${machine}"
             ;;
-        Linux) os=linux; system="Linux · ${machine}" ;;
+        Linux) system="Linux · ${machine}" ;;
         MINGW* | MSYS* | CYGWIN* | Windows_NT) die 'Use install.ps1 from PowerShell on Windows.' ;;
         *) die "${product_name} has no release for ${kernel}." ;;
     esac
-    case "${machine}" in x86_64 | amd64) arch=${x64_token} ;; arm64 | aarch64) arch=${arm64_token} ;; *) die "Unsupported processor: ${machine}" ;; esac
+    case "${kernel}:${machine}" in
+        Darwin:x86_64 | Darwin:amd64) platform_suffix=${macos_x64} ;;
+        Darwin:arm64 | Darwin:aarch64) platform_suffix=${macos_arm64} ;;
+        Linux:x86_64 | Linux:amd64) platform_suffix=${linux_x64} ;;
+        Linux:arm64 | Linux:aarch64) platform_suffix=${linux_arm64} ;;
+        *) die "Unsupported processor: ${machine}" ;;
+    esac
+    [ -n "${platform_suffix}" ] || die "${product_name} has no release for ${kernel} on ${machine}." 'Nothing was changed. Choose a supported system and processor.'
 }
 resolve_latest() {
     if command -v curl >/dev/null 2>&1; then
@@ -555,7 +591,7 @@ download_and_verify() {
     fi
     asset=${archive_prefix}
     [ "${archive_versioned}" = 0 ] || asset=${asset}${version}${archive_separator}
-    asset=${asset}${os}${archive_separator}${arch}.tar.gz
+    asset=${asset}${platform_suffix}.tar.gz
     fetch "${checksum_name}" "${tmp}/checksums"
     fetch "${asset}" "${tmp}/archive.tar.gz"
     expected=$(awk -v name="${asset}" '$2==name || $2=="*"name { if (NF!=2 || length($1)!=64 || $1 !~ /^[0-9a-fA-F]+$/) bad=1; count++; hash=tolower($1) } END { if (count!=1 || bad) exit 1; print hash }' "${tmp}/checksums") || die "The checksum file has no unique valid SHA-256 entry for ${asset}."

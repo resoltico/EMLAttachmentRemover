@@ -22,7 +22,6 @@ archive_rooted=$(setting archive_rooted)
 archive_member() {
     if [[ "${archive_rooted}" == 1 ]]; then printf '%s/%s' "${1%.tar.gz}" "$2"; else printf '%s' "$2"; fi
 }
-macos_token=$(setting macos_token); x64_token=$(setting x64_token); arm64_token=$(setting arm64_token)
 checksum_name=$(setting checksum_name); legal_files=$(setting legal_files); repo_url=$(setting repo_url)
 [[ -f "${dist}/${checksum_name}" ]] || { echo "Missing ${checksum_name}" >&2; exit 2; }
 hash_file() {
@@ -38,15 +37,17 @@ expected_installer=$(awk '$2=="install.sh" || $2=="*install.sh" {count++; hash=$
 actual_installer=$(hash_file "${installer}")
 [[ "${expected_installer}" == "${actual_installer}" ]] || { echo 'Staged install.sh does not match the primary release checksum' >&2; exit 1; }
 
-case "$(uname -s)" in Darwin) os=${macos_token}; hardware=$(sysctl -in hw.optional.arm64) ;; Linux) os=linux; hardware=0 ;; *) echo 'Unix installer tests require macOS or Linux' >&2; exit 2 ;; esac
+case "$(uname -s)" in Darwin) platform=macos; hardware=$(sysctl -in hw.optional.arm64) ;; Linux) platform=linux; hardware=0 ;; *) echo 'Unix installer tests require macOS or Linux' >&2; exit 2 ;; esac
 machine=$(uname -m)
 [[ "${hardware}" != 1 ]] || machine=arm64
-case "${machine}" in x86_64 | amd64) arch=${x64_token} ;; arm64 | aarch64) arch=${arm64_token} ;; *) echo "Unsupported native processor: ${machine}" >&2; exit 2 ;; esac
+case "${machine}" in x86_64 | amd64) processor=x64 ;; arm64 | aarch64) processor=arm64 ;; *) echo "Unsupported native processor: ${machine}" >&2; exit 2 ;; esac
+platform_suffix=$(setting "${platform}_${processor}")
+[[ -n "${platform_suffix}" ]] || { echo "No release for native ${platform}/${processor}" >&2; exit 2; }
 if [[ "${archive_versioned}" == 1 ]]; then
-    candidates=("${dist}/${archive_prefix}"*"${archive_separator}${os}${archive_separator}${arch}.tar.gz")
+    candidates=("${dist}/${archive_prefix}"*"${archive_separator}${platform_suffix}.tar.gz")
     [[ ${#candidates[@]} -eq 1 && -f "${candidates[0]}" ]] || { echo 'Expected one native versioned archive' >&2; exit 2; }
     native_archive=${candidates[0]}
-else native_archive=${dist}/${archive_prefix}${os}${archive_separator}${arch}.tar.gz; fi
+else native_archive=${dist}/${archive_prefix}${platform_suffix}.tar.gz; fi
 # Verify the primary executable archive before tar or any version invocation.
 # Later tampered-mirror cases deliberately use their own checksum files.
 native_asset=${native_archive##*/}
@@ -85,7 +86,7 @@ run_installer() {
 }
 marker_count() { if [[ -f "$1" ]]; then grep -cF "# added by the ${product_name} installer" "$1" || :; else printf '0\n'; fi; }
 resolve_in() { env -i HOME="${fixture_home}" PATH="${base_path}" "$@" 2>/dev/null | tail -n 1; }
-new_asset() { if [[ "${archive_versioned}" == 1 ]]; then printf '%s%s%s%s%s%s.tar.gz' "${archive_prefix}" "${fixture_version}" "${archive_separator}" "${os}" "${archive_separator}" "${arch}"; else printf '%s%s%s%s.tar.gz' "${archive_prefix}" "${os}" "${archive_separator}" "${arch}"; fi; }
+new_asset() { if [[ "${archive_versioned}" == 1 ]]; then printf '%s%s%s%s.tar.gz' "${archive_prefix}" "${fixture_version}" "${archive_separator}" "${platform_suffix}"; else printf '%s%s.tar.gz' "${archive_prefix}" "${platform_suffix}"; fi; }
 pack_release() {
     local target=$1 asset name digest
     shift
@@ -110,6 +111,53 @@ make_release() {
     done
     pack_release "${target}" "${members[@]}"
 }
+
+begin 'platform suffixes follow producer names and unsupported pairs refuse before download'
+boundary_engine=${fixture_home}/platform-engine.sh
+# Source the real engine without its entry point, isolating platform probes from
+# host filesystem adapters. Archive requests still use the real download path.
+sed '$d' "${installer}" | sed \
+    -e "s/^macos_arm64=.*/macos_arm64='aarch64-apple-darwin'/" \
+    -e "s/^linux_x64=.*/linux_x64='x86_64-unknown-linux-musl'/" \
+    -e "s/^linux_arm64=.*/linux_arm64=''/" \
+    -e "s/^archive_prefix=.*/archive_prefix='tool_'/" \
+    -e "s/^archive_separator=.*/archive_separator='-'/" \
+    -e 's/^archive_versioned=.*/archive_versioned=1/' > "${boundary_engine}"
+for boundary in macos linux unsupported; do
+    case "${boundary}" in
+        macos) boundary_kernel=Darwin; boundary_machine=arm64; expected_asset=tool_1.2.3-aarch64-apple-darwin.tar.gz ;;
+        linux) boundary_kernel=Linux; boundary_machine=x86_64; expected_asset=tool_1.2.3-x86_64-unknown-linux-musl.tar.gz ;;
+        unsupported) boundary_kernel=Linux; boundary_machine=aarch64; expected_asset='' ;;
+        *) fail 'unknown platform boundary fixture'; exit 1 ;;
+    esac
+    requests=${fixture_home}/requests-${boundary}
+    if env -i HOME="${fixture_home}" PATH="${base_path}" sh -s -- "${boundary_engine}" "${requests}" "${boundary_kernel}" "${boundary_machine}" > "${work}/out" 2>&1 <<'EOF'
+. "$1"
+requests=$2; boundary_kernel=$3; boundary_machine=$4
+uname() { case "$1" in -s) printf '%s\n' "${boundary_kernel}" ;; -m) printf '%s\n' "${boundary_machine}" ;; *) exit 91 ;; esac; }
+sw_vers() { printf '99.0\n'; }
+sysctl() { printf '1\n'; }
+fetch() { printf '%s\n' "$1" >> "${requests}"; if [ "$1" = "${checksum_name}" ]; then : > "$2"; else exit 73; fi; }
+validate_settings
+parse_args --version 1.2.3
+tmp=$HOME
+download_base=$HOME/release
+detect_platform
+download_and_verify
+EOF
+    then last_exit=0; else last_exit=$?; fi
+    if [[ "${boundary}" == unsupported ]]; then
+        expect_exit 1 'unsupported Linux ARM64 pair'
+        assert 'unsupported pair is identified locally' grep -Fq 'has no release for Linux on aarch64' "${work}/out"
+        assert 'unsupported pair does not request downloads' test ! -e "${requests}"
+    else
+        expect_exit 73 "${boundary} reaches expected archive request"
+        requested_asset=$(tail -n 1 "${requests}")
+        request_count=$(wc -l < "${requests}" | tr -d ' ')
+        assert "${boundary} uses exact producer suffix" test "${requested_asset}" = "${expected_asset}"
+        assert "${boundary} requests checksum then archive" test "${request_count}" = 2
+    fi
+done
 
 begin 'primary archive checksum blocks execution before version bootstrap'
 primary_control=${work}/primary-control; mkdir -p "${primary_control}/dist" "${primary_control}/payload" "${primary_control}/tmp"
@@ -592,6 +640,43 @@ EOF
 done
 
 
+begin 'saved installer recovery command preserves quoting and effective install options'
+recovery_dir=${fixture_home}/"tools' bin"
+saved_installer=${fixture_home}/"saved installers' folder/install script.sh"
+mkdir -p "${recovery_dir}" "${saved_installer%/*}"
+cp "${installer}" "${saved_installer}"
+cat > "${recovery_dir}/${command_name}" <<'EOF'
+#!/bin/sh
+printf executed > "$HOME/unowned-was-run"
+EOF
+chmod 755 "${recovery_dir}/${command_name}"
+original_hash=$(hash_file "${recovery_dir}/${command_name}")
+printf '# existing startup content\n' > "${fixture_home}/.profile"
+profile_before=$(hash_file "${fixture_home}/.profile")
+fixture_version=1.2.3
+recovery_release=${fixture_home}/release; mkdir "${recovery_release}"
+make_release "${recovery_release}" "printf '%s\n' '${command_name} ${fixture_version}'"
+if env -i HOME="${fixture_home}" PATH="${base_path}" SHELL=/bin/sh TMPDIR="${work}" \
+    "${env_prefix}_DOWNLOAD_BASE=${recovery_release}" \
+    sh "${saved_installer}" --install-dir "${recovery_dir}" --version v1.2.3 --no-modify-path > "${work}/out" 2>&1; then last_exit=0; else last_exit=$?; fi
+expect_failure 'saved installer receiptless refusal'
+sed -n 's/^    \(sh .*\)$/\1/p' "${work}/out" > "${work}/retry-command"
+retry_count=$(wc -l < "${work}/retry-command" | tr -d ' ')
+assert 'exactly one copyable command is printed' test "${retry_count}" = 1
+assert 'retry keeps normalized explicit version' grep -Fq -- "--version '1.2.3'" "${work}/retry-command"
+assert 'retry keeps disabled PATH writes' grep -Fq -- '--no-modify-path' "${work}/retry-command"
+assert 'retry does not print mirror configuration' test "$(grep -Fc "${recovery_release}" "${work}/out" || :)" = 0
+if env -i HOME="${fixture_home}" PATH="${base_path}" SHELL=/bin/sh TMPDIR="${work}" \
+    "${env_prefix}_DOWNLOAD_BASE=${recovery_release}" "${env_prefix}_VERSION=9.8.7" \
+    sh "${work}/retry-command" > "${work}/out" 2>&1; then last_exit=0; else last_exit=$?; fi
+expect_exit 0 'printed recovery command runs with quoted saved path and target'
+assert 'printed recovery command installs chosen version' grep -qx '1.2.3' "${recovery_dir}/.${command_name}-install/version"
+after=$(hash_file "${fixture_home}/.profile"); assert 'recovery command leaves PATH startup untouched' test "${profile_before}" = "${after}"
+assert 'old executable was never run' test ! -e "${fixture_home}/unowned-was-run"
+recovery_files=("${fixture_home}/.${command_name}-recovery."*/"${command_name}")
+assert 'recovery command retains one original backup' test "${#recovery_files[@]}" = 1
+backup_hash=$(hash_file "${recovery_files[0]}"); assert 'recovery command backs up original bytes' test "${original_hash}" = "${backup_hash}"
+
 begin 'explicit receiptless replacement preserves original bytes outside the shared bin'
 replacement_dir=${fixture_home}/tools
 mkdir -p "${replacement_dir}"
@@ -609,6 +694,13 @@ download_base=${fixture_home}/does-not-exist
 run_installer /bin/sh --install-dir "${replacement_dir}"; expect_failure 'receiptless default refusal before download'
 assert 'receiptless diagnostic names target' grep -Fq "${replacement_dir}/${command_name}" "${work}/out"
 assert 'receiptless diagnostic offers bounded option' grep -q -- '--replace-unmanaged' "${work}/out"
+assert 'stdin refusal honestly identifies missing saved script' grep -Fq 'cannot locate its saved file' "${work}/out"
+assert 'stdin fallback names the product installer' grep -Fq "Save this installer as ./install-${command_name}.sh" "${work}/out"
+assert 'receiptless help links directly to its recovery section' grep -Fq '/docs/INSTALL.md#existing-executable-without-an-installer-receipt' "${work}/out"
+run_installer /bin/sh --install-dir "${replacement_dir}" --uninstall; expect_failure 'receiptless uninstall refusal'
+assert 'uninstall explains the ownership refusal' grep -Fq 'cannot remove it' "${work}/out"
+if grep -q -- '--replace-unmanaged' "${work}/out"; then fail 'unmanaged uninstall recommends replacement'; fi
+run_installer /bin/sh --install-dir "${replacement_dir}"; expect_failure 'repeat receiptless default refusal before download'
 if grep -q 'Could not download' "${work}/out"; then fail 'receiptless local conflict was hidden by download'; fi
 assert 'default refusal does not create state' test ! -e "${replacement_dir}/.${command_name}-install"
 after=$(hash_file "${replacement_dir}/${command_name}"); assert 'default refusal preserves unowned bytes' test "${original_hash}" = "${after}"
@@ -840,13 +932,13 @@ after=$(hash_file "${fixture_home}/.local/bin/${command_name}"); assert 'recover
 backup_hash=$(hash_file "${retained_stages[0]}/previous-binary"); assert 'recovery refusal preserves original backup' test "${before}" = "${backup_hash}"
 
 
-begin 'receipts own verified legal inventory while new packages require all current legal files'
+begin 'receipts require the complete current file inventory'
 saved_installer=${installer}; saved_legal_files=${legal_files}
-small_legal_installer=${work}/small-legal-install.sh
-expanded_legal_installer=${work}/expanded-legal-install.sh
+subset_inventory_installer=${work}/subset-inventory-install.sh
+current_inventory_installer=${work}/current-inventory-install.sh
 for fixture_legal_files in LICENSE 'LICENSE EXTRA-NOTICE'; do
-    destination=${small_legal_installer}
-    [[ "${fixture_legal_files}" == LICENSE ]] || destination=${expanded_legal_installer}
+    destination=${subset_inventory_installer}
+    [[ "${fixture_legal_files}" == LICENSE ]] || destination=${current_inventory_installer}
     # Vary only one literal product setting; the common engine remains exact.
     awk -v value="${fixture_legal_files}" '
         $0=="# BEGIN PRODUCT SETTINGS" {inside=1}
@@ -861,23 +953,27 @@ legal_files='LICENSE EXTRA-NOTICE'
 legal_release=${work}/legal-inventory-release
 make_release "${legal_release}" "printf '%s\\n' '${command_name} 1.2.3'"
 download_base=${legal_release}
-installer=${small_legal_installer}
-run_installer /bin/sh --install-dir "${fixture_home}/update-tools" --no-modify-path; expect_exit 0 'smaller legal inventory install for update'
-run_installer /bin/sh --install-dir "${fixture_home}/remove-tools" --no-modify-path; expect_exit 0 'smaller legal inventory install for removal'
+installer=${subset_inventory_installer}
+run_installer /bin/sh --install-dir "${fixture_home}/incomplete-tools" --no-modify-path; expect_exit 0 'construct a sealed different-inventory receipt'
+incomplete_receipt=${fixture_home}/incomplete-tools/.${command_name}-install
+incomplete_binary_before=$(hash_file "${fixture_home}/incomplete-tools/${command_name}")
+incomplete_state_before=$(hash_file "${incomplete_receipt}/state.sha256")
+installer=${current_inventory_installer}
+run_installer /bin/sh --install-dir "${fixture_home}/incomplete-tools" --no-modify-path; expect_failure 'different inventory refuses update'
+run_installer /bin/sh --install-dir "${fixture_home}/incomplete-tools" --uninstall --no-modify-path; expect_failure 'different inventory refuses uninstall'
+run_installer /bin/sh --install-dir "${fixture_home}/incomplete-tools" --replace-unmanaged --no-modify-path; expect_failure 'replacement cannot convert a different inventory'
+after=$(hash_file "${fixture_home}/incomplete-tools/${command_name}"); assert 'different inventory preserves binary' test "${incomplete_binary_before}" = "${after}"
+state_after=$(hash_file "${incomplete_receipt}/state.sha256"); assert 'different inventory preserves receipt' test "${incomplete_state_before}" = "${state_after}"
+assert 'different inventory is not converted' test ! -e "${incomplete_receipt}/legal/EXTRA-NOTICE"
+run_installer /bin/sh --install-dir "${fixture_home}/update-tools" --no-modify-path; expect_exit 0 'complete current inventory installs in a fresh directory'
 receipt=${fixture_home}/update-tools/.${command_name}-install
-assert 'smaller receipt owns its actual LICENSE file' test -f "${receipt}/legal/LICENSE"
-assert 'smaller receipt does not claim future legal file' test ! -e "${receipt}/legal/EXTRA-NOTICE"
-installer=${expanded_legal_installer}
-run_installer /bin/sh --install-dir "${fixture_home}/remove-tools" --uninstall --no-modify-path; expect_exit 0 'expanded requirements can uninstall smaller verified inventory'
-assert 'smaller-inventory uninstall removes actual owned state' test ! -e "${fixture_home}/remove-tools/.${command_name}-install"
-run_installer /bin/sh --install-dir "${fixture_home}/update-tools" --no-modify-path; expect_exit 0 'expanded package upgrades smaller verified inventory'
-assert 'new receipt contains current added legal requirement' test -f "${receipt}/legal/EXTRA-NOTICE"
-assert 'new receipt seals current added legal requirement' grep -q '  legal/EXTRA-NOTICE$' "${receipt}/state.sha256"
+assert 'current receipt contains every required legal file' test -f "${receipt}/legal/EXTRA-NOTICE"
+assert 'current receipt seals every required legal file' grep -q '  legal/EXTRA-NOTICE$' "${receipt}/state.sha256"
 before=$(hash_file "${fixture_home}/update-tools/${command_name}")
 state_before=$(hash_file "${receipt}/state.sha256")
 cp "${receipt}/legal/LICENSE" "${work}/owned-license-before"
 rm "${receipt}/legal/LICENSE"
-run_installer /bin/sh --install-dir "${fixture_home}/update-tools" --no-modify-path; expect_failure 'missing previously owned legal file is not treated as a future requirement'
+run_installer /bin/sh --install-dir "${fixture_home}/update-tools" --no-modify-path; expect_failure 'missing required legal file is refused'
 after=$(hash_file "${fixture_home}/update-tools/${command_name}"); assert 'missing owned legal file preserves binary' test "${before}" = "${after}"
 state_after=$(hash_file "${receipt}/state.sha256"); assert 'missing owned legal file preserves receipt' test "${state_before}" = "${state_after}"
 cp "${work}/owned-license-before" "${receipt}/legal/LICENSE"
@@ -891,7 +987,7 @@ run_installer /bin/sh --install-dir "${fixture_home}/update-tools" --uninstall -
 assert 'unrecorded legal sidecar retained' grep -qx user-note "${receipt}/legal/UNOWNED-NOTE"
 state_after=$(hash_file "${receipt}/state.sha256"); assert 'extra legal file preserves receipt' test "${state_before}" = "${state_after}"
 rm "${receipt}/legal/UNOWNED-NOTE"
-run_installer /bin/sh --install-dir "${fixture_home}/update-tools" --uninstall --no-modify-path; expect_exit 0 'expanded legal inventory normal cleanup'
+run_installer /bin/sh --install-dir "${fixture_home}/update-tools" --uninstall --no-modify-path; expect_exit 0 'complete current inventory normal cleanup'
 installer=${saved_installer}; legal_files=${saved_legal_files}
 
 begin 'final locked inspection propagates a managed receipt read failure'

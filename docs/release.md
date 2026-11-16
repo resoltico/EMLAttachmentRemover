@@ -50,12 +50,12 @@ EML_SOURCE_REVISION="$revision" scripts/smoke-macos-app.sh "target/smoke/$mac_ar
 ```
 
 Distribution uses the `dist` Cargo profile: checked release arithmetic, Thin LTO,
-one codegen unit and stripped symbols. Ordinary development builds keep their
-existing debug/incremental settings. Cargo metadata supplies the actual target
+one codegen unit and stripped symbols. Development builds use their configured
+debug and incremental settings. Cargo metadata supplies the actual target
 directory, including Cargo configuration overrides.
 Commands resolve the invoking workspace with Cargo at runtime, including when
-called from a member directory. A shared target cache must not select the
-worktree in which an earlier `xtask` executable happened to be compiled.
+called from a member directory. Shared target caches do not change workspace
+selection.
 
 Use a fresh output folder. The CLI archive is flat: executable, LICENSE,
 PROJECT-NOTICE.md, LICENSE-COMMERCIAL.md, SOURCE.txt and THIRD-PARTY-NOTICES.txt. The app ZIP contains `EML Attachment Remover.app`, with
@@ -89,7 +89,7 @@ Commit reviewed inputs before distributing: packages built from a dirty checkout
 carry the base revision and are development evidence, not exact source snapshots.
 
 `CFBundleShortVersionString` is the workspace version. `CFBundleVersion` is derived
-as `major * 10000 + minor * 100 + patch` (9.0.0 becomes 90000). App packaging
+as `major * 10000 + minor * 100 + patch` (1.2.3 becomes 10203). App packaging
 requires X.Y.Z without suffixes, minor/patch at most 99,
 and a result representable as a u32. These bounds keep the mapping ordered and
 collision-free. Increase the release version before distributing changed builds;
@@ -107,8 +107,11 @@ graph, with required upstream supplements. See [legal materials](../legal/README
 
 ## CLI installers
 
-Publish `install/install.sh` and `install/install.ps1` beside the CLI archives.
-Both scripts belong in `SHA256SUMS` and the release attestation, while preserving
+Stage the source installers with
+`python3 install/prepare-installers.py --revision "$GITHUB_SHA" --output-dir target/dist`
+before generating checksums. Publish those generated `install.sh` and
+`install.ps1` files beside the CLI archives; their Help links identify the exact
+source commit. Both scripts belong in `SHA256SUMS` and the release attestation, while preserving
 the independent nine-archive completeness check. Do not include a desktop app
 or native document probe in CLI installer selection. The scripts download exact
 CLI filenames for one CPU and retain the package's licensing/source notices under

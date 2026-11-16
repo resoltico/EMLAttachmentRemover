@@ -37,7 +37,8 @@ The installers verify the selected release, test the binary and record ownership
 before updating or removing it. They retain the CLI's license material in a
 private directory beside the executable, and edit only their own PATH entries.
 An existing unowned target is refused unless you explicitly request a backed-up
-replacement. Changed managed files are refused. Read
+replacement. See [replace or keep instructions](docs/INSTALL.md#existing-executable-without-an-installer-receipt).
+Changed managed files are refused. Read
 [install, update and uninstall](docs/INSTALL.md) for paths, options, mirrors, trust
 and recovery. They do not install the Mac desktop app.
 

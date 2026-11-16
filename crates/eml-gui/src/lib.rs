@@ -126,7 +126,6 @@ impl DesktopController {
         let about = AboutWindow::new()?;
         let licenses = LicenseWindow::new()?;
         ui.set_product_name(eml_core::product::DISPLAY_NAME.into());
-        ui.set_native_about(cfg!(all(feature = "native", target_os = "macos")));
         ui.set_words(wording::controls());
         about.set_words(wording::controls());
         licenses.set_words(wording::controls());
@@ -383,10 +382,6 @@ impl DesktopController {
         if expired {
             self.notice.borrow_mut().take();
             self.presentation_dirty.set(true);
-        }
-        platform::refresh_menu();
-        if platform::take_about() {
-            self.show_about();
         }
         if platform::take_quit() {
             self.request_quit();

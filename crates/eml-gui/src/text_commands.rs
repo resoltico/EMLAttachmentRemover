@@ -1,5 +1,5 @@
 //! Standard text commands use editor context independently of Copy Details.
-//! Uses pinned `i_slint_core` internals: `WindowInner::focus_item`/`active_popups`,
+//! Window-level Edit menus use `i_slint_core` editor-context access: `WindowInner::focus_item`/`active_popups`,
 //! `WindowKind`, `ItemRc`/`ItemWeak` and `TextInput::{copy, select_all}`.
 //! Re-verify these paths when upgrading Slint.
 use crate::DesktopController;
@@ -37,7 +37,7 @@ fn apply(window: &slint::Window, command: Command) -> bool {
             return false;
         };
         match command {
-            Command::Copy => input.copy(&adapter, item),
+            Command::Copy => input.copy(&adapter),
             Command::SelectAll => input.select_all(&adapter, item),
         }
         true
@@ -75,7 +75,8 @@ impl TextContext {
 }
 fn after_menu(window: &slint::Window, action: impl FnOnce() + 'static) {
     if menu_open(window) {
-        // Activation precedes normal popup closure and restoration of editor focus.
+        // Slint menu activation precedes popup closure and editor-focus restoration.
+        // Schedule the action after that event completes; no elapsed-time estimate.
         slint::Timer::single_shot(std::time::Duration::ZERO, action);
     } else {
         action();

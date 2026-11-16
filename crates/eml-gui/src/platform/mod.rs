@@ -1,4 +1,4 @@
-//! Application-owned macOS menu routing and Quit admission.
+//! Application-owned macOS Quit admission and document opening.
 #[cfg(all(feature = "native", target_os = "macos"))]
 mod macos;
 pub(crate) fn set_busy(busy: bool) {
@@ -6,7 +6,7 @@ pub(crate) fn set_busy(busy: bool) {
     macos::set_busy(busy);
     let _ = busy;
 }
-/// Install application-menu About routing and Quit admission after native startup.
+/// Install native Quit admission and document opening after startup.
 pub fn install() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(all(feature = "native", target_os = "macos"))]
     macos::install()?;
@@ -18,18 +18,6 @@ pub(crate) fn take_quit() -> bool {
     #[cfg(not(all(feature = "native", target_os = "macos")))]
     false
 }
-pub(crate) fn take_about() -> bool {
-    #[cfg(all(feature = "native", target_os = "macos"))]
-    return macos::take_about();
-    #[cfg(not(all(feature = "native", target_os = "macos")))]
-    false
-}
-
-pub(crate) fn refresh_menu() {
-    #[cfg(all(feature = "native", target_os = "macos"))]
-    macos::refresh_menu();
-}
-
 /// Platform-appropriate output-folder action label, without native service policy.
 pub fn file_manager_label() -> &'static str {
     if cfg!(target_os = "macos") {

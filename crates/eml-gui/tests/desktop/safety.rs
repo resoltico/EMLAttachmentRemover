@@ -121,6 +121,23 @@ fn about_contents_and_actions_fit_display_scales() {
 }
 
 #[test]
+fn application_about_actions_from_every_window_use_the_controller() {
+    init_no_event_loop();
+    let root = tempfile::tempdir().unwrap();
+    let c = controller(root.path(), eml_core::run);
+    let about = c.about_window();
+    c.window().invoke_about();
+    assert!(about.window().is_visible());
+    about.invoke_dismiss();
+    assert!(!about.window().is_visible());
+    about.invoke_about();
+    assert!(about.window().is_visible());
+    about.invoke_dismiss();
+    c.license_window().invoke_about();
+    assert!(about.window().is_visible());
+}
+
+#[test]
 fn about_and_licenses_restore_focus_selection_and_scroll_on_reopen() {
     use i_slint_core::{items::TextInput, window::WindowInner};
     use slint::platform::{Key, PointerEventButton, WindowEvent};

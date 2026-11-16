@@ -5,24 +5,119 @@ SHA-256 checksum and test-runs the program before replacing an owned installatio
 No administrator account, background updater, scheduled task or file association
 is needed. The CLI's inputs and outputs are outside the installer's scope.
 
-## Install
+## Existing executable without an installer receipt
 
-On macOS or Linux:
+`Existing executable has no installer receipt` means a file already exists at
+the printed path, but this installer has no record of managing it. This does not
+identify how the file was installed. The refusal changes no program or PATH entry.
+
+Choose whether to replace that executable or keep it:
+
+- **Replace it:** use the complete command printed by the installer. It keeps
+  the selected directory, version pin and choice to leave PATH unchanged. It
+  authorizes backing up and replacing only the named executable after the new
+  candidate verifies.
+- **Keep it:** install into another directory and use that installation's full
+  executable path. Avoid adding a second command with the same name to PATH
+  until you have chosen which installation should be used.
+
+For the default directory and a saved installer, explicit replacement is:
 
 ```sh
-curl -fsSL https://github.com/resoltico/EMLAttachmentRemover/releases/latest/download/install.sh | sh
+sh ./install-emlattachmentremover.sh --install-dir "$HOME/.local/bin" --replace-unmanaged
 ```
 
-If curl is unavailable, use
-`wget -qO- https://github.com/resoltico/EMLAttachmentRemover/releases/latest/download/install.sh | sh`.
-The installer itself requires standard shell tools, tar and a SHA-256 tool
-(`sha256sum`, `shasum` or `openssl`).
+```powershell
+powershell -NoProfile -ExecutionPolicy ByPass -File .\install-emlattachmentremover.ps1 -InstallDir "$env:LOCALAPPDATA\Programs\EMLAttachmentRemover" -ReplaceUnmanaged
+if ($LASTEXITCODE -ne 0) { throw "Installer failed ($LASTEXITCODE)." }
+```
+
+These examples explicitly select the usual default directories. If
+`XDG_BIN_HOME`, another directory, a version pin or disabled PATH changes were
+selected, use the printed command instead. If the installer ran through stdin or
+an expression and cannot identify its saved file, save and inspect the installer using [Install](#install), then
+apply the options printed by the refusal to that saved script. Keep mirror
+configuration in the environment; recovery commands do not print it.
+
+To keep the existing executable, choose a fresh directory, for example:
+
+```sh
+sh ./install-emlattachmentremover.sh --install-dir "$HOME/emlattachmentremover-cli" --no-modify-path
+```
+
+```powershell
+powershell -NoProfile -ExecutionPolicy ByPass -File .\install-emlattachmentremover.ps1 -InstallDir "$env:LOCALAPPDATA\EMLAttachmentRemover-CLI" -NoModifyPath
+if ($LASTEXITCODE -ne 0) { throw "Installer failed ($LASTEXITCODE)." }
+```
+
+Retain any selected version option when changing directories. After a successful
+replacement, keep the original backup at its exact reported path until you have
+verified the new executable. Uninstall does not remove this backup. Run the
+printed full executable path with `--version` and `--help`; this checks the
+installation you just selected rather than another command on PATH. For the
+default directories:
+
+```sh
+"$HOME/.local/bin/emlattachmentremover" --version
+"$HOME/.local/bin/emlattachmentremover" --help
+```
+
+```powershell
+& "$env:LOCALAPPDATA\Programs\EMLAttachmentRemover\emlattachmentremover.exe" --version
+& "$env:LOCALAPPDATA\Programs\EMLAttachmentRemover\emlattachmentremover.exe" --help
+```
+
+To restore the original after a successful replacement, first [uninstall](#uninstall)
+the new managed copy from the same directory. Continue only after uninstall
+succeeds; then move the exact reported backup to the original executable path.
+Review PATH separately: pre-existing entries were not adopted, and entries added
+by the new installation may have been removed. If replacement or restoration
+failed, preserve the reported recovery files and follow
+[ownership and unmanaged installations](#ownership-and-unmanaged-installations)
+before retrying. The replacement option cannot bypass changed managed files,
+corrupt state, symlinks, nonregular targets or access failures.
+
+If this error occurs during **uninstall**, the installer cannot remove that
+untracked executable or its PATH entries. Use the method that installed it, or
+inspect and preserve the file before deciding on manual removal. Replacement is
+an installation action, not a way to uninstall an untracked executable.
+
+Published installers link Help to their source commit, so it stays matched to
+that installer. Scripts run from a source checkout link to the current `main`
+guide. Keep the saved installer for later update or offline removal.
+
+## Install
+
+On macOS or Linux, save the installer, inspect it, then run it:
+
+```sh
+curl --proto '=https' --proto-redir '=https' -fL -o ./install-emlattachmentremover.sh https://github.com/resoltico/EMLAttachmentRemover/releases/latest/download/install.sh &&
+  less ./install-emlattachmentremover.sh &&
+  sh ./install-emlattachmentremover.sh
+```
+
+If curl is unavailable, use `wget --https-only -O ./install-emlattachmentremover.sh URL`
+with the same URL and `&&` chain. `less` is only for review; the README quick
+start omits it. The installer itself requires standard shell tools, tar and a
+SHA-256 tool (`sha256sum`, `shasum` or `openssl`).
 
 On Windows, use PowerShell:
 
 ```powershell
-powershell -ExecutionPolicy ByPass -c "irm https://github.com/resoltico/EMLAttachmentRemover/releases/latest/download/install.ps1 | iex"
+& {
+    $ErrorActionPreference = 'Stop'
+    Invoke-WebRequest -UseBasicParsing -Uri https://github.com/resoltico/EMLAttachmentRemover/releases/latest/download/install.ps1 -OutFile .\install-emlattachmentremover.ps1 -ErrorAction Stop
+    Get-Content .\install-emlattachmentremover.ps1
+    powershell -NoProfile -ExecutionPolicy ByPass -File .\install-emlattachmentremover.ps1
+    if ($LASTEXITCODE -ne 0) { throw "Installer failed ($LASTEXITCODE)." }
+}
 ```
+
+To pause for review, stop after download, inspect the saved script, then run the
+child command. A failed fetch must prevent execution even when an older saved
+script exists. The `&&` chain and PowerShell block preserve that behavior and
+propagate installer failures. A bare `curl | sh` pipeline can hide a failed fetch
+behind a successful empty shell. Retain the saved script for offline uninstall.
 
 Windows PowerShell 5.1 and PowerShell 7 are supported. `ByPass` applies only to the
 launched PowerShell session; it does not change persistent policy or override
@@ -61,21 +156,30 @@ and current-session PATH unchanged.
 Run the same install command again. The installer resolves latest once to a stable
 `vX.Y.Z` tag, then downloads both archive and `SHA256SUMS` from that release.
 A failed download, checksum or candidate test happens before replacing the active
-program. An update requires the existing binary, legal files and ownership state
-to match their receipt.
+program. An update requires intact ownership state and every remaining managed
+file to match its receipt. The receipt must list exactly the current installer's
+legal-file names; see [ownership requirements](#ownership-and-unmanaged-installations).
 
 Select a release explicitly, for example:
 
 ```sh
-curl -fsSL https://github.com/resoltico/EMLAttachmentRemover/releases/download/v9.0.0/install.sh | sh -s -- --version 9.0.0
+curl --proto '=https' --proto-redir '=https' -fL -o ./install-emlattachmentremover.sh https://github.com/resoltico/EMLAttachmentRemover/releases/download/v10.0.0/install.sh &&
+  sh ./install-emlattachmentremover.sh --version 10.0.0
 ```
 
 ```powershell
-$env:EMLATTACHMENTREMOVER_VERSION = '9.0.0'
-irm https://github.com/resoltico/EMLAttachmentRemover/releases/download/v9.0.0/install.ps1 | iex
+& {
+    $ErrorActionPreference = 'Stop'
+    Invoke-WebRequest -UseBasicParsing -Uri https://github.com/resoltico/EMLAttachmentRemover/releases/download/v10.0.0/install.ps1 -OutFile .\install-emlattachmentremover.ps1 -ErrorAction Stop
+    powershell -NoProfile -ExecutionPolicy ByPass -File .\install-emlattachmentremover.ps1 -Version 10.0.0
+    if ($LASTEXITCODE -ne 0) { throw "Installer failed ($LASTEXITCODE)." }
+}
 ```
 
-The environment pin remains set in that session. Clear it to return to latest:
+These commands pin installer and payload to 10.0.0. Replace both version values
+together to select another stable release. Alternatively,
+`EMLATTACHMENTREMOVER_VERSION` supplies the payload version when no option is
+given. That environment pin remains set in the session; clear it to return to latest:
 
 ```sh
 unset EMLATTACHMENTREMOVER_VERSION
@@ -86,7 +190,8 @@ Remove-Item Env:EMLATTACHMENTREMOVER_VERSION -ErrorAction SilentlyContinue
 ```
 
 Keep a copy of the reviewed installer you used, from the selected release tag or
-reviewed source checkout. The pipe commands do not save one. Do not assume that
+reviewed source checkout. The commands above save one as
+`install-emlattachmentremover.sh` or `install-emlattachmentremover.ps1`. Do not assume that
 fetching the current latest script later gives the same ownership protocol.
 
 The installer stages files privately on the destination filesystem and uses a
@@ -106,6 +211,12 @@ The installer uses `.emlattachmentremover-install` beside the executable
 for ownership receipts and managed data. It verifies managed file hashes before
 update or removal and refuses unowned files by default and changed managed files.
 A matching filename, version output or PATH entry does not establish ownership.
+
+Update and uninstall require exactly the legal-file names declared by the current
+installer. Receipts with a different inventory are refused without conversion.
+Remove an affected managed copy using the matching installer that created it,
+or install into a fresh directory and use the printed full executable path.
+`--replace-unmanaged` / `-ReplaceUnmanaged` cannot bypass this managed-state refusal.
 
 Use the installer and payload from the same qualified release. The installer
 verifies ownership before replacement and preserves recoverable state on failure.
@@ -138,16 +249,7 @@ user edits blindly.
   Windows normalizes ordinary spellings but refuses a reparse-point install directory.
   Moved receipts are not adopted; use the recorded-path command in the diagnostic.
 
-To explicitly back up and replace a receiptless executable:
-
-```sh
-sh ./install-emlattachmentremover.sh --install-dir "$HOME/.local/bin" --replace-unmanaged
-```
-
-```powershell
-powershell -NoProfile -ExecutionPolicy ByPass -File .\install-emlattachmentremover.ps1 -InstallDir "$env:LOCALAPPDATA\Programs\EMLAttachmentRemover" -ReplaceUnmanaged
-if ($LASTEXITCODE -ne 0) { throw "Installer failed ($LASTEXITCODE)." }
-```
+For a receiptless executable, follow the [replace or keep decision and commands](#existing-executable-without-an-installer-receipt).
 
 Activation failure attempts to restore the original executable, receipt and prior
 absence. Keep reported recovery paths if restoration is incomplete; inspect them
@@ -226,8 +328,8 @@ Your emails, copies, reports and desktop app preferences are not installer-manag
 | `--uninstall` | `-Uninstall` | `EMLATTACHMENTREMOVER_UNINSTALL=1` (Windows) | Remove unchanged owned files. |
 | `--help` | `-Help` | | Show usage. |
 
-Pass Unix options after `sh -s --`. In PowerShell use environment variables before
-`irm ... | iex`, or parameters on the saved, reviewed script shown above.
+Pass options to the saved, reviewed script shown above. Set environment
+variables before launching that script.
 
 `EMLATTACHMENTREMOVER_DOWNLOAD_BASE` selects an HTTPS release mirror or an absolute local
 directory containing the release's archive and `SHA256SUMS`. HTTPS is required

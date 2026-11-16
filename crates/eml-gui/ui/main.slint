@@ -9,7 +9,6 @@ import { Label, ActionButton, TextButton } from "controls.slint";
 export { BatchState, Tone, EmailRow, EmailDetail, BatchView, AppWords, AttachmentView } from "models.slint";
 export component MainWindow inherits Window {
     in property <string> product-name;
-    in property <bool> native-about;
     in property <AppWords> words;
     in property <BatchView> view;
     in property <[EmailRow]> rows;
@@ -49,7 +48,7 @@ export component MainWindow inherits Window {
         Menu { title: root.words.help;
             MenuItem { title: root.words.website; activated => { root.website(); } }
             MenuItem { title: root.words.licenses; activated => { root.licenses(); } }
-            if !root.native-about: MenuItem { title: root.words.about; activated => { root.about(); } }
+            MenuItem { role: MenuItemRole.about; title: root.words.about-title; activated => { root.about(); } }
         }
     }
     callback show-output();

@@ -24,7 +24,6 @@ fn readable(value: &str) -> bool {
         "EMLAttachmentRemover",
         "NSObject",
         "WinitApplicationDelegate",
-        "EmlAboutMenuTarget",
     ];
     !technical.contains(&text.as_str())
         && (text

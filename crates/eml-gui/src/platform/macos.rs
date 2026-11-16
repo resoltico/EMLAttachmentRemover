@@ -1,19 +1,17 @@
-//! Route the standard application-menu About action and admit native Quit.
+//! Admit native Quit and receive document-opening events.
 #![expect(
     unsafe_code,
-    reason = "The application menu, Quit and document-opening adapters own their Objective-C boundary"
+    reason = "The Quit and document-opening adapters own their Objective-C boundary"
 )]
 use objc2::{
     Encode, MainThreadMarker,
     encode::EncodeReturn,
     ffi, msg_send,
-    rc::Retained,
-    runtime::{AnyClass, AnyObject, ClassBuilder, Imp, Sel},
+    runtime::{AnyClass, AnyObject, Imp, Sel},
     sel,
 };
 use objc2_app_kit::NSApplication;
 use std::{
-    cell::OnceCell,
     ffi::{CStr, CString},
     os::unix::ffi::OsStringExt,
     path::PathBuf,
@@ -22,7 +20,6 @@ use std::{
 };
 static BUSY: AtomicBool = AtomicBool::new(false);
 static QUIT: AtomicBool = AtomicBool::new(false);
-static ABOUT: AtomicBool = AtomicBool::new(false);
 static OPENED: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
 pub(super) fn take_opened() -> Vec<PathBuf> {
     OPENED
@@ -71,22 +68,11 @@ extern "C" fn open_urls(_: &AnyObject, _: Sel, _: &NSApplication, urls: &AnyObje
         let _ = slint::invoke_from_event_loop(|| {});
     }));
 }
-thread_local! {
-    // NSMenuItem does not retain its target. Own it until the UI thread exits.
-    static ABOUT_TARGET: OnceCell<Retained<AnyObject>> = const { OnceCell::new() };
-}
 pub(super) fn set_busy(busy: bool) {
     BUSY.store(busy, Ordering::Release);
 }
 pub(super) fn take_quit() -> bool {
     QUIT.swap(false, Ordering::AcqRel)
-}
-pub(super) fn take_about() -> bool {
-    ABOUT.swap(false, Ordering::AcqRel)
-}
-extern "C" fn show_about(_: *mut AnyObject, _: Sel, _: *mut AnyObject) {
-    ABOUT.store(true, Ordering::Release);
-    let _ = std::panic::catch_unwind(|| slint::invoke_from_event_loop(|| {}));
 }
 extern "C" fn should_terminate(_: &AnyObject, _: Sel, _: &NSApplication) -> usize {
     if !BUSY.load(Ordering::Acquire) {
@@ -152,69 +138,5 @@ pub(super) fn install() -> Result<(), Box<dyn std::error::Error>> {
     {
         return Err(crate::wording::DOCUMENT_INSTALL_FAILED.into());
     }
-    let about_selector = sel!(emlShowAbout:);
-    let base = AnyClass::get(c"NSObject").ok_or(crate::wording::NSOBJECT_MISSING)?;
-    let mut about_class = ClassBuilder::new(c"EmlAboutMenuTarget", base)
-        .ok_or(crate::wording::ABOUT_TARGET_FAILED)?;
-    // SAFETY: NSObject has no subclassing requirements; this new application-
-    // owned class implements a void-returning object-sender action. No toolkit
-    // class or method is replaced; ClassBuilder derives the matching encoding.
-    unsafe {
-        about_class.add_method(
-            about_selector,
-            show_about as extern "C" fn(*mut AnyObject, Sel, *mut AnyObject),
-        );
-    }
-    let about_class = about_class.register();
-    ABOUT_TARGET.with(|target| {
-        target.get_or_init(|| {
-            // SAFETY: NSObject's inherited +new returns an owned initialized
-            // instance of our registered class, retained for the menu lifetime.
-            unsafe { msg_send![about_class, new] }
-        });
-    });
-    refresh_menu();
     Ok(())
-}
-/// Slint installs the focused window's menu, so route that menu's standard About
-/// item after focus/menu changes as part of the existing application event tick.
-pub(super) fn refresh_menu() {
-    let Some(main) = MainThreadMarker::new() else {
-        return;
-    };
-    let app = NSApplication::sharedApplication(main);
-    // Menus can be empty during launch/focus replacement. Indexed NSMenu access
-    // raises an Objective-C exception; firstObject is nil-safe for both levels.
-    let Some(item) = app
-        .mainMenu()
-        .and_then(|menu| menu.itemArray().firstObject())
-        .and_then(|item| item.submenu())
-        .and_then(|menu| menu.itemArray().firstObject())
-    else {
-        return;
-    };
-    let action = sel!(emlShowAbout:);
-    if item.action() == Some(action) {
-        return;
-    }
-    // Both pinned Winit and Slint/Muda place their standard About action first
-    // in the application submenu. Do not retarget any unrelated menu command.
-    if !item
-        .title()
-        .to_string()
-        .starts_with(crate::wording::ABOUT_PREFIX)
-        || item.action().is_none()
-    {
-        return;
-    }
-    ABOUT_TARGET.with(|target| {
-        if let Some(target) = target.get() {
-            // SAFETY: the installed action has the object-sender ABI and its
-            // application-owned target remains retained for the UI thread lifetime.
-            unsafe {
-                item.setTarget(Some(target));
-                item.setAction(Some(action));
-            }
-        }
-    });
 }
