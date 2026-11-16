@@ -652,7 +652,7 @@ $activation=$null;$preserveStage=$false;$pathMutex=$null;$tmp=$null;$lock=$null;
     }
 }
 
-function Test-WindowsArchiveNames {
+function Test-WindowsArchiveName {
     $Product = $Product.Clone()
     foreach ($name in @('Exit-Installer', 'Get-WindowsArchiveSuffix')) {
         $node = $ast.FindAll({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -ceq $name }, $true)[0]
@@ -662,18 +662,17 @@ function Test-WindowsArchiveNames {
     $statements = @($first.Parent.Statements)
     $index = [array]::IndexOf($statements, $first)
     $nameBody = ($statements[$index..($index + 2)] | ForEach-Object { $_.Extent.Text }) -join "`n"
-    $compose = [scriptblock]::Create($nameBody + "`nreturn " + '$asset')
+    $compose = [scriptblock]::Create('param([string]$Version, [string]$archiveSuffix, [hashtable]$Product)' + "`n" + $nameBody + "`nreturn " + '$asset')
     $archiveSuffix = Get-WindowsArchiveSuffix 'AMD64'
     Check 'native AMD64 selects its declared Windows archive suffix' ($archiveSuffix -ceq $Product.WindowsX64)
-    $Version = '1.2.3'
     $Product.ArchivePrefix = 'example_'; $Product.VersionedArchive = $false
     $Product.WindowsX64 = 'windows_amd64'
     $archiveSuffix = Get-WindowsArchiveSuffix 'AMD64'
-    Check 'unversioned Windows archive naming uses the declared full suffix' ((& $compose) -ceq 'example_windows_amd64.zip')
+    Check 'unversioned Windows archive naming uses the declared full suffix' ((& $compose -Version '1.2.3' -archiveSuffix $archiveSuffix -Product $Product) -ceq 'example_windows_amd64.zip')
     $Product.ArchivePrefix = 'example-'; $Product.Separator = '-'; $Product.VersionedArchive = $true
     $Product.WindowsX64 = 'x86_64-pc-windows-msvc'
     $archiveSuffix = Get-WindowsArchiveSuffix 'AMD64'
-    Check 'versioned Windows archive naming permits architecture-first release triples' ((& $compose) -ceq 'example-1.2.3-x86_64-pc-windows-msvc.zip')
+    Check 'versioned Windows archive naming permits architecture-first release triples' ((& $compose -Version '1.2.3' -archiveSuffix $archiveSuffix -Product $Product) -ceq 'example-1.2.3-x86_64-pc-windows-msvc.zip')
     $Product.WindowsArm64 = 'aarch64-pc-windows-msvc'
     Check 'native ARM64 selects its declared full suffix' ((Get-WindowsArchiveSuffix 'ARM64') -ceq 'aarch64-pc-windows-msvc')
     foreach ($case in @('ARM64', 'X86', 'amd64')) {
@@ -685,20 +684,20 @@ function Test-WindowsArchiveNames {
 }
 
 function Test-UnmanagedGuidance {
-    foreach ($name in @('ConvertTo-QuotedCommand', 'Get-UnmanagedRefusal')) {
-        $node = $ast.FindAll({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -ceq $name }, $true)[0]
-        . ([scriptblock]::Create($node.Extent.Text))
-    }
-    $Version = '1.2.3'
+    $quote = $ast.FindAll({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -ceq 'ConvertTo-QuotedCommand' }, $true)[0]
+    . ([scriptblock]::Create($quote.Extent.Text))
+    $node = $ast.FindAll({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -ceq 'Get-UnmanagedRefusal' }, $true)[0]
+    $body = $node.Body.Extent.Text
+    # Pass the production helper's enclosing installer inputs explicitly.
+    $refusal = [scriptblock]::Create('param([string]$Program, [string]$SavedScriptPath, [string]$Version, [string]$InstallDir, [bool]$ModifyPath, [bool]$Uninstall, [hashtable]$Product)' + "`n" + $body.Substring(1, $body.Length - 2))
     $InstallDir = Join-Path $work "a user's tools"
-    $ModifyPath = $false
-    $Uninstall = $false
+    $context = @{ Version = '1.2.3'; InstallDir = $InstallDir; ModifyPath = $false; Uninstall = $false; Product = $Product }
     $fixtureScript = Join-Path $work "reviewed installer's script.ps1"
     [IO.File]::WriteAllText($fixtureScript, @'
 param([string]$Version, [string]$InstallDir, [switch]$NoModifyPath, [switch]$ReplaceUnmanaged)
 [IO.File]::WriteAllText($env:CLI_INSTALLER_UX_OPTIONS, (@{ Version=$Version; Directory=$InstallDir; NoModify=[bool]$NoModifyPath; Replace=[bool]$ReplaceUnmanaged } | ConvertTo-Json))
 '@)
-    $failure = Get-UnmanagedRefusal (Join-Path $InstallDir ($Product.Command + '.exe')) $fixtureScript
+    $failure = & $refusal @context -Program (Join-Path $InstallDir ($Product.Command + '.exe')) -SavedScriptPath $fixtureScript
     Check 'receiptless guidance explains ownership and unchanged files' ($failure.Message.Contains('no record of managing that file') -and $failure.Message.Contains('No program or PATH entry was changed'))
     Check 'receiptless guidance links directly to its Help section' ($failure.Data['HelpAnchor'] -ceq '#existing-executable-without-an-installer-receipt')
     $match = Get-RecoveryCommand $failure.Message
@@ -716,13 +715,13 @@ param([string]$Version, [string]$InstallDir, [switch]$NoModifyPath, [switch]$Rep
             Check 'copied command preserves release, quoted directory and PATH choice' ($actual.Version -ceq '1.2.3' -and $actual.Directory -ceq $InstallDir -and $actual.NoModify -and $actual.Replace)
         }
     } finally { $env:CLI_INSTALLER_UX_OPTIONS = $savedOptions }
-    $failure = Get-UnmanagedRefusal 'existing.exe' ''
+    $failure = & $refusal @context -Program 'existing.exe' -SavedScriptPath ''
     Check 'scriptblock guidance asks to save the installer without inventing a file path' ($failure.Message.Contains('Save and review this installer as a .ps1 file first') -and $failure.Message -notmatch '(?m)^  & ')
-    $Version = ''; $ModifyPath = $true
-    $failure = Get-UnmanagedRefusal 'existing.exe' $fixtureScript
+    $context.Version = ''; $context.ModifyPath = $true
+    $failure = & $refusal @context -Program 'existing.exe' -SavedScriptPath $fixtureScript
     Check 'latest and normal PATH choices do not gain a pin or PATH restriction' ($failure.Message -notmatch ' -Version ' -and $failure.Message -notmatch ' -NoModifyPath')
-    $Uninstall = $true
-    $failure = Get-UnmanagedRefusal 'existing.exe' $fixtureScript
+    $context.Uninstall = $true
+    $failure = & $refusal @context -Program 'existing.exe' -SavedScriptPath $fixtureScript
     Check 'unmanaged uninstall offers removal guidance instead of replacement' ($failure.Message.Contains('Use the method that installed this executable') -and $failure.Message -notmatch 'ReplaceUnmanaged|recovery backup| -File ')
 }
 
@@ -814,7 +813,7 @@ try {
         Check ('non-absolute directory refused: ' + $relative) $refused
     }
     Check 'PowerShell command quoting preserves apostrophes' ((ConvertTo-QuotedCommand "C:\user's tools\program.exe") -ceq "'C:\user''s tools\program.exe'")
-    Test-WindowsArchiveNames
+    Test-WindowsArchiveName
     Test-UnmanagedGuidance
     Test-UninstallPathFailure
     Test-ArchiveMemberSelection
