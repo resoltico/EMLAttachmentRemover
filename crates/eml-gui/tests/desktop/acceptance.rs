@@ -1647,6 +1647,14 @@ fn t2_continue_keeps_saved_rows_until_current_core_results_arrive() {
 }
 #[test]
 fn t3_deep_folder_keeps_its_end_and_accessible_full_label() {
+    use i_slint_core::{
+        item_tree::ItemRc,
+        items::{ComplexText, SimpleText},
+        layout::Orientation,
+        window::WindowInner,
+    };
+    use std::ops::ControlFlow;
+
     init_no_event_loop();
     let root = tempfile::tempdir().unwrap();
     let folder = root
@@ -1668,8 +1676,73 @@ fn t3_deep_folder_keeps_its_end_and_accessible_full_label() {
         row.folder.as_str()
     );
     let suffix = label(&c.window(), "Inbox");
-    assert!(suffix.size().width >= 30.);
-    assert!(label(&c.window(), &row.folder).size().width > 30.);
+    let folder_label = label(&c.window(), &row.folder);
+    let inner = WindowInner::from_pub(c.window().window());
+    let mut suffix_items = Vec::new();
+    ItemRc::new_root(inner.component()).visit_descendants(|item| {
+        let matches = item.downcast::<ComplexText>().is_some_and(|text| {
+            text.as_pin_ref().text.get().as_str() == row.folder_suffix.as_str()
+        }) || item.downcast::<SimpleText>().is_some_and(|text| {
+            text.as_pin_ref().text.get().as_str() == row.folder_suffix.as_str()
+        });
+        if matches {
+            suffix_items.push(item.clone());
+        }
+        ControlFlow::<()>::Continue(())
+    });
+    assert_eq!(
+        suffix_items.len(),
+        1,
+        "Identify the actual suffix text item"
+    );
+    let suffix_item = &suffix_items[0];
+    let required = suffix_item
+        .borrow()
+        .as_ref()
+        .layout_info(
+            Orientation::Horizontal,
+            suffix_item.geometry().size.height,
+            &inner.window_adapter(),
+            suffix_item,
+        )
+        .preferred;
+    assert!(
+        required > 0.0,
+        "Suffix has a positive shaped width: {required}"
+    );
+    // The toolkit rounds text metrics and layout edges to physical pixels.
+    let rounding_tolerance = 1.0 / c.window().window().scale_factor();
+    let fits = || suffix_item.geometry().size.width + rounding_tolerance >= required;
+    assert!(
+        fits(),
+        "Complete suffix must fit: allocated={}, shaped={required}, tolerance={rounding_tolerance}",
+        suffix_item.geometry().size.width
+    );
+    let position = suffix.absolute_position();
+    let size = suffix.size();
+    let folder_position = folder_label.absolute_position();
+    let folder_size = folder_label.size();
+    assert!(
+        position.x >= folder_position.x - rounding_tolerance
+            && position.y >= folder_position.y - rounding_tolerance
+            && position.x + size.width
+                <= folder_position.x + folder_size.width + rounding_tolerance
+            && position.y + size.height
+                <= folder_position.y + folder_size.height + rounding_tolerance,
+        "Suffix {position:?} {size:?} must stay within folder row {folder_position:?} {folder_size:?}"
+    );
+    // A real collapsed text allocation must be rejected by the same extent check.
+    if let Some(text) = suffix_item.downcast::<ComplexText>() {
+        text.as_pin_ref().width.set(Default::default());
+    } else {
+        suffix_item
+            .downcast::<SimpleText>()
+            .unwrap()
+            .as_pin_ref()
+            .width
+            .set(Default::default());
+    }
+    assert!(!fits(), "Collapsed suffix must fail the full-width check");
 }
 #[test]
 #[cfg(unix)]
