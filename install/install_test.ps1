@@ -163,6 +163,9 @@ function Test-ArchiveMemberSelection {
 }
 
 function Test-UninstallPathFailure {
+    # Isolate PATH removal with a complete empty legal-file declaration.
+    $Product = $Product.Clone()
+    $Product.LegalFiles = @()
     # Execute the staged production uninstall branch and file/PATH helpers.
     # Only registry access and the OS mutex are replaced; user settings are untouched.
     foreach ($name in @('Get-ItemOrNull', 'Assert-Regular', 'Get-Digest', 'Test-SamePath', 'Invoke-OwnedPathRemoval', 'Write-Receipt', 'Read-Receipt', 'Invoke-StateRemoval', 'Invoke-RetiredRemoval', 'Write-Step', 'Get-AbsoluteDirectory', 'ConvertTo-QuotedCommand')) {

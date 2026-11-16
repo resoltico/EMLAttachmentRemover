@@ -47,7 +47,7 @@ export component AboutWindow inherits Window {
             }
         }
         Menu { title: root.words.help;
-            MenuItem { role: about; title: root.words.about-title; activated => { root.about(); } }
+            MenuItem { role: MenuItemRole.about; title: root.words.about-title; activated => { root.about(); } }
         }
     }
     forward-focus: about-focus;
@@ -109,7 +109,7 @@ export component LicenseWindow inherits Window {
             MenuItem { title: root.words.select-all; shortcut: @keys(Control + A); enabled: root.text-copy-eligible; activated => { root.select-all(); } }
         }
         Menu { title: root.words.help;
-            MenuItem { role: about; title: root.words.about-title; activated => { root.about(); } }
+            MenuItem { role: MenuItemRole.about; title: root.words.about-title; activated => { root.about(); } }
         }
     }
     forward-focus: license-focus;

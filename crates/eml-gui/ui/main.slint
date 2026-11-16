@@ -48,7 +48,7 @@ export component MainWindow inherits Window {
         Menu { title: root.words.help;
             MenuItem { title: root.words.website; activated => { root.website(); } }
             MenuItem { title: root.words.licenses; activated => { root.licenses(); } }
-            MenuItem { role: about; title: root.words.about-title; activated => { root.about(); } }
+            MenuItem { role: MenuItemRole.about; title: root.words.about-title; activated => { root.about(); } }
         }
     }
     callback show-output();
