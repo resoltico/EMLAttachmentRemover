@@ -39,7 +39,7 @@ slint-build = { version = "=1.19.0", default-features = false, features = ["comp
 [dev-dependencies]
 syn = { version = "3.0.10", features = ["full", "visit"] }
 proc-macro2 = "1"
-i-slint-compiler = { version = "=1.19.0", default-features = false }
+i-slint-compiler = { version = "=1.19.0", default-features = false, features = ["std"] }
 i-slint-backend-testing = { version = "=1.19.0", features = ["renderer-software"] }
 
 [[bin]]
