@@ -1,5 +1,8 @@
 # Applies to normal, build, dev, fuzz and repository-tool dependency graphs.
 [advisories]
+ignore = [
+  { id = "RUSTSEC-2026-0543", reason = "RustSec reports chrono as unmaintained. Published Slint 1.19.0 requires it. Remove this exception when chrono leaves the dependency graph." },
+]
 
 # Repository/tool approval is distinct from the shipped target notice closure.
 # BSL-1.0 is already accepted for shipped binaries in legal/about.toml.
