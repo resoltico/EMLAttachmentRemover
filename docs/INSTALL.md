@@ -5,6 +5,10 @@ SHA-256 checksum and test-runs the program before replacing an owned installatio
 No administrator account, background updater, scheduled task or file association
 is needed. The CLI's inputs and outputs are outside the installer's scope.
 
+The Windows download commands save `install-emlattachmentremover.ps1` in your
+home directory (`$HOME`). If your reviewed copy is elsewhere, use its full path
+for `-File` in the saved-installer examples.
+
 ## Existing executable without an installer receipt
 
 `Existing executable has no installer receipt` means a file already exists at
@@ -28,7 +32,7 @@ sh ./install-emlattachmentremover.sh --install-dir "$HOME/.local/bin" --replace-
 ```
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy ByPass -File .\install-emlattachmentremover.ps1 -InstallDir "$env:LOCALAPPDATA\Programs\EMLAttachmentRemover" -ReplaceUnmanaged
+powershell -NoProfile -ExecutionPolicy ByPass -File (Join-Path $HOME 'install-emlattachmentremover.ps1') -InstallDir "$env:LOCALAPPDATA\Programs\EMLAttachmentRemover" -ReplaceUnmanaged
 if ($LASTEXITCODE -ne 0) { throw "Installer failed ($LASTEXITCODE)." }
 ```
 
@@ -46,7 +50,7 @@ sh ./install-emlattachmentremover.sh --install-dir "$HOME/emlattachmentremover-c
 ```
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy ByPass -File .\install-emlattachmentremover.ps1 -InstallDir "$env:LOCALAPPDATA\EMLAttachmentRemover-CLI" -NoModifyPath
+powershell -NoProfile -ExecutionPolicy ByPass -File (Join-Path $HOME 'install-emlattachmentremover.ps1') -InstallDir "$env:LOCALAPPDATA\EMLAttachmentRemover-CLI" -NoModifyPath
 if ($LASTEXITCODE -ne 0) { throw "Installer failed ($LASTEXITCODE)." }
 ```
 
@@ -106,18 +110,26 @@ On Windows, use PowerShell:
 ```powershell
 & {
     $ErrorActionPreference = 'Stop'
-    Invoke-WebRequest -UseBasicParsing -Uri https://github.com/resoltico/EMLAttachmentRemover/releases/latest/download/install.ps1 -OutFile .\install-emlattachmentremover.ps1 -ErrorAction Stop
-    Get-Content .\install-emlattachmentremover.ps1
-    powershell -NoProfile -ExecutionPolicy ByPass -File .\install-emlattachmentremover.ps1
-    if ($LASTEXITCODE -ne 0) { throw "Installer failed ($LASTEXITCODE)." }
+    $startingLocation = Get-Location
+    Set-Location -LiteralPath $HOME
+    try {
+        Invoke-WebRequest -UseBasicParsing -Uri https://github.com/resoltico/EMLAttachmentRemover/releases/latest/download/install.ps1 -OutFile .\install-emlattachmentremover.ps1 -ErrorAction Stop
+        Get-Content -LiteralPath .\install-emlattachmentremover.ps1
+        powershell -NoProfile -ExecutionPolicy ByPass -File .\install-emlattachmentremover.ps1
+        if ($LASTEXITCODE -ne 0) { throw "Installer failed ($LASTEXITCODE)." }
+    } finally {
+        Set-Location -LiteralPath $startingLocation.Path
+    }
 }
 ```
 
-To pause for review, stop after download, inspect the saved script, then run the
-child command. A failed fetch must prevent execution even when an older saved
-script exists. The `&&` chain and PowerShell block preserve that behavior and
-propagate installer failures. A bare `curl | sh` pipeline can hide a failed fetch
-behind a successful empty shell. Retain the saved script for offline uninstall.
+To pause for review in PowerShell, start with `Set-Location -LiteralPath $HOME`
+and enter the download and inspection commands separately. Run the child
+command only after a successful download and review. A failed fetch must prevent
+execution even when an older saved script exists. The `&&` chain and PowerShell
+block preserve that behavior and propagate installer failures. A bare `curl | sh`
+pipeline can hide a failed fetch behind a successful empty shell. Retain the
+saved script for offline uninstall.
 
 Windows PowerShell 5.1 and PowerShell 7 are supported. `ByPass` applies only to the
 launched PowerShell session; it does not change persistent policy or override
@@ -170,9 +182,15 @@ curl --proto '=https' --proto-redir '=https' -fL -o ./install-emlattachmentremov
 ```powershell
 & {
     $ErrorActionPreference = 'Stop'
-    Invoke-WebRequest -UseBasicParsing -Uri https://github.com/resoltico/EMLAttachmentRemover/releases/download/v10.0.0/install.ps1 -OutFile .\install-emlattachmentremover.ps1 -ErrorAction Stop
-    powershell -NoProfile -ExecutionPolicy ByPass -File .\install-emlattachmentremover.ps1 -Version 10.0.0
-    if ($LASTEXITCODE -ne 0) { throw "Installer failed ($LASTEXITCODE)." }
+    $startingLocation = Get-Location
+    Set-Location -LiteralPath $HOME
+    try {
+        Invoke-WebRequest -UseBasicParsing -Uri https://github.com/resoltico/EMLAttachmentRemover/releases/download/v10.0.0/install.ps1 -OutFile .\install-emlattachmentremover.ps1 -ErrorAction Stop
+        powershell -NoProfile -ExecutionPolicy ByPass -File .\install-emlattachmentremover.ps1 -Version 10.0.0
+        if ($LASTEXITCODE -ne 0) { throw "Installer failed ($LASTEXITCODE)." }
+    } finally {
+        Set-Location -LiteralPath $startingLocation.Path
+    }
 }
 ```
 
@@ -286,12 +304,12 @@ sh ./install-emlattachmentremover.sh --uninstall
 ```
 
 ```powershell
-powershell -ExecutionPolicy ByPass -File .\install-emlattachmentremover.ps1 -Uninstall
+powershell -ExecutionPolicy ByPass -File (Join-Path $HOME 'install-emlattachmentremover.ps1') -Uninstall
 ```
 
 Pass the same custom install directory used for installation, for example
 `sh ./install-emlattachmentremover.sh --uninstall --install-dir '/absolute/my tools'` or
-`powershell -ExecutionPolicy ByPass -File .\install-emlattachmentremover.ps1 -Uninstall -InstallDir 'C:\My Tools'`.
+`powershell -ExecutionPolicy ByPass -File (Join-Path $HOME 'install-emlattachmentremover.ps1') -Uninstall -InstallDir 'C:\My Tools'`.
 Removal does not
 need a download of the program. An offline saved copy of the installer can be
 run with the same uninstall option.

@@ -22,14 +22,21 @@ curl --proto '=https' --proto-redir '=https' -fL -o ./install-emlattachmentremov
   sh ./install-emlattachmentremover.sh
 ```
 
-On Windows in PowerShell:
+On Windows, run this PowerShell command to save `install-emlattachmentremover.ps1`
+in your home directory and run it:
 
 ```powershell
 & {
     $ErrorActionPreference = 'Stop'
-    Invoke-WebRequest -UseBasicParsing -Uri https://github.com/resoltico/EMLAttachmentRemover/releases/latest/download/install.ps1 -OutFile .\install-emlattachmentremover.ps1 -ErrorAction Stop
-    powershell -NoProfile -ExecutionPolicy ByPass -File .\install-emlattachmentremover.ps1
-    if ($LASTEXITCODE -ne 0) { throw "Installer failed ($LASTEXITCODE)." }
+    $startingLocation = Get-Location
+    Set-Location -LiteralPath $HOME
+    try {
+        Invoke-WebRequest -UseBasicParsing -Uri https://github.com/resoltico/EMLAttachmentRemover/releases/latest/download/install.ps1 -OutFile .\install-emlattachmentremover.ps1 -ErrorAction Stop
+        powershell -NoProfile -ExecutionPolicy ByPass -File .\install-emlattachmentremover.ps1
+        if ($LASTEXITCODE -ne 0) { throw "Installer failed ($LASTEXITCODE)." }
+    } finally {
+        Set-Location -LiteralPath $startingLocation.Path
+    }
 }
 ```
 
