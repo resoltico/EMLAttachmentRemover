@@ -18,27 +18,42 @@ the native executable and keep installation separate from the Mac desktop app.
 On macOS or Linux:
 
 ```sh
-curl --proto '=https' --proto-redir '=https' -fL -o ./install-emlattachmentremover.sh https://github.com/resoltico/EMLAttachmentRemover/releases/latest/download/install.sh &&
-  sh ./install-emlattachmentremover.sh
+sh -c '
+    installer=$(curl --proto "=https" --proto-redir "=https" -fsSL "$1") &&
+        printf "%s\n" "$installer" | sh
+' sh https://github.com/resoltico/EMLAttachmentRemover/releases/latest/download/install.sh
 ```
 
-On Windows, run this PowerShell command to save `install-emlattachmentremover.ps1`
-in your home directory and run it:
+On Windows, use PowerShell:
 
 ```powershell
 & {
     $ErrorActionPreference = 'Stop'
-    $startingLocation = Get-Location
-    Set-Location -LiteralPath $HOME
+    $tempDir = Join-Path ([IO.Path]::GetTempPath()) ('emlattachmentremover-install-' + [guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $tempDir | Out-Null
+    $installer = Join-Path $tempDir 'install-emlattachmentremover.ps1'
+    $keepInstaller = $false
     try {
-        Invoke-WebRequest -UseBasicParsing -Uri https://github.com/resoltico/EMLAttachmentRemover/releases/latest/download/install.ps1 -OutFile .\install-emlattachmentremover.ps1 -ErrorAction Stop
-        powershell -NoProfile -ExecutionPolicy ByPass -File .\install-emlattachmentremover.ps1
+        Invoke-WebRequest -UseBasicParsing -Uri https://github.com/resoltico/EMLAttachmentRemover/releases/latest/download/install.ps1 -OutFile $installer
+        $keepInstaller = $true
+        powershell -NoProfile -ExecutionPolicy ByPass -File $installer
         if ($LASTEXITCODE -ne 0) { throw "Installer failed ($LASTEXITCODE)." }
+        $keepInstaller = $false
     } finally {
-        Set-Location -LiteralPath $startingLocation.Path
+        if ($keepInstaller) {
+            Write-Warning "Installer retained for recovery at '$installer'."
+        } else {
+            Remove-Item -LiteralPath $tempDir -Recurse -Force
+        }
     }
 }
 ```
+
+The commands run the release installer after the download succeeds. A successful
+install leaves no installer script behind. On Windows, a failed installer run
+reports the temporary copy kept for recovery. To inspect the script before
+running it or keep a copy for offline uninstall, see the
+[installation guide](docs/INSTALL.md#install).
 
 The installers verify the selected release, test the binary and record ownership
 before updating or removing it. They retain the CLI's license material in a

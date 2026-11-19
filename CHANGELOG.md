@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- The CLI quick start leaves no installer script after success. Save a reviewed copy separately for offline uninstall. A failed Windows installer run keeps a temporary copy for recovery.
+
 ## [10.0.0] - 2026-11-16
 
 - Receipts must list exactly the current legal-file names. Remove affected copies with their matching installer or use a fresh directory; receipts are not converted.

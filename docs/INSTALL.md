@@ -5,9 +5,9 @@ SHA-256 checksum and test-runs the program before replacing an owned installatio
 No administrator account, background updater, scheduled task or file association
 is needed. The CLI's inputs and outputs are outside the installer's scope.
 
-The Windows download commands save `install-emlattachmentremover.ps1` in your
-home directory (`$HOME`). If your reviewed copy is elsewhere, use its full path
-for `-File` in the saved-installer examples.
+The Windows examples that save a copy put `install-emlattachmentremover.ps1` in
+your home directory (`$HOME`). If your reviewed copy is elsewhere, use its full
+path for `-File` in the saved-installer examples.
 
 ## Existing executable without an installer receipt
 
@@ -17,10 +17,9 @@ identify how the file was installed. The refusal changes no program or PATH entr
 
 Choose whether to replace that executable or keep it:
 
-- **Replace it:** use the complete command printed by the installer. It keeps
-  the selected directory, version pin and choice to leave PATH unchanged. It
-  authorizes backing up and replacing only the named executable after the new
-  candidate verifies.
+- **Replace it:** follow the recovery instructions printed by the installer. They keep
+  the selected directory, version pin and choice to leave PATH unchanged. The
+  replacement backs up only the named executable after the new candidate verifies.
 - **Keep it:** install into another directory and use that installation's full
   executable path. Avoid adding a second command with the same name to PATH
   until you have chosen which installation should be used.
@@ -92,6 +91,10 @@ guide. Keep the saved installer for later update or offline removal.
 
 ## Install
 
+The [README quick start](../README.md#cli-installer) leaves no installer script
+after a successful install. Save a copy using the commands below if you want to
+inspect it before running it, pass installer options or uninstall offline later.
+
 On macOS or Linux, save the installer, inspect it, then run it:
 
 ```sh
@@ -101,35 +104,32 @@ curl --proto '=https' --proto-redir '=https' -fL -o ./install-emlattachmentremov
 ```
 
 If curl is unavailable, use `wget --https-only -O ./install-emlattachmentremover.sh URL`
-with the same URL and `&&` chain. `less` is only for review; the README quick
-start omits it. The installer itself requires standard shell tools, tar and a
+with the same URL and `&&` chain. `less` displays the saved script for review.
+The installer itself requires standard shell tools, tar and a
 SHA-256 tool (`sha256sum`, `shasum` or `openssl`).
 
-On Windows, use PowerShell:
+On Windows, use PowerShell to download and display the saved installer:
 
 ```powershell
 & {
     $ErrorActionPreference = 'Stop'
-    $startingLocation = Get-Location
-    Set-Location -LiteralPath $HOME
-    try {
-        Invoke-WebRequest -UseBasicParsing -Uri https://github.com/resoltico/EMLAttachmentRemover/releases/latest/download/install.ps1 -OutFile .\install-emlattachmentremover.ps1 -ErrorAction Stop
-        Get-Content -LiteralPath .\install-emlattachmentremover.ps1
-        powershell -NoProfile -ExecutionPolicy ByPass -File .\install-emlattachmentremover.ps1
-        if ($LASTEXITCODE -ne 0) { throw "Installer failed ($LASTEXITCODE)." }
-    } finally {
-        Set-Location -LiteralPath $startingLocation.Path
-    }
+    $installer = Join-Path $HOME 'install-emlattachmentremover.ps1'
+    Invoke-WebRequest -UseBasicParsing -Uri https://github.com/resoltico/EMLAttachmentRemover/releases/latest/download/install.ps1 -OutFile $installer
+    Get-Content -LiteralPath $installer
 }
 ```
 
-To pause for review in PowerShell, start with `Set-Location -LiteralPath $HOME`
-and enter the download and inspection commands separately. Run the child
-command only after a successful download and review. A failed fetch must prevent
-execution even when an older saved script exists. The `&&` chain and PowerShell
-block preserve that behavior and propagate installer failures. A bare `curl | sh`
-pipeline can hide a failed fetch behind a successful empty shell. Retain the
-saved script for offline uninstall.
+After a successful download and review, run the saved installer in a child session:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy ByPass -File (Join-Path $HOME 'install-emlattachmentremover.ps1')
+if ($LASTEXITCODE -ne 0) { throw "Installer failed ($LASTEXITCODE)." }
+```
+
+Keep the Unix `&&` chain or the equivalent download-success check in automation,
+and propagate a nonzero installer exit. A bare `curl | sh` pipeline can hide a
+failed fetch behind a successful empty shell. Retain the saved script for
+offline uninstall.
 
 Windows PowerShell 5.1 and PowerShell 7 are supported. `ByPass` applies only to the
 launched PowerShell session; it does not change persistent policy or override
