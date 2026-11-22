@@ -886,6 +886,26 @@ try {
         Check 'custom uninstall path is quoted' ((Get-Output).Contains("-InstallDir '" + $dir.Replace("'", "''") + "'"))
         Check 'reinstall succeeds' ((Invoke-Installer $shell @('-InstallDir', $dir, '-NoModifyPath')) -eq 0)
         Check 'reinstall reported' ((Get-Output) -match 'reinstalled')
+
+        $competingDir = Join-Path $work "$shellName competing folder"
+        [void][IO.Directory]::CreateDirectory($competingDir)
+        $competingExe = Join-Path $competingDir ($command + '.exe')
+        $competingMarker = 'PATH-order fixture'
+        [IO.File]::WriteAllText($competingExe, $competingMarker)
+        $savedPath = $env:Path
+        try {
+            $env:Path = "$competingDir;$dir;$savedPath"
+            Check 'reinstall with a competing executable first on PATH succeeds' ((Invoke-Installer $shell @('-InstallDir', $dir, '-NoModifyPath')) -eq 0)
+            $report = Get-Output
+            $warning = "The installer session finds another ${command}.exe:"
+            Check 'PATH warning identifies the winning executable' ($report.Contains("$warning $competingExe"))
+            Check 'PATH warning accompanies the quoted installed command' ($report.Contains(("Get started: & " + (ConvertTo-QuotedCommand $exe) + ' --help')))
+            $env:Path = "$dir;$competingDir;$savedPath"
+            Check 'reinstall with the installed executable first on PATH succeeds' ((Invoke-Installer $shell @('-InstallDir', $dir, '-NoModifyPath')) -eq 0)
+            Check 'winning installed executable produces no PATH warning' (-not (Get-Output).Contains($warning))
+            Check 'competing executable is untouched' ((Test-Path -LiteralPath $competingExe -PathType Leaf) -and [IO.File]::ReadAllText($competingExe) -ceq $competingMarker)
+        } finally { $env:Path = $savedPath }
+
         Remove-Item -LiteralPath $exe
         Check 'intact receipt repairs an absent payload' ((Invoke-Installer $shell @('-InstallDir', $dir, '-NoModifyPath')) -eq 0 -and (Test-Path -LiteralPath $exe))
         $repaired = [IO.File]::ReadAllText($receiptFile) | ConvertFrom-Json
