@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 - The CLI quick start leaves no installer script after success. Save a reviewed copy separately for offline uninstall. A failed Windows installer run keeps a temporary copy for recovery.
+- The Windows CLI installer warns when another executable wins on PATH and prints the full path of the installed copy. [Installation](docs/INSTALL.md#troubleshooting)
 
 ## [10.0.0] - 2026-11-16
 

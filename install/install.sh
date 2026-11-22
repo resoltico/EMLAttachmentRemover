@@ -763,6 +763,135 @@ append_owned_paths() {
         path_ready=1; step PATH "added an owned startup entry in ${file}"
     done < "${stage}/path-actions"
 }
+# BSD stat defaults to link metadata. Paths are fixed product paths or a
+# checked digest component, never an arbitrary receipt path.
+legacy_mac_stat() { /usr/bin/stat -f "$1" "$2" 2>/dev/null; }
+legacy_real_directory() { [ ! -L "$1" ] && [ -d "$1" ]; }
+legacy_no_acl() {
+    legacy_acl=$(/bin/ls -lde "$1" 2>/dev/null) || return 1
+    case "${legacy_acl}" in *'
+'*) return 1 ;; *) return 0 ;; esac
+}
+# Recognition predicates explicitly reject failed checks, including when tested
+# by the advisory. They do not depend on errexit.
+# shellcheck disable=SC2310
+legacy_directory() {
+    legacy_real_directory "$1" || return 1
+    legacy_metadata=$(legacy_mac_stat '%u %Lp' "$1") || return 1
+    [ "${legacy_metadata}" = '0 755' ] && legacy_no_acl "$1"
+}
+# shellcheck disable=SC2310
+legacy_link() {
+    [ -L "$1" ] || return 1
+    legacy_metadata=$(legacy_mac_stat '%u %Lp' "$1") || return 1
+    [ "${legacy_metadata}" = '0 755' ] && legacy_no_acl "$1" || return 1
+    legacy_target=$(/usr/bin/readlink "$1" 2>/dev/null) || return 1
+    [ "${legacy_target}" = "$2" ]
+}
+# shellcheck disable=SC2310
+legacy_regular() {
+    [ -f "$1" ] && [ ! -L "$1" ] || return 1
+    legacy_metadata=$(legacy_mac_stat '%u %Lp %l' "$1") || return 1
+    [ "${legacy_metadata}" = "0 $2 1" ] && legacy_no_acl "$1"
+}
+# shellcheck disable=SC2310
+legacy_bounded() {
+    legacy_size=$(legacy_mac_stat '%z' "$1") || return 1
+    case "${legacy_size}" in '' | *[!0-9]*) return 1 ;; *) ;; esac
+    [ "${#legacy_size}" -le 8 ] && [ "${legacy_size}" -le "$2" ]
+}
+legacy_hash() {
+    legacy_digest=$(/usr/bin/shasum -a 256 < "$1" 2>/dev/null) || return 1
+    printf '%s\n' "${legacy_digest%% *}"
+}
+# Missing or unverified evidence is handled by explicit predicate results.
+# shellcheck disable=SC2310
+legacy_system_advice() (
+    legacy_prefix=$1
+    legacy_root=${legacy_prefix}/libexec/pdfconcat
+    legacy_command=${legacy_prefix}/bin/pdfconcat
+    legacy_trusted=1
+    # The old setup accepted real destination parents with administrator-
+    # chosen ownership and modes. Their contents cannot authorize a command.
+    for legacy_dir in "${legacy_prefix%/*}" "${legacy_prefix}" "${legacy_prefix}/bin" "${legacy_prefix}/libexec"; do
+        legacy_real_directory "${legacy_dir}" || return 0
+        legacy_directory "${legacy_dir}" || legacy_trusted=0
+    done
+    legacy_directory "${legacy_root}" && legacy_directory "${legacy_root}/releases" || return 0
+    legacy_current=$(/usr/bin/readlink "${legacy_root}/current" 2>/dev/null) || return 0
+    legacy_id=${legacy_current#releases/}
+    [ "${legacy_current}" = "releases/${legacy_id}" ] && [ "${#legacy_id}" = 64 ] || return 0
+    case "${legacy_id}" in *[!0-9a-f]*) return 0 ;; *) ;; esac
+    legacy_link "${legacy_root}/current" "${legacy_current}" || return 0
+    legacy_link "${legacy_command}" "${legacy_root}/current/payload/pdfconcat" || return 0
+
+    legacy_generation=${legacy_root}/releases/${legacy_id}
+    legacy_receipt=${legacy_generation}/receipt
+    legacy_payload=${legacy_generation}/payload/pdfconcat
+    legacy_guide=${repo_url}/blob/v0.6.2/docs/MACOS.md#uninstall-pdfconcat
+    legacy_directory "${legacy_generation}" && legacy_directory "${legacy_generation}/payload" || return 0
+    legacy_regular "${legacy_payload}" 755 || return 0
+    legacy_regular "${legacy_receipt}" 644 && legacy_bounded "${legacy_receipt}" 131072 || return 0
+    if [ "${legacy_trusted}" = 0 ]; then
+        # Do not open files through a parent whose entries can be replaced.
+        note 'System copy' "Retired managed PDFConcat candidate: ${legacy_command}"
+        note 'Trust' 'A parent directory failed the ownership, permission or ACL checks. The receipt and executable could not be verified.'
+        note 'Removal' "${legacy_guide}"
+        return 0
+    fi
+    legacy_receipt_hash=$(legacy_hash "${legacy_receipt}") || return 0
+    [ "${legacy_receipt_hash}" = "${legacy_id}" ] || return 0
+    legacy_version=$(LC_ALL=C /usr/bin/awk '
+        NR == 1 { if ($0 != "PDFCONCAT-MACOS-1") exit 1 }
+        NR == 2 { if ($0 !~ /^version v(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})$/) exit 1; version = $2 }
+        NR == 3 { if ($0 !~ /^architecture (arm64|amd64)$/) exit 1; print version; exit }
+    ' "${legacy_receipt}") || return 0
+    [ -n "${legacy_version}" ] || return 0
+    legacy_payload_hash=$(LC_ALL=C /usr/bin/awk '
+        NR > 3 && $NF == "payload/pdfconcat" {
+            count++
+            if ($0 == "f 755 " $3 " payload/pdfconcat" && length($3) == 64 && $3 ~ /^[0-9a-f]+$/) hash = $3
+        }
+        END { if (count != 1 || hash == "") exit 1; print hash }
+    ' "${legacy_receipt}") || legacy_payload_hash=''
+    legacy_actual=''
+    if [ -n "${legacy_payload_hash}" ] && legacy_bounded "${legacy_payload}" 67108864; then
+        legacy_actual=$(legacy_hash "${legacy_payload}") || legacy_actual=''
+    fi
+    if [ -z "${legacy_actual}" ] || [ "${legacy_actual}" != "${legacy_payload_hash}" ]; then
+        note 'System copy' "Retired managed PDFConcat candidate: ${legacy_command}"
+        if [ -n "${legacy_actual}" ]; then
+            note 'Trust' "Receipt version ${legacy_version}. Executable bytes do not match the receipt."
+        else
+            note 'Trust' "Receipt version ${legacy_version}. The executable could not be verified against its receipt."
+        fi
+        note 'Removal' "${legacy_guide}"
+        return 0
+    fi
+    note 'System copy' "Retired managed PDFConcat ${legacy_version}: ${legacy_command}"
+    note 'Removal' "${legacy_guide}"
+
+    case "${legacy_version}" in
+        v0.6.1) legacy_expected=b57b51cc465ad1daaf121346a63e7ce9fac54c072fc7dc30885dd9a76d9a2565 ;;
+        v0.6.2) legacy_expected=4cb122a8fdf38ffd2a8fdd5d66615d5f0ab12dbac42ca7bd27cdb28444711ab3 ;;
+        *) return 0 ;;
+    esac
+    legacy_helper=${legacy_generation}/setup.sh
+    legacy_regular "${legacy_helper}" 755 && legacy_bounded "${legacy_helper}" 131072 || return 0
+    legacy_helper_hash=$(legacy_hash "${legacy_helper}") || return 0
+    [ "${legacy_helper_hash}" = "${legacy_expected}" ] || return 0
+    legacy_helper_count=$(/usr/bin/grep -Fxc "f 755 ${legacy_expected} setup.sh" "${legacy_receipt}") || return 0
+    [ "${legacy_helper_count}" = 1 ] || return 0
+    note 'Legacy setup' "Historical removal command: /bin/bash ${legacy_root}/current/setup.sh uninstall"
+)
+report_command_paths() {
+    found=$(command -v "${command_name}" 2>/dev/null || true)
+    if [ -n "${found}" ] && [ "${found}" != "${binary}" ]; then note PATH "The current terminal finds another ${command_name}: ${found}"; fi
+    if [ "${identity_kernel}" = Darwin ] && [ "${command_name}" = pdfconcat ]; then
+        legacy_system_advice "$1"
+    fi
+}
+
 install() {
     acquire
     locked_inventory=${fingerprint}
@@ -812,8 +941,7 @@ install() {
     if [ "${modify_path}" = 0 ]; then note PATH 'persistent and current-session PATH left unchanged'
     elif [ "${path_ready}" = 0 ]; then note PATH 'No startup entry was added; use the full path or configure PATH manually.'; fi
     printf '\n%s %s is installed.\n' "${product_name}" "${new_version}"
-    found=$(command -v "${command_name}" 2>/dev/null || true)
-    if [ -n "${found}" ] && [ "${found}" != "${binary}" ]; then note PATH "The current terminal finds another ${command_name}: ${found}"; fi
+    report_command_paths /usr/local
     case "${login_shell}" in
         */fish) quoted_binary=$(fish_quote "${binary}"); quoted_install=$(fish_quote "${install_dir}") ;;
         *) quoted_binary=$(shell_quote "${binary}"); quoted_install=$(shell_quote "${install_dir}") ;;
