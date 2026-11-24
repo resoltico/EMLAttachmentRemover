@@ -261,8 +261,9 @@ cargo mutants --in-diff /absolute/path/product.diff --list
 cargo mutants --in-diff /absolute/path/product.diff
 ```
 
-Weekly mutation uses 16 round-robin shards, each with runner CPUs minus one workers
-(at least one). A baseline failure, missed mutant or timeout fails the shard;
+Weekly mutation uses 16 round-robin shards with one worker each. Running multiple
+product test suites on one runner can cause a mutant that tests catch in isolation
+to time out. A baseline failure, missed mutant or timeout fails the shard;
 unviable mutants do not. Every shard uploads `mutants.out` for review. Campaign
 cost and surviving mutants must be assessed from the actual scheduled results.
 Keep oracles independent and add tests for concrete behavior rather than campaign

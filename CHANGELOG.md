@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Weekly mutation checks use one worker per shard to reduce test timeouts caused by runner contention.
 - Refuse emails as malformed when removing stale MIME headers would change retained line endings.
 - The CLI quick start leaves no installer script after success. Save a reviewed copy separately for offline uninstall. A failed Windows installer run keeps a temporary copy for recovery.
 - The Windows CLI installer warns when another executable wins on PATH and prints the full path of the installed copy. [Installation](docs/INSTALL.md#troubleshooting)

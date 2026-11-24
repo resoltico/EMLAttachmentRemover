@@ -90,10 +90,7 @@ jobs:
       - name: Mutate product code against all product tests
         env:
           SHARD: ${{ matrix.shard }}
-        run: |
-          mutation_jobs=$(( $(nproc) - 1 ))
-          if [ "$mutation_jobs" -lt 1 ]; then mutation_jobs=1; fi
-          cargo mutants --shard "$SHARD/16" --sharding round-robin --jobs "$mutation_jobs"
+        run: cargo mutants --shard "$SHARD/16" --sharding round-robin --jobs 1
       - name: Retain mutation results
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
