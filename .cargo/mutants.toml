@@ -22,6 +22,13 @@ profile = "mutants"
 # Twice the measured unmutated product-test duration; compilation is separate.
 timeout_multiplier = 2.0
 exclude_re = [
+    # The working-directory identity comparison is compiled only on Windows.
+    'crates/eml-core/src/selection\.rs:.*replace == with != in WorkingContext::check_working_address$',
+    # Equal ranks identify the same cleanup state, so the extra assignment is a no-op.
+    'crates/eml-core/src/binding\.rs:.*replace > with >= in merge_cleanup$',
+    # An empty suffix preserves the operand spelling on Unix, so borrowing or
+    # owning the identical bytes makes no difference in the Linux campaign.
+    '^crates/eml-core/src/collection\.rs:812:68: replace == with != in Collector<[^>]+>::push$',
     # These entry points are compiled only with macOS native/desktop features.
     # They have no executable Linux counterpart, so all such mutations are
     # equivalent on this campaign host; keep portable ingress code in scope.

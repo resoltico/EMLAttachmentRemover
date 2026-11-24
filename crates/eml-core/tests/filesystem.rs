@@ -160,6 +160,31 @@ fn a_changed_source_signature_is_refused_after_an_actual_read() {
 
 #[cfg(unix)]
 #[test]
+fn a_retargeted_source_link_is_refused_while_the_held_file_is_unchanged() {
+    let root = tempfile::tempdir().unwrap();
+    let link = root.path().join("source.eml");
+    fs::write(root.path().join("original.eml"), MESSAGE).unwrap();
+    fs::write(root.path().join("replacement.eml"), MESSAGE).unwrap();
+    std::os::unix::fs::symlink("original.eml", &link).unwrap();
+    let directory = BoundDirectory::open(root.path()).unwrap();
+    let source = directory.open_file("source.eml".as_ref(), true).unwrap();
+    source.check_binding().unwrap();
+
+    fs::remove_file(&link).unwrap();
+    std::os::unix::fs::symlink("replacement.eml", &link).unwrap();
+
+    assert_eq!(
+        source.current_signature().unwrap(),
+        source.initial_signature()
+    );
+    assert!(matches!(
+        source.check_binding(),
+        Err(BoundFileError::Changed)
+    ));
+}
+
+#[cfg(unix)]
+#[test]
 fn destination_links_are_never_followed_for_files_or_mirrored_directories() {
     let root = tempfile::tempdir().unwrap();
     let target = tempfile::tempdir().unwrap();

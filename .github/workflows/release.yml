@@ -44,7 +44,7 @@ jobs:
         id: tools
         shell: bash
         run: cargo xtask tool-versions >> "$GITHUB_OUTPUT"
-      - uses: taiki-e/install-action@ab49d3c64680143e184118bed66a46419fc15519
+      - uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
         with:
           tool: cargo-about@${{ steps.tools.outputs.cargo_about }}
       - run: cargo run --locked -p xtask --target ${{ matrix.target }} -- dist --cli --target ${{ matrix.target }} --out "$RUNNER_TEMP/dist"
@@ -93,7 +93,7 @@ jobs:
       - name: Read tool versions
         id: tools
         run: cargo xtask tool-versions >> "$GITHUB_OUTPUT"
-      - uses: taiki-e/install-action@ab49d3c64680143e184118bed66a46419fc15519
+      - uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
         with:
           tool: cargo-about@${{ steps.tools.outputs.cargo_about }}
       - run: rustup target add "$TARGET_TRIPLE"

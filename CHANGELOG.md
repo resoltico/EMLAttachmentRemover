@@ -2,8 +2,11 @@
 
 ## [Unreleased]
 
+- Refuse emails as malformed when removing stale MIME headers would change retained line endings.
 - The CLI quick start leaves no installer script after success. Save a reviewed copy separately for offline uninstall. A failed Windows installer run keeps a temporary copy for recovery.
 - The Windows CLI installer warns when another executable wins on PATH and prints the full path of the installed copy. [Installation](docs/INSTALL.md#troubleshooting)
+- Refresh Rust dependencies, including clap 4.6.9, ctrlc 3.5.3 and zip 9.8.2. The Slint build graph uses url 2.5.9 to address RUSTSEC-2026-0592.
+- CI uses cargo-deny 0.22.0 with the existing dependency advisory scope and install-action v2.90.8.
 
 ## [10.0.0] - 2026-11-16
 

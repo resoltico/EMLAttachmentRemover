@@ -1,6 +1,6 @@
 # Exact developer-tool inputs. Product compiler authority is rust-toolchain.toml.
 [versions]
-cargo_deny = "0.20.2"
+cargo_deny = "0.22.0"
 cargo_about = "0.9.3"
 cargo_mutants = "27.1.0"
 cargo_fuzz = "0.13.2"

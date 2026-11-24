@@ -1,5 +1,6 @@
 # Applies to normal, build, dev, fuzz and repository-tool dependency graphs.
 [advisories]
+unmaintained = "all"
 ignore = [
   { id = "RUSTSEC-2026-0543", reason = "RustSec reports chrono as unmaintained. Published Slint 1.19.0 requires it. Remove this exception when chrono leaves the dependency graph." },
 ]

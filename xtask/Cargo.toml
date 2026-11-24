@@ -11,11 +11,11 @@ eml-core = { path = "../crates/eml-core" }
 clap.workspace = true
 serde_json.workspace = true
 chrono = { version = "=0.4.45", default-features = false, features = ["std"] }
-toml = "1.2.1"
+toml = "1.2.2"
 tempfile.workspace = true
 tar = { version = "0.4.46", default-features = false }
 flate2 = { version = "1.1.11", default-features = false, features = ["rust_backend"] }
-zip = { version = "9.6.0", default-features = false, features = ["deflate-flate2"] }
+zip = { version = "9.8.2", default-features = false, features = ["deflate-flate2"] }
 
 [lints]
 workspace = true

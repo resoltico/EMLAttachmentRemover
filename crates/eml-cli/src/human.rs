@@ -282,10 +282,7 @@ mod tests {
         fs,
         path::{Path, PathBuf},
     };
-    include!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../eml-protocol/tests/support/output_writer.rs"
-    ));
+    include!("../../eml-protocol/tests/support/output_writer.rs");
     fn expected_human_start() -> String {
         format!(
             "emlattachmentremover {} — 1 email · check only, nothing is written\n",
