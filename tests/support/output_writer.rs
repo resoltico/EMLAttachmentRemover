@@ -1,11 +1,14 @@
-// Shared rejecting writer for independent CLI-human and JSON delivery controls.
+//! Shared fixture for independent human and JSON delivery tests.
+use eml_core::RunStart;
+use std::io::{self, Write};
+
 #[derive(Default)]
-struct Writer {
-    bytes: Vec<u8>,
-    write_calls: usize,
-    flush_calls: usize,
-    remaining: Option<usize>,
-    fail_flush: bool,
+pub(super) struct Writer {
+    pub(super) bytes: Vec<u8>,
+    pub(super) write_calls: usize,
+    pub(super) flush_calls: usize,
+    pub(super) remaining: Option<usize>,
+    pub(super) fail_flush: bool,
 }
 impl Write for Writer {
     fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
@@ -32,10 +35,10 @@ impl Write for Writer {
         }
     }
 }
-fn start() -> RunStart {
+pub(super) fn start() -> RunStart {
     RunStart {
-            run_error: None,
-            output_unavailable: false,
+        run_error: None,
+        output_unavailable: false,
         dry_run: true,
         total: 1,
         collection_complete: true,

@@ -64,13 +64,13 @@ impl<W: Write> EventSink for JsonSink<W> {
 }
 
 #[cfg(test)]
+#[path = "../../../tests/support/output_writer.rs"]
+mod output_writer;
+
+#[cfg(test)]
 mod tests {
+    use super::output_writer::{Writer, start};
     use super::*;
-    use eml_core::RunStart;
-    include!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/tests/support/output_writer.rs"
-    ));
     fn expected_json_start() -> String {
         format!(
             "{{\"type\":\"start\",\"protocol\":1,\"program\":\"emlattachmentremover\",\"version\":\"{}\",\"dry_run\":true,\"total\":1,\"collection_complete\":true}}\n",
