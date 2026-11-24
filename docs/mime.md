@@ -61,8 +61,10 @@ nonselected related reports remain opaque removable entities.
 
 Stale length/checksum fields are removed from changed retained ancestors, and
 stale authentication fields from changed message roots. Unchanged siblings retain
-their fields. Independent source authorization and byte/structure verification
-must accept every prepared result. Retained HTML, remote references and mislabeled
+their fields. If removing stale fields would join two retained line breaks into
+one CRLF, preparation returns `MALFORMED` without a copy. Independent source
+authorization and byte/structure verification must accept every prepared result.
+Retained HTML, remote references and mislabeled
 data inside text bodies are not sanitized; an attachment-free result is not a
 malware or safe-rendering assessment.
 

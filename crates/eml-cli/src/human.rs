@@ -275,17 +275,18 @@ fn write_item(writer: &mut impl Write, value: &eml_core::ItemEvent<'_>) -> io::R
     Ok(())
 }
 #[cfg(test)]
+#[path = "../../../tests/support/output_writer.rs"]
+mod output_writer;
+
+#[cfg(test)]
 mod tests {
+    use super::output_writer::{Writer, start};
     use super::*;
-    use eml_core::{ExitClass, OutputLocation, RunControl, RunMode, RunRequest, RunStart, run};
+    use eml_core::{ExitClass, OutputLocation, RunControl, RunMode, RunRequest, run};
     use std::{
         fs,
         path::{Path, PathBuf},
     };
-    include!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../eml-protocol/tests/support/output_writer.rs"
-    ));
     fn expected_human_start() -> String {
         format!(
             "emlattachmentremover {} — 1 email · check only, nothing is written\n",

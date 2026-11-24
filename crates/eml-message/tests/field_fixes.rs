@@ -1,5 +1,25 @@
 //! Independent bytes and removal counts for root and nested multipart endings.
-use eml_message::{RemovalReason, RunControl, prepare_message};
+use eml_message::{PreparationError, Refusal, RemovalReason, RunControl, prepare_message};
+
+#[test]
+fn stripping_stale_fields_preserves_the_retained_header_framing() {
+    let body = "--B\r\n\r\nbody\r\n--B\r\nContent-Disposition: attachment\r\n\r\nfile\r\n--B--\r\n";
+    let retained = "Content-Type: multipart/mixed; boundary=B\r\nDate: synthetic";
+    let ambiguous = format!("{retained}\rContent-Length: 42\nLines: 9\n\n{body}");
+    assert!(matches!(
+        prepare_message(ambiguous.as_bytes(), &RunControl::default()),
+        Err(PreparationError::Refused {
+            kind: Refusal::Malformed,
+            ..
+        })
+    ));
+
+    let unambiguous = format!("{retained}\r\nContent-Length: 42\nLines: 9\n\n{body}");
+    let prepared = prepare_message(unambiguous.as_bytes(), &RunControl::default()).unwrap();
+    let expected = format!("{retained}\r\n\n--B\r\n\r\nbody\r\n--B--\r\n");
+    assert_eq!(prepared.as_bytes(), expected.as_bytes());
+    assert_eq!(prepared.stripped_fields(), ["content-length", "lines"]);
+}
 #[test]
 fn y2_root_and_nested_epilogues_leave_only_message_parts() {
     let source = b"Content-Type: multipart/mixed; boundary=O\r\n\r\npreamble\r\n--O\r\nContent-Type: multipart/mixed; boundary=I\r\n\r\n--I\r\n\r\nbody\r\n--I--\r\nhidden-inner\r\n--O--\r\nhidden-outer";

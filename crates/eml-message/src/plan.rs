@@ -154,17 +154,40 @@ fn visit(
         }
     };
     if keep && changed {
-        for field in &node.fields {
-            if CONTAINER_STALE.contains(&field.name.as_str())
-                || (node.root && ROOT_STALE.contains(&field.name.as_str()))
-            {
-                plan.edits.push(field.span.clone());
-                plan.stripped.insert(field.name.clone());
-            }
-        }
+        strip_stale_fields(message.input, node, plan)?;
     }
     Ok((keep, changed))
 }
+
+fn strip_stale_fields(
+    input: &[u8],
+    node: &crate::message::Node,
+    plan: &mut Plan,
+) -> Result<(), PreparationError> {
+    let first_edit = plan.edits.len();
+    for field in &node.fields {
+        if CONTAINER_STALE.contains(&field.name.as_str())
+            || (node.root && ROOT_STALE.contains(&field.name.as_str()))
+        {
+            plan.edits.push(field.span.clone());
+            plan.stripped.insert(field.name.clone());
+        }
+    }
+    // A run of adjacent deletions creates one splice. A bare CR and LF on
+    // opposite sides of the splice would reparse as one physical line break.
+    for edits in plan.edits[first_edit..].chunk_by(|left, right| left.end == right.start) {
+        let start = edits[0].start;
+        let end = edits[edits.len() - 1].end;
+        if start > 0 && input[start - 1] == b'\r' && input.get(end) == Some(&b'\n') {
+            return Err(error(
+                Refusal::Malformed,
+                "Removing stale fields would merge retained MIME line endings",
+            ));
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn build(message: &Message<'_>, control: &RunControl) -> Result<Plan, PreparationError> {
     let mut plan = Plan {
         claims: Vec::new(),

@@ -1,5 +1,26 @@
 use super::*;
 use std::{fs, path::Path};
+
+#[test]
+fn published_address_distinguishes_changed_from_unverified() {
+    use crate::fs::PublicationState;
+
+    for (code, expected) in [
+        (ErrorCode::AddressChanged, AddressState::Changed),
+        (ErrorCode::AddressUnverified, AddressState::Unknown),
+    ] {
+        let mut state = PublicationState::Published;
+        let mut error = None;
+        let failure = OperationFailure::new(code, ErrorPhase::Address, "Synthetic observation");
+        assert_eq!(
+            record_publication_address(Err(failure), &mut state, &mut error),
+            expected
+        );
+        assert_eq!(state, PublicationState::Published);
+        assert_eq!(error.unwrap().code(), code);
+    }
+}
+
 #[test]
 fn final_existing_observation_distinguishes_address_and_same_file_changes() {
     let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/run-tests");

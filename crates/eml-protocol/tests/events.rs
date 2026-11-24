@@ -37,7 +37,7 @@ fn actual_dry_run_matches_hand_authored_native_path_and_fixed_receipt_golden() {
     #[cfg(unix)]
     let actual = String::from_utf8(bytes).unwrap();
     #[cfg(windows)]
-    let actual = {
+    {
         use base64::{Engine, engine::general_purpose::STANDARD};
         use std::os::windows::ffi::{OsStrExt, OsStringExt};
         let prefix: Vec<_> = req.working_directory.as_os_str().encode_wide().collect();
@@ -67,16 +67,13 @@ fn actual_dry_run_matches_hand_authored_native_path_and_fixed_receipt_golden() {
             include_str!("../../../tests/contract/protocol/planned-create-windows.jsonl")
                 .replace("@VERSION@", env!("CARGO_PKG_VERSION"));
         assert_eq!(events, values(expected.as_bytes()));
-        String::new()
-    };
+    }
     #[cfg(unix)]
     assert_eq!(
         actual,
         include_str!("../../../tests/contract/protocol/planned-create-unix.jsonl")
             .replace("@VERSION@", env!("CARGO_PKG_VERSION"))
     );
-    #[cfg(windows)]
-    assert!(actual.is_empty());
     assert_eq!(fs::read_dir(root.path()).unwrap().count(), 1);
     assert_eq!(fs::read(root.path().join("a.eml")).unwrap(), input);
     root.close().unwrap();
